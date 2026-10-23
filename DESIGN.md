@@ -248,6 +248,28 @@ flowchart LR
 
 The workflow does not define rates, formulas, dimensional surcharges, or a universal service limit. `shipping-rates.json` configuration supplies one fixed charge and maximum weight for each applicable type/service/zone. The current Domain model requires positive dimensions for every shipment, including a letter, and no additional type-specific dimensions are invented. Persistence I/O errors propagate unchanged; missing origin branches and shipment retrieval use explicit Application exceptions. Courier integrations, labels, MVC, and transaction composition remain planned.
 
+## Step 11 money orders and identity verification
+
+`MoneyOrderWorkflowService` coordinates persistence and configured policy while `MoneyOrder` owns its amount, fee, sender, recipient, context identity, and verification-association invariants. `IMoneyOrderPolicy` provides `HighValueThreshold`; the application requires a supplied configuration value and does not hard-code a production threshold. An amount strictly greater than the threshold must have a successful `IdentityVerificationRecord` with the same `MoneyOrderContextId` before the repository save occurs.
+
+```mermaid
+flowchart LR
+    Input[Money-order request] --> Values[Create Money, codes, and context value objects]
+    Values --> Branch{Branch exists and is open?}
+    Branch -->|No| RejectBranch[Reject]
+    Branch -->|Yes| Duplicate{Order identifier unused?}
+    Duplicate -->|No| RejectDuplicate[Reject]
+    Duplicate -->|Yes| Threshold{Amount above configured threshold?}
+    Threshold -->|No| Save[Persist money order]
+    Threshold -->|Yes| Verify{Verified and same context?}
+    Verify -->|No| RejectVerify[Reject before persistence]
+    Verify -->|Yes| Mask[Mask document reference in memory]
+    Mask --> Save
+    Save --> Result[Order, fee-inclusive total]
+```
+
+The raw identity-document number is transient request input only. Application converts it to `MaskedIdentityDocumentReference`; Domain and JSON persistence retain document type, verification outcome, transaction context, and only the masked representation. No external identity-provider call, audit filter, authentication, counter transaction, or MVC feature exists in this step. The policy threshold must be supplied by a future composition/configuration step, and currency/fee calculation policy remain intentionally unresolved.
+
 ## Planned HTTP request flow
 
 The following is an intended design, not current functionality. Components marked **planned** do not yet exist in the implementation.

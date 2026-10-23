@@ -21,7 +21,8 @@ public sealed class JsonRepositoryTests : IAsyncLifetime
         var product = new Product(new("p-1"), "Envelope", new(12.50m));
         var inventory = new BranchInventoryItem(new("blr"), new("p-1"), 4);
         var shipment = new Shipment(new("sh-1"), new("blr"), new("z1"), new(2.5m), new(10m, 20m, 30m));
-        var moneyOrder = new MoneyOrder(new("mo-1"), new("blr"), new(100m)); moneyOrder.MarkIdentityVerified();
+        var moneyOrder = new MoneyOrder(new("mo-1"), new("blr"), new(100m), "Synthetic Sender", "Synthetic Recipient", new(5m), new("CTX-1"));
+        moneyOrder.RecordIdentityVerification(new(new("CTX-1"), "Demo ID", MaskedIdentityDocumentReference.FromDocumentNumber("ABCD1234"), IdentityVerificationOutcome.Verified));
 
         await new JsonBranchRepository(Options).SaveAsync(branch);
         await new JsonCounterRepository(Options).SaveAsync(counter);
@@ -37,7 +38,9 @@ public sealed class JsonRepositoryTests : IAsyncLifetime
         Assert.Equal(12.50m, (await new JsonProductRepository(Options).FindByIdAsync(new("P-1")))!.UnitPrice.Amount);
         Assert.Equal(4, (await new JsonInventoryRepository(Options).FindAsync(new("BLR"), new("P-1")))!.Quantity);
         Assert.Equal(2.5m, (await new JsonShipmentRepository(Options).FindByIdAsync(new("SH-1")))!.Weight.Kilograms);
-        Assert.Equal(IdentityVerificationOutcome.Verified, (await new JsonMoneyOrderRepository(Options).FindByIdAsync(new("MO-1")))!.IdentityVerificationOutcome);
+        var storedMoneyOrder = (await new JsonMoneyOrderRepository(Options).FindByIdAsync(new("MO-1")))!;
+        Assert.Equal(IdentityVerificationOutcome.Verified, storedMoneyOrder.IdentityVerificationOutcome);
+        Assert.Equal("****1234", storedMoneyOrder.IdentityVerification!.MaskedDocumentReference.Value);
     }
 
     [Fact]
@@ -95,13 +98,16 @@ public sealed class JsonRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Serialized_money_order_contains_no_identity_document_data()
+    public async Task Serialized_money_order_contains_no_full_identity_document_data()
     {
-        await new JsonMoneyOrderRepository(Options).SaveAsync(new MoneyOrder(new("mo-1"), new("blr"), new(25m)));
+        var moneyOrder = new MoneyOrder(new("mo-1"), new("blr"), new(25m), "Synthetic Sender", "Synthetic Recipient", new(0m), new("CTX-1"));
+        moneyOrder.RecordIdentityVerification(new(new("CTX-1"), "Demo ID", MaskedIdentityDocumentReference.FromDocumentNumber("ABCD1234"), IdentityVerificationOutcome.Verified));
+        await new JsonMoneyOrderRepository(Options).SaveAsync(moneyOrder);
         var json = await File.ReadAllTextAsync(Path.Combine(_directory, "money-orders.json"));
 
         Assert.Contains("verificationOutcome", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("document", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("****1234", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("ABCD1234", json, StringComparison.Ordinal);
     }
 
     public Task InitializeAsync() => Task.CompletedTask;

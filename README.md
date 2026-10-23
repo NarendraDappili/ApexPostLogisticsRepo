@@ -84,3 +84,9 @@ The JSON repository performs every inventory mutation inside its per-file in-pro
 `ShippingWorkflowService` validates raw shipment input through Domain value objects, confirms the origin branch exists and is open, loads rates through `IShippingRateProvider`, uses the existing `ShippingPriceCalculator`, and asynchronously saves through `IShipmentRepository`. `JsonShippingRateProvider` loads `shipping-rates.json` from `JsonRepositoryOptions.DataDirectory`; the Step 8 seed supplies 60 deterministic rates across 10 zones, both shipment types, and all three service levels.
 
 The configured rate supplies the only implemented maximum weight and fixed price. Weight equal to that maximum is accepted; unsupported or ambiguous rates and excessive weights fail before persistence. The current Domain `Shipment` requires positive dimensions for both letters and parcels, so the workflow requires them for both rather than inventing letter defaults or parcel-size limits. There is no courier integration, label rendering, transaction workflow, or MVC screen in this step.
+
+## Step 11 money orders and identity verification
+
+`MoneyOrderWorkflowService` creates money orders with amount, synthetic sender/recipient data, fee, and a transaction-context ID. Its `IMoneyOrderPolicy` supplies the high-value threshold explicitly; this repository does not prescribe a production threshold. Orders strictly above that configured amount require a `Verified` identity result with the same context ID before persistence. Orders at or below the threshold do not require verification.
+
+An identity request’s full document number is used only in memory to derive a masked reference (`****` plus up to four trailing characters). JSON persistence stores document type, outcome, and the masked reference only—never the supplied document number. No identity-provider integration, login credentials, MVC screen, or counter-transaction workflow is introduced here.

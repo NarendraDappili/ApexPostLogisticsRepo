@@ -44,14 +44,15 @@ public class ShipmentAndMoneyOrderTests
         var moneyOrder = new MoneyOrder(
             new MoneyOrderId("mo-1"),
             new BranchCode("BR-001"),
-            new Money(250m));
+            new Money(250m), "Synthetic Sender", "Synthetic Recipient", new Money(5m), new MoneyOrderContextId("CTX-1"));
 
         Assert.Equal(IdentityVerificationOutcome.Pending, moneyOrder.IdentityVerificationOutcome);
         Assert.DoesNotContain(
             typeof(MoneyOrder).GetProperties(),
             property => property.Name.Contains("document", StringComparison.OrdinalIgnoreCase));
 
-        moneyOrder.MarkIdentityVerified();
+        moneyOrder.RecordIdentityVerification(new IdentityVerificationRecord(
+            new MoneyOrderContextId("CTX-1"), "Demo ID", MaskedIdentityDocumentReference.FromDocumentNumber("ABCD1234"), IdentityVerificationOutcome.Verified));
         Assert.Equal(IdentityVerificationOutcome.Verified, moneyOrder.IdentityVerificationOutcome);
     }
 
@@ -59,7 +60,7 @@ public class ShipmentAndMoneyOrderTests
     public void Money_orders_with_same_identifier_compare_equal()
     {
         Assert.Equal(
-            new MoneyOrder(new MoneyOrderId("mo-1"), new BranchCode("BR-001"), new Money(10m)),
-            new MoneyOrder(new MoneyOrderId("MO-1"), new BranchCode("BR-002"), new Money(20m)));
+            new MoneyOrder(new MoneyOrderId("mo-1"), new BranchCode("BR-001"), new Money(10m), "Sender A", "Recipient A", new Money(0m), new MoneyOrderContextId("CTX-1")),
+            new MoneyOrder(new MoneyOrderId("MO-1"), new BranchCode("BR-002"), new Money(20m), "Sender B", "Recipient B", new Money(0m), new MoneyOrderContextId("CTX-2")));
     }
 }
