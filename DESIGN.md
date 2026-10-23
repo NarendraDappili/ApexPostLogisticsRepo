@@ -176,6 +176,24 @@ sequenceDiagram
 
 Missing files are treated as empty repositories. Empty, null, malformed, and domain-invalid JSON throws instead of being replaced; I/O exceptions also reach the caller. File streams are asynchronous and contract cancellation tokens are propagated. A process-wide, path-keyed `SemaphoreSlim` protects each read-modify-write operation for all repository instances in this process; it provides no cross-process coordination. A complete JSON payload is written to a unique temporary file in the same directory, then moved over the target, avoiding a truncated target if serialization fails. Atomic replacement and durability are filesystem/platform dependent, and operations spanning multiple files are not transactional.
 
+## Step 8 deterministic demo seed data
+
+`DemoDataSeeder` is an Infrastructure component, not a web startup action. It builds valid Domain entities and saves branches, counters, staff, products, and inventory through the existing JSON repositories. It also writes Infrastructure-owned `shipping-rates.json` and `historical-transactions.json` snapshots because the current Application model has no rate repository or transaction aggregate. These records are seed data for future configuration/report consumers, not transaction, reporting, or authentication workflows.
+
+```mermaid
+flowchart LR
+    Caller[Local opt-in caller] --> Seeder[DemoDataSeeder]
+    Seeder --> Domain[Validated Domain entities]
+    Seeder --> Repositories[Existing JSON repositories]
+    Seeder --> Snapshots[Rate and historical transaction snapshots]
+    Repositories --> Files[(Entity JSON files)]
+    Snapshots --> Files
+    Seeder --> Manifest[Completion manifest written last]
+    Manifest --> Files
+```
+
+The seeder accepts only a nonexistent or empty configured data directory. It writes the fixed `apexpost-demo-v1` manifest last; a matching manifest makes a later call a no-op. If any unmarked data or an incompatible manifest exists, it fails without changing files. This protects user data but cannot make a failed multi-file initial seed atomic: a partial seed has no completion manifest and must be inspected or removed explicitly by the local operator before retrying. All identities are synthetic and no document references, passwords, or secrets are produced.
+
 ## Planned HTTP request flow
 
 The following is an intended design, not current functionality. Components marked **planned** do not yet exist in the implementation.

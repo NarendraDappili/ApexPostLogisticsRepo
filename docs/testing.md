@@ -14,6 +14,8 @@ The solution contains three xUnit test projects:
 
 Step 7 adds `ApexPost.Infrastructure.Tests`, which references Infrastructure and uses a unique directory below the OS temporary directory for every test. It cleans up only that test-owned directory. Coverage includes round trips for all seven repositories, identity-based update/upsert behavior, missing files, empty/malformed JSON, cancellation, sensitive-data-safe serialization, and concurrent same-process writes.
 
+Step 8 adds seed-data tests using separate test-owned temporary directories. They verify the required 5 branches, 20 staff, 30 products, 10 zones/60 rates, and 40 historical records; role coverage, uniqueness, branch/staff/product/inventory relationships, rate construction through existing value objects, transaction arithmetic, rerun no-op behavior, and rejection of unmarked pre-existing data.
+
 Later steps should add focused unit tests for domain invariants and application use cases, plus web integration tests for relevant HTTP behavior. Tests should verify the assignment rules described in [business-rules.md](business-rules.md) and security-sensitive behavior described in [security.md](security.md) as those features are implemented.
 
 ## Commands

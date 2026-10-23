@@ -29,9 +29,16 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 - Retail pricing multiplies a product's current decimal unit price by a positive quantity without rounding.
 - Shipping pricing selects exactly one configured fixed charge using shipment type, service level, and destination zone. It rejects shipments whose weight is above that rate's configured maximum; a weight equal to the maximum is accepted.
 
+### Demo seed data
+
+- Step 8 seed data is synthetic and deterministic: it includes five open branches, active synthetic staff in every required role, products, non-negative inventory, ten valid zone codes with shipping-rate records, and forty historical retail records.
+- Every historical record refers to a seeded branch, an active Counter Clerk assigned to that branch, and a seeded product. Its total equals its decimal unit price multiplied by its positive quantity; a corresponding non-negative inventory record exists.
+- The current model has no transaction aggregate, tax policy, money-order threshold, or shipping-rate repository. Historical transaction and rate files are therefore Infrastructure seed snapshots for future consumers, not evidence of implemented transaction workflows.
+- Seed data contains no customer identity-document field or reference. Names and identifiers are explicitly synthetic; no passwords, API keys, or credentials are seeded.
+
 ### Deferred to future steps
 
-- JSON configuration loading and persistence for shipping rates are not implemented; callers currently supply configured rate data directly to the calculator.
+- JSON configuration loading and persistence for shipping rates are not implemented for runtime application use; Step 8 creates deterministic rate seed snapshots for future configuration consumers, while callers currently supply rate data directly to the calculator.
 - The high-value threshold and same-transaction linkage for money-order identity verification require transaction composition and configuration.
 - Counter transaction line items, pricing, tax, voids, refunds, Branch Manager authorization, and reason capture require later transaction workflows.
 - Branch closure must be coordinated with counter transaction creation in a later workflow; this step exposes branch state without adding a transaction process.
