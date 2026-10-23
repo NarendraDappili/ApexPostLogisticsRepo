@@ -10,4 +10,4 @@
 
 ## Verified implementation
 
-Step 4 includes a Domain `MoneyOrder` entity that stores an identity-verification outcome only; it has no identity-document property or document-number input. Authentication, authorization policy, audit logging, payment processing, custom security middleware, and workflow-level identity verification remain planned constraints for subsequent steps.
+Step 4 includes a Domain `MoneyOrder` entity that stores an identity-verification outcome only; it has no identity-document property or document-number input. Step 7 persists only the money-order identifier, branch code, amount, and verification outcome in Infrastructure JSON DTOs; full identity-document numbers are neither accepted nor serialized. The configured data directory should use ordinary operating-system access controls because it contains operational data, even though this implementation stores no credentials or secrets. Authentication, authorization policy, audit logging, payment processing, custom security middleware, and workflow-level identity verification remain planned constraints for subsequent steps.
