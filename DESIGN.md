@@ -2,12 +2,12 @@
 
 ## Current architecture
 
-The solution is structured as a layered application. The Domain layer now provides validated value objects and core entities; use cases, persistence, and application-specific MVC workflows are not yet implemented.
+The solution is structured as a layered application. The Domain layer provides validated value objects and core entities, while Application owns contracts for persistence and external capabilities. Use cases, concrete persistence, and application-specific MVC workflows are not yet implemented.
 
 | Project | Responsibility | Current state |
 | --- | --- | --- |
 | `ApexPost.Domain` | Business entities, value objects, and invariants. | Core entities and local invariants implemented; workflows planned. |
-| `ApexPost.Application` | Use cases, service contracts, and repository abstractions. | Project shell only. |
+| `ApexPost.Application` | Use cases, service contracts, repository abstractions, and external-capability contracts. | Repository, audit, notification, and current-staff-context contracts implemented; services planned. |
 | `ApexPost.Infrastructure` | Technical adapters, including planned JSON persistence. | Project shell only. |
 | `ApexPost.Web` | ASP.NET Core MVC UI and composition root. | Minimal MVC template; no application-specific registration or workflow. |
 | `ApexPost.Domain.Tests` | Unit tests for Domain. | Value-object and entity unit tests implemented. |
@@ -33,6 +33,30 @@ flowchart RL
 ## Composition root and dependency injection
 
 `src/ApexPost.Web/Program.cs` is the composition root. It currently contains only template application setup. In a later step, it will register Application services and Infrastructure implementations with built-in `Microsoft.Extensions.DependencyInjection`, then configure the HTTP pipeline. Business logic will not be placed there.
+
+## Application contracts
+
+Application owns repository interfaces for each implemented aggregate or independently persisted entity: branches, counters, staff members, products, branch inventory items, shipments, and money orders. Each contract returns an optional entity from `Find...Async` when absence is valid and persists an entity through `SaveAsync`. Every asynchronous operation accepts a final optional `CancellationToken`; contracts reveal neither file paths nor JSON details.
+
+`ICurrentStaffContext` makes the current operator's `StaffId` and branch context available without referencing ASP.NET Core. `IAuditWriter` accepts an `AuditRecord` and `INotificationSender` accepts a `NotificationMessage`; their concrete delivery and storage remain planned Infrastructure responsibilities. Audit summaries must exclude identity-document numbers, credentials, and payment-card data.
+
+```mermaid
+flowchart RL
+    Web[ApexPost.Web<br/>planned consumer] --> Application[ApexPost.Application<br/>implemented contracts]
+    Application --> Domain[ApexPost.Domain<br/>implemented model]
+    Infrastructure[ApexPost.Infrastructure<br/>planned contract implementations] --> Application
+    Infrastructure --> Domain
+```
+
+```mermaid
+flowchart LR
+    Consumer[Future Application service<br/>planned] --> Contract[Application contract<br/>implemented]
+    Contract --> Repository[Repository interface<br/>implemented]
+    Contract --> Capability[Audit, notification, or staff-context interface<br/>implemented]
+    Repository -. implemented by .-> Infrastructure[Infrastructure adapter<br/>planned]
+    Capability -. implemented by .-> Infrastructure
+    Repository --> Domain[Domain entity/value object<br/>implemented]
+```
 
 ## Domain value objects
 
@@ -108,7 +132,7 @@ flowchart LR
     Infrastructure --> Files[(JSON files<br/>planned)]
 ```
 
-MVC, Razor Views, and the template HTTP pipeline are present through the ASP.NET Core template. The depicted application services, repository abstractions, JSON implementations, and JSON files remain planned.
+MVC, Razor Views, and the template HTTP pipeline are present through the ASP.NET Core template. Application contracts are implemented; the depicted application services, JSON implementations, and JSON files remain planned.
 
 ## Test structure
 
@@ -116,4 +140,4 @@ Each test project references only the layer it tests: Domain Tests references Do
 
 ## Planned architectural components
 
-Later steps may add domain entities and invariants, application service and repository-abstraction contracts, JSON persistence adapters, dependency-injection registrations, authentication and authorization, and MVC workflows. None of those components are implemented by this configuration step.
+Later steps may add application services and workflows, JSON persistence adapters, dependency-injection registrations, authentication and authorization, and MVC workflows. Domain entities and Application contracts are already implemented; concrete contract implementations are not.

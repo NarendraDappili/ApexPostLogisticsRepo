@@ -33,6 +33,7 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 - The high-value threshold and same-transaction linkage for money-order identity verification require transaction composition and configuration.
 - Counter transaction line items, pricing, tax, voids, refunds, Branch Manager authorization, and reason capture require later transaction workflows.
 - Branch closure must be coordinated with counter transaction creation in a later workflow; this step exposes branch state without adding a transaction process.
+- Application now owns contracts that future workflows will use to retrieve and persist entities, identify the current staff member, write audits, and send notifications. The contracts do not themselves enforce business rules or persist data.
 
 ### Requiring clarification
 
