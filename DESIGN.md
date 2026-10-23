@@ -2,15 +2,15 @@
 
 ## Current architecture
 
-The solution is structured as a layered application. The Domain layer now provides validated value objects; domain entities, use cases, persistence, and application-specific MVC workflows are not yet implemented.
+The solution is structured as a layered application. The Domain layer now provides validated value objects and core entities; use cases, persistence, and application-specific MVC workflows are not yet implemented.
 
 | Project | Responsibility | Current state |
 | --- | --- | --- |
-| `ApexPost.Domain` | Business entities, value objects, and invariants. | Value objects implemented; entities and broader invariants planned. |
+| `ApexPost.Domain` | Business entities, value objects, and invariants. | Core entities and local invariants implemented; workflows planned. |
 | `ApexPost.Application` | Use cases, service contracts, and repository abstractions. | Project shell only. |
 | `ApexPost.Infrastructure` | Technical adapters, including planned JSON persistence. | Project shell only. |
 | `ApexPost.Web` | ASP.NET Core MVC UI and composition root. | Minimal MVC template; no application-specific registration or workflow. |
-| `ApexPost.Domain.Tests` | Unit tests for Domain. | Value-object unit tests implemented. |
+| `ApexPost.Domain.Tests` | Unit tests for Domain. | Value-object and entity unit tests implemented. |
 | `ApexPost.Application.Tests` | Unit tests for Application. | Template test only. |
 | `ApexPost.Web.IntegrationTests` | Integration tests for Web. | Template test only. |
 
@@ -60,7 +60,39 @@ flowchart LR
     Valid -->|No| Error[Argument exception]
 ```
 
-Future domain entities will compose these types to retain their validation at creation boundaries; those entities are not implemented in this step.
+The implemented entities compose these types to retain validation at creation boundaries. Additional entities and cross-entity workflows remain planned.
+
+## Domain entities
+
+Entities are mutable only through their controlled operations and compare by identity rather than their changing state. `Branch` is identified by `BranchCode` and controls whether it is open. `Counter` is identified by its branch and `CounterCode`, and tracks its own open state. `StaffMember` is identified by `StaffId`, has an assigned branch and role, and prevents inactive members from processing transactions; the Counter Clerk role is limited to its assigned branch.
+
+`Product` is identified by `ProductId` and owns its current `Money` unit price. `BranchInventoryItem` is identified by its branch/product pair and prevents quantity from becoming negative. `Shipment` is identified by `ShipmentId` and composes the existing origin, zone, weight, and dimensions value objects. `MoneyOrder` is identified by `MoneyOrderId`, stores a `Money` amount and verification outcome only, and deliberately has no identity-document data.
+
+```mermaid
+flowchart TB
+    Branch[Branch<br/>BranchCode identity] --> Counter[Counter<br/>CounterCode + branch identity]
+    Branch --> Inventory[BranchInventoryItem<br/>branch + product identity]
+    Product[Product<br/>ProductId identity] --> Inventory
+    Staff[StaffMember<br/>StaffId identity] --> AssignedBranch[Assigned BranchCode]
+    Shipment[Shipment<br/>ShipmentId identity] --> ShipmentValues[BranchCode, ZoneCode, ParcelWeight, ParcelDimensions]
+    MoneyOrder[MoneyOrder<br/>MoneyOrderId identity] --> MoneyOrderValues[BranchCode, Money, verification outcome]
+    PlannedTransactions[Counter transactions and line items<br/>planned] -. use .-> Branch
+    PlannedTransactions -. use .-> Staff
+    PlannedTransactions -. use .-> Inventory
+    PlannedTransactions -. use .-> Shipment
+    PlannedTransactions -. use .-> MoneyOrder
+```
+
+```mermaid
+flowchart LR
+    Adjust[Stock adjustment request] --> ValidateAmount{Positive quantity?}
+    ValidateAmount -->|No| RejectAmount[Argument exception]
+    ValidateAmount -->|Yes| Remove{Removal exceeds stock?}
+    Remove -->|Yes| RejectStock[Invalid operation]
+    Remove -->|No| Update[Update inventory quantity]
+```
+
+Branch closure and staff eligibility are exposed as entity state and operations. Coordinating those checks with counter transaction creation, shipment service limits, money-order thresholds, refunds, and authorization is planned application/domain-workflow work.
 
 ## Planned HTTP request flow
 

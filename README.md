@@ -1,6 +1,6 @@
 # ApexPost Logistics
 
-ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, and retail-counter platform. It is being built incrementally from the assignment specification; this repository currently contains the Step 3 solution architecture, validated domain value objects, and template application.
+ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, and retail-counter platform. It is being built incrementally from the assignment specification; this repository currently contains the Step 4 solution architecture, domain value objects and core entities, and template application.
 
 ## Status
 
@@ -9,6 +9,7 @@ ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, an
 - Seven-project solution with the intended layer and test-project boundaries.
 - .NET 10, C# 14, nullable-reference-type, and implicit-using configuration.
 - Validated immutable domain value objects for identifiers, monetary amounts, and parcel measurements, with focused xUnit coverage.
+- Core domain entities for branches, counters, staff, catalogue products, inventory, shipments, and money orders, with local invariant coverage.
 - Minimal ASP.NET Core MVC template application and placeholder application/web test projects.
 - Architecture, business-rule, security, and testing documentation.
 
@@ -18,7 +19,7 @@ ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, an
 
 **Planned**
 
-- Domain entities and business invariants beyond value-object validation.
+- Transaction composition, pricing, tax, void/refund authorization, and other cross-entity business workflows.
 - Application services and repository abstractions.
 - JSON persistence, dependency-injection registrations, MVC workflows, authentication, and integration tests.
 
@@ -31,7 +32,7 @@ ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, an
 ```text
 ApexPost.slnx
 src/
-  ApexPost.Domain/            Implemented value objects; entities and invariants planned
+  ApexPost.Domain/            Value objects and core entities; workflows planned
   ApexPost.Application/       Use cases and abstractions (not yet implemented)
   ApexPost.Infrastructure/    Technical adapters and JSON persistence (not yet implemented)
   ApexPost.Web/               ASP.NET Core MVC composition root and UI template
