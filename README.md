@@ -1,6 +1,6 @@
 # ApexPost Logistics
 
-ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, and retail-counter platform. It is being built incrementally from the assignment specification; this repository currently contains the Step 6 solution architecture, domain value objects and core entities, Application contracts, configurable pricing rules, and template application.
+ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, and retail-counter platform. It is being built incrementally from the assignment specification; this repository currently contains the Step 7 solution architecture, domain value objects and core entities, Application contracts, configurable pricing rules, JSON repositories, and template application.
 
 ## Status
 
@@ -24,7 +24,7 @@ ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, an
 - Transaction composition, tax, void/refund authorization, and other cross-entity business workflows.
 - JSON-based pricing configuration loading and persistence.
 - Application services and business workflows that consume the contracts.
-- JSON persistence, dependency-injection registrations, MVC workflows, authentication, and integration tests.
+- Dependency-injection registrations, MVC workflows, authentication, and integration tests.
 
 ## Prerequisites
 
@@ -37,7 +37,7 @@ ApexPost.slnx
 src/
   ApexPost.Domain/            Value objects and core entities; workflows planned
   ApexPost.Application/       Contracts and configurable pricing calculators; services planned
-  ApexPost.Infrastructure/    Technical adapters and JSON persistence (not yet implemented)
+  ApexPost.Infrastructure/    Technical adapters and JSON repository persistence
   ApexPost.Web/               ASP.NET Core MVC composition root and UI template
 tests/
   ApexPost.Domain.Tests/      Domain tests
@@ -60,3 +60,9 @@ dotnet restore ApexPost.slnx
 dotnet build ApexPost.slnx --no-restore
 dotnet test ApexPost.slnx --no-build
 ```
+
+## Step 7 JSON persistence
+
+`ApexPost.Infrastructure` implements the seven existing Application repository interfaces with asynchronous JSON files; no database or ORM is used. Create repositories with `JsonRepositoryOptions { DataDirectory = "<application-data-directory>" }`. The directory is configuration, not a secret, and is intentionally not wired into the template web app yet.
+
+Files below that directory are `branches.json`, `counters.json`, `staff-members.json`, `products.json`, `inventory.json`, `shipments.json`, and `money-orders.json`. Missing files behave as empty repositories. Empty or malformed JSON and filesystem failures are reported to the caller and are not overwritten.

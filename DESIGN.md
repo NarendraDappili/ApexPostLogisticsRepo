@@ -8,7 +8,7 @@ The solution is structured as a layered application. The Domain layer provides v
 | --- | --- | --- |
 | `ApexPost.Domain` | Business entities, value objects, and invariants. | Core entities and local invariants implemented; workflows planned. |
 | `ApexPost.Application` | Use cases, service contracts, repository abstractions, external-capability contracts, and pricing rules. | Repository, audit, notification, current-staff-context contracts, and pricing calculators implemented; services planned. |
-| `ApexPost.Infrastructure` | Technical adapters, including planned JSON persistence. | Project shell only. |
+| `ApexPost.Infrastructure` | Technical adapters, including JSON repository persistence. | Implements all current repository contracts. |
 | `ApexPost.Web` | ASP.NET Core MVC UI and composition root. | Minimal MVC template; no application-specific registration or workflow. |
 | `ApexPost.Domain.Tests` | Unit tests for Domain. | Value-object and entity unit tests implemented. |
 | `ApexPost.Application.Tests` | Unit tests for Application. | Template test only. |
@@ -44,7 +44,7 @@ Application owns repository interfaces for each implemented aggregate or indepen
 flowchart RL
     Web[ApexPost.Web<br/>planned consumer] --> Application[ApexPost.Application<br/>implemented contracts]
     Application --> Domain[ApexPost.Domain<br/>implemented model]
-    Infrastructure[ApexPost.Infrastructure<br/>planned contract implementations] --> Application
+    Infrastructure[ApexPost.Infrastructure<br/>JSON repository implementations] --> Application
     Infrastructure --> Domain
 ```
 
@@ -53,7 +53,7 @@ flowchart LR
     Consumer[Future Application service<br/>planned] --> Contract[Application contract<br/>implemented]
     Contract --> Repository[Repository interface<br/>implemented]
     Contract --> Capability[Audit, notification, or staff-context interface<br/>implemented]
-    Repository -. implemented by .-> Infrastructure[Infrastructure adapter<br/>planned]
+    Repository -. implemented by .-> Infrastructure[Infrastructure JSON adapter<br/>implemented]
     Capability -. implemented by .-> Infrastructure
     Repository --> Domain[Domain entity/value object<br/>implemented]
 ```
@@ -146,6 +146,36 @@ flowchart LR
 
 Branch closure and staff eligibility are exposed as entity state and operations. Coordinating those checks with counter transaction creation, shipment service limits, money-order thresholds, refunds, and authorization is planned application/domain-workflow work.
 
+## Step 7 JSON repository persistence
+
+Infrastructure implements only the existing Application repository abstractions: `IBranchRepository`, `ICounterRepository`, `IStaffMemberRepository`, `IProductRepository`, `IInventoryRepository`, `IShipmentRepository`, and `IMoneyOrderRepository`. No delete contract exists, so deletion is deliberately not added. Each `SaveAsync` upserts by the Domain identity and `Find...Async` returns `null` when data is absent.
+
+```mermaid
+flowchart LR
+    App[Application repository interface] --> Impl[Infrastructure JSON repository]
+    Impl --> Map[Infrastructure DTO mapping]
+    Map --> Domain[Domain entity and value objects]
+    Impl --> Store[Per-file JSON store]
+    Store --> File[(Configured directory / JSON file)]
+```
+
+```mermaid
+sequenceDiagram
+    participant R as Repository
+    participant L as Per-file SemaphoreSlim
+    participant F as JSON file
+    R->>L: wait asynchronously
+    L-->>R: exclusive in-process access
+    R->>F: asynchronously read and deserialize
+    R->>F: serialize complete replacement to temporary file
+    R->>F: move temporary file over target
+    R->>L: release
+```
+
+`JsonRepositoryOptions.DataDirectory` selects the data directory. The fixed filenames are `branches.json`, `counters.json`, `staff-members.json`, `products.json`, `inventory.json`, `shipments.json`, and `money-orders.json`. DTOs are Infrastructure-only. Money orders persist verification outcome but never an identity-document number.
+
+Missing files are treated as empty repositories. Empty, null, malformed, and domain-invalid JSON throws instead of being replaced; I/O exceptions also reach the caller. File streams are asynchronous and contract cancellation tokens are propagated. A process-wide, path-keyed `SemaphoreSlim` protects each read-modify-write operation for all repository instances in this process; it provides no cross-process coordination. A complete JSON payload is written to a unique temporary file in the same directory, then moved over the target, avoiding a truncated target if serialization fails. Atomic replacement and durability are filesystem/platform dependent, and operations spanning multiple files are not transactional.
+
 ## Planned HTTP request flow
 
 The following is an intended design, not current functionality. Components marked **planned** do not yet exist in the implementation.
@@ -156,8 +186,8 @@ flowchart LR
     Middleware --> Controller[MVC controllers / Razor Views<br/>planned application workflows]
     Controller --> AppService[Application services<br/>planned]
     AppService --> Repository[Repository abstractions<br/>planned]
-    Repository --> Infrastructure[Infrastructure JSON implementations<br/>planned]
-    Infrastructure --> Files[(JSON files<br/>planned)]
+    Repository --> Infrastructure[Infrastructure JSON implementations<br/>implemented]
+    Infrastructure --> Files[(JSON files<br/>configured at composition time)]
 ```
 
 MVC, Razor Views, and the template HTTP pipeline are present through the ASP.NET Core template. Application contracts and pricing calculators are implemented; the depicted application services, JSON implementations, and JSON files remain planned.
