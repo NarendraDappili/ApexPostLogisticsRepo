@@ -8,7 +8,7 @@ The solution contains three xUnit test projects:
 - `ApexPost.Application.Tests` references `ApexPost.Application`.
 - `ApexPost.Web.IntegrationTests` references `ApexPost.Web`.
 
-`ApexPost.Web.IntegrationTests` also references the approved `Microsoft.AspNetCore.Mvc.Testing` package for future ASP.NET Core test hosting. Domain Tests now cover valid construction, normalization, invalid identifier inputs, non-negative monetary amounts, positive parcel measurements, decimal precision, and value equality for the Step 3 value objects. Application and Web test projects retain their template tests because their corresponding features remain planned.
+`ApexPost.Web.IntegrationTests` also references the approved `Microsoft.AspNetCore.Mvc.Testing` package for future ASP.NET Core test hosting. Domain Tests cover value-object construction, normalization, invalid inputs, decimal precision, and value equality. They also cover branch and counter state, staff activity and branch assignment, product price updates, non-negative inventory, shipment composition, money-order verification outcomes, and entity identity equality. Application and Web test projects retain their template tests because their corresponding features remain planned.
 
 ## Planned coverage
 

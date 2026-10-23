@@ -10,4 +10,4 @@
 
 ## Verified implementation
 
-Step 2 contains the minimal ASP.NET Core MVC template only. No application authentication, authorization policy, identity verification, audit logging, payment processing, or custom security middleware has been implemented. The requirements above remain planned constraints for subsequent steps.
+Step 4 includes a Domain `MoneyOrder` entity that stores an identity-verification outcome only; it has no identity-document property or document-number input. Authentication, authorization policy, audit logging, payment processing, custom security middleware, and workflow-level identity verification remain planned constraints for subsequent steps.
