@@ -32,6 +32,9 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 - A low-stock notification is prepared only when stock crosses from above a configured non-negative threshold to at/below it. Notification delivery is an existing Application abstraction; no delivery implementation is introduced here.
 - `ShippingWorkflowService` creates a shipment only when its origin branch exists and is open, its identifier is unused, and `ShippingPriceCalculator` finds exactly one configured rate for its type, service level, and destination zone.
 - The selected rate supplies the fixed price and maximum weight. A shipment at the limit is accepted; one above it is rejected before persistence. The current shipment model requires strictly positive dimensions for letters and parcels alike; no letter defaults or further dimension limits are inferred.
+- Money orders require a positive decimal amount, non-empty sender/recipient names, a non-negative fee, and a context identifier. Their total is amount plus fee without a new fee or rounding formula.
+- The configured `IMoneyOrderPolicy.HighValueThreshold` is exclusive: an amount strictly above it requires a verified identity record in the same money-order context; an amount equal to it does not. Failed, pending, absent, or mismatched-context verification rejects a high-value order before persistence.
+- Identity verification records retain only document type, result, context ID, and a masked document reference. Full document numbers are not retained by Domain or JSON persistence.
 
 ### Demo seed data
 
@@ -48,6 +51,7 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 - Branch closure must be coordinated with counter transaction creation in a later workflow; this step exposes branch state without adding a transaction process.
 - Application now owns contracts that future workflows will use to retrieve and persist entities, identify the current staff member, write audits, and send notifications. The contracts do not themselves enforce business rules or persist data.
 - JSON inventory atomicity is limited to repository instances in one application process. Multiple processes writing the same JSON data directory require external coordination and are unsupported.
+- A production high-value threshold, supported document types, external identity-provider integration, fee schedule, currency, and rounding policies require explicit future configuration/policy decisions; no values are invented here.
 
 ### Requiring clarification
 

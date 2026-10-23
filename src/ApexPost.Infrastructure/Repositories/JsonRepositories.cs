@@ -107,5 +107,16 @@ internal sealed record InventoryDto(string BranchCode, string ProductId, int Qua
 { public static InventoryDto From(BranchInventoryItem x) => new(x.BranchCode.Value, x.ProductId.Value, x.Quantity); public BranchInventoryItem ToEntity() => new(new(BranchCode), new(ProductId), Quantity); }
 internal sealed record ShipmentDto(string Id, string OriginBranchCode, string DestinationZoneCode, decimal WeightKilograms, decimal LengthCentimetres, decimal WidthCentimetres, decimal HeightCentimetres)
 { public static ShipmentDto From(Shipment x) => new(x.Id.Value, x.OriginBranchCode.Value, x.DestinationZoneCode.Value, x.Weight.Kilograms, x.Dimensions.LengthCentimetres, x.Dimensions.WidthCentimetres, x.Dimensions.HeightCentimetres); public Shipment ToEntity() => new(new(Id), new(OriginBranchCode), new(DestinationZoneCode), new(WeightKilograms), new(LengthCentimetres, WidthCentimetres, HeightCentimetres)); }
-internal sealed record MoneyOrderDto(string Id, string BranchCode, decimal Amount, IdentityVerificationOutcome VerificationOutcome)
-{ public static MoneyOrderDto From(MoneyOrder x) => new(x.Id.Value, x.BranchCode.Value, x.Amount.Amount, x.IdentityVerificationOutcome); public MoneyOrder ToEntity() { var x = new MoneyOrder(new(Id), new(BranchCode), new(Amount)); if (VerificationOutcome == IdentityVerificationOutcome.Verified) x.MarkIdentityVerified(); else if (VerificationOutcome == IdentityVerificationOutcome.Failed) x.MarkIdentityVerificationFailed(); return x; } }
+internal sealed record MoneyOrderDto(string Id, string BranchCode, decimal Amount, string Sender, string Recipient, decimal Fee, string TransactionContextId, IdentityVerificationOutcome VerificationOutcome, string? VerificationDocumentType, string? MaskedDocumentReference)
+{
+    public static MoneyOrderDto From(MoneyOrder x) => new(x.Id.Value, x.BranchCode.Value, x.Amount.Amount, x.Sender, x.Recipient, x.Fee.Amount, x.TransactionContextId.Value, x.IdentityVerificationOutcome, x.IdentityVerification?.DocumentType, x.IdentityVerification?.MaskedDocumentReference.Value);
+    public MoneyOrder ToEntity()
+    {
+        var x = new MoneyOrder(new(Id), new(BranchCode), new(Amount), Sender, Recipient, new(Fee), new(TransactionContextId));
+        if (VerificationDocumentType is not null && MaskedDocumentReference is not null)
+        {
+            x.RecordIdentityVerification(new(new(TransactionContextId), VerificationDocumentType, MaskedIdentityDocumentReference.FromMaskedValue(MaskedDocumentReference), VerificationOutcome));
+        }
+        return x;
+    }
+}

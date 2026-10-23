@@ -20,6 +20,8 @@ Step 9 adds Application inventory-service tests for available stock, insufficien
 
 Step 10 adds Application shipping-workflow tests for letters and parcels, Standard/Express/Registered services, zones, configured maximum-weight boundaries, missing rates, invalid measurements, persistence errors, cancellation, and distinct missing-origin/shipment handling. Infrastructure tests verify that the JSON rate provider loads the 60 deterministic seed rates and handles missing configuration/cancellation.
 
+Step 11 adds money-order workflow tests for below/at/above configurable thresholds, successful/failed/pending/missing/mismatched-context verification, masked document references, invalid amounts, cancellation, and persistence failures. Repository serialization tests verify that only the masked identity-document reference appears in JSON, not the original full value.
+
 Later steps should add focused unit tests for domain invariants and application use cases, plus web integration tests for relevant HTTP behavior. Tests should verify the assignment rules described in [business-rules.md](business-rules.md) and security-sensitive behavior described in [security.md](security.md) as those features are implemented.
 
 ## Commands
