@@ -28,6 +28,8 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 - Money orders retain only an identity-verification outcome; the model has no identity-document field.
 - Retail pricing multiplies a product's current decimal unit price by a positive quantity without rounding.
 - Shipping pricing selects exactly one configured fixed charge using shipment type, service level, and destination zone. It rejects shipments whose weight is above that rate's configured maximum; a weight equal to the maximum is accepted.
+- `InventoryService` coordinates branch/product stock changes through atomic repository updates. Adds and removals require positive quantities; a general adjustment must be non-zero. Domain inventory rejects any removal that would make stock negative.
+- A low-stock notification is prepared only when stock crosses from above a configured non-negative threshold to at/below it. Notification delivery is an existing Application abstraction; no delivery implementation is introduced here.
 
 ### Demo seed data
 
@@ -43,6 +45,7 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 - Counter transaction line items, pricing, tax, voids, refunds, Branch Manager authorization, and reason capture require later transaction workflows.
 - Branch closure must be coordinated with counter transaction creation in a later workflow; this step exposes branch state without adding a transaction process.
 - Application now owns contracts that future workflows will use to retrieve and persist entities, identify the current staff member, write audits, and send notifications. The contracts do not themselves enforce business rules or persist data.
+- JSON inventory atomicity is limited to repository instances in one application process. Multiple processes writing the same JSON data directory require external coordination and are unsupported.
 
 ### Requiring clarification
 

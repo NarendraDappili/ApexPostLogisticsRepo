@@ -16,6 +16,8 @@ Step 7 adds `ApexPost.Infrastructure.Tests`, which references Infrastructure and
 
 Step 8 adds seed-data tests using separate test-owned temporary directories. They verify the required 5 branches, 20 staff, 30 products, 10 zones/60 rates, and 40 historical records; role coverage, uniqueness, branch/staff/product/inventory relationships, rate construction through existing value objects, transaction arithmetic, rerun no-op behavior, and rejection of unmarked pre-existing data.
 
+Step 9 adds Application inventory-service tests for available stock, insufficient stock, invalid quantities, branch isolation, positive/negative adjustments, low-stock crossings, and concurrent removals. Infrastructure tests exercise concurrent `JsonInventoryRepository` updates through separate service instances and confirm that exactly the available units are removed without same-process overselling.
+
 Later steps should add focused unit tests for domain invariants and application use cases, plus web integration tests for relevant HTTP behavior. Tests should verify the assignment rules described in [business-rules.md](business-rules.md) and security-sensitive behavior described in [security.md](security.md) as those features are implemented.
 
 ## Commands

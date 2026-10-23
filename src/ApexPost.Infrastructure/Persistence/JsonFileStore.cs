@@ -58,6 +58,27 @@ internal sealed class JsonFileStore<TDocument>
         }
     }
 
+    public async Task<TResult> UpdateAsync<TResult>(
+        Func<TDocument> emptyDocument,
+        Func<TDocument, TResult> update,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(emptyDocument);
+        ArgumentNullException.ThrowIfNull(update);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var document = await ReadCoreAsync(emptyDocument, cancellationToken).ConfigureAwait(false);
+            var result = update(document);
+            await WriteCoreAsync(document, cancellationToken).ConfigureAwait(false);
+            return result;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private async Task<TDocument> ReadCoreAsync(Func<TDocument> emptyDocument, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
