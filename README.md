@@ -1,6 +1,6 @@
 # ApexPost Logistics
 
-ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, and retail-counter platform. It is being built incrementally from the assignment specification; this repository currently contains the Step 5 solution architecture, domain value objects and core entities, Application contracts, and template application.
+ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, and retail-counter platform. It is being built incrementally from the assignment specification; this repository currently contains the Step 6 solution architecture, domain value objects and core entities, Application contracts, configurable pricing rules, and template application.
 
 ## Status
 
@@ -11,6 +11,7 @@ ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, an
 - Validated immutable domain value objects for identifiers, monetary amounts, and parcel measurements, with focused xUnit coverage.
 - Core domain entities for branches, counters, staff, catalogue products, inventory, shipments, and money orders, with local invariant coverage.
 - Application-layer repository, audit, notification, and current-staff-context contracts, ready for future consumers and Infrastructure implementations.
+- Deterministic retail and shipping pricing calculators using configurable in-memory rate data; configuration loading remains planned.
 - Minimal ASP.NET Core MVC template application and placeholder application/web test projects.
 - Architecture, business-rule, security, and testing documentation.
 
@@ -20,7 +21,8 @@ ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, an
 
 **Planned**
 
-- Transaction composition, pricing, tax, void/refund authorization, and other cross-entity business workflows.
+- Transaction composition, tax, void/refund authorization, and other cross-entity business workflows.
+- JSON-based pricing configuration loading and persistence.
 - Application services and business workflows that consume the contracts.
 - JSON persistence, dependency-injection registrations, MVC workflows, authentication, and integration tests.
 
@@ -34,7 +36,7 @@ ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, an
 ApexPost.slnx
 src/
   ApexPost.Domain/            Value objects and core entities; workflows planned
-  ApexPost.Application/       Repository and external-capability contracts; services planned
+  ApexPost.Application/       Contracts and configurable pricing calculators; services planned
   ApexPost.Infrastructure/    Technical adapters and JSON persistence (not yet implemented)
   ApexPost.Web/               ASP.NET Core MVC composition root and UI template
 tests/

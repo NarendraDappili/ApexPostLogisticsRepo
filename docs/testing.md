@@ -8,7 +8,7 @@ The solution contains three xUnit test projects:
 - `ApexPost.Application.Tests` references `ApexPost.Application`.
 - `ApexPost.Web.IntegrationTests` references `ApexPost.Web`.
 
-`ApexPost.Web.IntegrationTests` also references the approved `Microsoft.AspNetCore.Mvc.Testing` package for future ASP.NET Core test hosting. Domain Tests cover value-object construction, normalization, invalid inputs, decimal precision, and value equality. They also cover branch and counter state, staff activity and branch assignment, product price updates, non-negative inventory, shipment composition, money-order verification outcomes, and entity identity equality. Step 5 adds declaration-only Application contracts, so no artificial contract-existence tests or fake implementations were added; Application Tests retains its template test until Application behavior exists. Web Tests also retain their template test.
+`ApexPost.Web.IntegrationTests` also references the approved `Microsoft.AspNetCore.Mvc.Testing` package for future ASP.NET Core test hosting. Domain Tests cover value-object construction, normalization, invalid inputs, decimal precision, and value equality. They also cover branch and counter state, staff activity and branch assignment, product price updates, non-negative inventory, shipment composition, money-order verification outcomes, and entity identity equality. Application Tests now cover retail quantity calculations and configured shipping-rate selection, all three service levels, shipment type and zone selection, maximum-weight boundaries, missing/ambiguous rates, and invalid service levels. The shipping test rate values are controlled fixtures, not production configuration. Web Tests retain their template test.
 
 ## Planned coverage
 

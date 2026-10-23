@@ -26,10 +26,12 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 - Staff members can be activated or deactivated. Inactive staff cannot process transactions, and active Counter Clerks can process transactions only at their assigned branch.
 - Branch inventory rejects negative starting stock and cannot be reduced below zero.
 - Money orders retain only an identity-verification outcome; the model has no identity-document field.
+- Retail pricing multiplies a product's current decimal unit price by a positive quantity without rounding.
+- Shipping pricing selects exactly one configured fixed charge using shipment type, service level, and destination zone. It rejects shipments whose weight is above that rate's configured maximum; a weight equal to the maximum is accepted.
 
 ### Deferred to future steps
 
-- The configured shipment weight maximum is not yet available, so shipments retain their validated measurements but are not evaluated against a service limit.
+- JSON configuration loading and persistence for shipping rates are not implemented; callers currently supply configured rate data directly to the calculator.
 - The high-value threshold and same-transaction linkage for money-order identity verification require transaction composition and configuration.
 - Counter transaction line items, pricing, tax, voids, refunds, Branch Manager authorization, and reason capture require later transaction workflows.
 - Branch closure must be coordinated with counter transaction creation in a later workflow; this step exposes branch state without adding a transaction process.
@@ -37,4 +39,4 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 
 ### Requiring clarification
 
-- Identifier formats and maximum lengths, supported currencies, rounding policy, service weight limits, and the high-value money-order threshold are not specified in the repository and remain intentionally unconstrained here.
+- Identifier formats and maximum lengths, supported currencies, rounding policy, dimensional surcharges or limits, and the high-value money-order threshold are not specified in the repository. Shipping rate values and service-level weight limits are caller-supplied configuration, not authoritative values in source code.
