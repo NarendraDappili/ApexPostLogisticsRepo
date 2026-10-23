@@ -16,4 +16,11 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 
 ## Verified implementation
 
-No domain entities, rules, transaction workflows, or persistence are implemented in Step 2. These requirements are documented here for later implementation and testing; they are not yet enforced by the template application.
+Step 3 implements value-object constraints only; it does not implement entities, transaction workflows, or persistence. The following rules are now enforced:
+
+- Branch, staff, product, and zone identifiers must be non-empty after trimming and are normalized to uppercase invariant text. No code format or maximum length has been specified, so none is enforced.
+- Monetary amounts are decimal, non-negative, and not rounded by the value object. Currency and rounding policy remain planned.
+- Parcel weights are strictly positive kilograms; the configured service-level maximum is not yet implemented.
+- Parcel length, width, and height are strictly positive centimetre values.
+
+The assignment-level invariants listed above remain planned for future entities and workflows.

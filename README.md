@@ -1,6 +1,6 @@
 # ApexPost Logistics
 
-ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, and retail-counter platform. It is being built incrementally from the assignment specification; this repository currently contains the Step 2 solution architecture and template application only.
+ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, and retail-counter platform. It is being built incrementally from the assignment specification; this repository currently contains the Step 3 solution architecture, validated domain value objects, and template application.
 
 ## Status
 
@@ -8,7 +8,8 @@ ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, an
 
 - Seven-project solution with the intended layer and test-project boundaries.
 - .NET 10, C# 14, nullable-reference-type, and implicit-using configuration.
-- Minimal ASP.NET Core MVC template application and placeholder xUnit test projects.
+- Validated immutable domain value objects for identifiers, monetary amounts, and parcel measurements, with focused xUnit coverage.
+- Minimal ASP.NET Core MVC template application and placeholder application/web test projects.
 - Architecture, business-rule, security, and testing documentation.
 
 **In progress**
@@ -17,7 +18,7 @@ ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, an
 
 **Planned**
 
-- Domain model and business invariants.
+- Domain entities and business invariants beyond value-object validation.
 - Application services and repository abstractions.
 - JSON persistence, dependency-injection registrations, MVC workflows, authentication, and integration tests.
 
@@ -30,7 +31,7 @@ ApexPost Logistics is a .NET 10 solution for a maintainable postal, shipping, an
 ```text
 ApexPost.slnx
 src/
-  ApexPost.Domain/            Core business model (not yet implemented)
+  ApexPost.Domain/            Implemented value objects; entities and invariants planned
   ApexPost.Application/       Use cases and abstractions (not yet implemented)
   ApexPost.Infrastructure/    Technical adapters and JSON persistence (not yet implemented)
   ApexPost.Web/               ASP.NET Core MVC composition root and UI template

@@ -2,15 +2,15 @@
 
 ## Current architecture
 
-The solution is structured as a layered application. The project boundaries and references are configured, but the business model, use cases, persistence, and application-specific MVC workflows are not yet implemented.
+The solution is structured as a layered application. The Domain layer now provides validated value objects; domain entities, use cases, persistence, and application-specific MVC workflows are not yet implemented.
 
 | Project | Responsibility | Current state |
 | --- | --- | --- |
-| `ApexPost.Domain` | Business entities, value objects, and invariants. | Project shell only. |
+| `ApexPost.Domain` | Business entities, value objects, and invariants. | Value objects implemented; entities and broader invariants planned. |
 | `ApexPost.Application` | Use cases, service contracts, and repository abstractions. | Project shell only. |
 | `ApexPost.Infrastructure` | Technical adapters, including planned JSON persistence. | Project shell only. |
 | `ApexPost.Web` | ASP.NET Core MVC UI and composition root. | Minimal MVC template; no application-specific registration or workflow. |
-| `ApexPost.Domain.Tests` | Unit tests for Domain. | Template test only. |
+| `ApexPost.Domain.Tests` | Unit tests for Domain. | Value-object unit tests implemented. |
 | `ApexPost.Application.Tests` | Unit tests for Application. | Template test only. |
 | `ApexPost.Web.IntegrationTests` | Integration tests for Web. | Template test only. |
 
@@ -33,6 +33,34 @@ flowchart RL
 ## Composition root and dependency injection
 
 `src/ApexPost.Web/Program.cs` is the composition root. It currently contains only template application setup. In a later step, it will register Application services and Infrastructure implementations with built-in `Microsoft.Extensions.DependencyInjection`, then configure the HTTP pipeline. Business logic will not be placed there.
+
+## Domain value objects
+
+The Domain layer contains immutable sealed records, so equality is value-based and instances cannot be modified after construction. `BranchCode`, `StaffId`, `ProductId`, and `ZoneCode` reject null, empty, and whitespace-only input, then trim and normalize codes to uppercase invariant text. The assignment does not provide code-pattern or length limits, so none are invented here.
+
+`Money` retains its input as a `decimal` and accepts zero or positive amounts without rounding; currency and rounding policies are planned with future pricing and tax work. `ParcelWeight` represents a strictly positive kilogram value. `ParcelDimensions` represents strictly positive length, width, and height values in centimetres. Shipment weight limits remain a planned configurable business rule rather than a value-object maximum.
+
+```mermaid
+flowchart TB
+    Domain[ApexPost.Domain<br/>implemented] --> Codes[BranchCode, StaffId, ProductId, ZoneCode<br/>implemented]
+    Domain --> Money[Money<br/>implemented]
+    Domain --> Weight[ParcelWeight<br/>implemented]
+    Domain --> Dimensions[ParcelDimensions<br/>implemented]
+    PlannedEntities[Future domain entities<br/>planned] -. use .-> Codes
+    PlannedEntities -. use .-> Money
+    PlannedEntities -. use .-> Weight
+    PlannedEntities -. use .-> Dimensions
+```
+
+```mermaid
+flowchart LR
+    Input[Raw constructor input] --> Validate[Validate and normalize where applicable]
+    Validate --> Valid{Input valid?}
+    Valid -->|Yes| ValueObject[Immutable value object created]
+    Valid -->|No| Error[Argument exception]
+```
+
+Future domain entities will compose these types to retain their validation at creation boundaries; those entities are not implemented in this step.
 
 ## Planned HTTP request flow
 
