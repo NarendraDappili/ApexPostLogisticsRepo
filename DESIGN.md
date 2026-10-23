@@ -270,6 +270,38 @@ flowchart LR
 
 The raw identity-document number is transient request input only. Application converts it to `MaskedIdentityDocumentReference`; Domain and JSON persistence retain document type, verification outcome, transaction context, and only the masked representation. No external identity-provider call, audit filter, authentication, counter transaction, or MVC feature exists in this step. The policy threshold must be supplied by a future composition/configuration step, and currency/fee calculation policy remain intentionally unresolved.
 
+## Step 12 mixed counter transactions
+
+`CounterTransaction` is a Domain aggregate for branch/counter/clerk identity, immutable basket lines, subtotal, tax, payment method, and state. It allows `Open → Paid`, `Open → Voided`, and `Paid → Refunded`; manager authorization and reason input are validated at the Application boundary before the Domain transition. `CounterTransactionWorkflowService` validates branch, counter, clerk, existing money orders, stock, and configured tax policy. `ICounterTransactionRepository` is implemented by `JsonCounterTransactionRepository` in `counter-transactions.json`.
+
+```mermaid
+flowchart LR
+    Basket[Mixed basket request] --> POS{Open branch/counter and assigned active clerk?}
+    POS -->|No| RejectPOS[Reject]
+    POS -->|Yes| Lines[Price retail with RetailPriceCalculator; accept owning-service prices]
+    Lines --> MO{High-value money orders verified in same transaction?}
+    MO -->|No| RejectMO[Reject]
+    MO -->|Yes| Tax[Calculate configured tax]
+    Tax --> Lock[Acquire in-process branch lock]
+    Lock --> Stock[Remove retail stock through atomic inventory updates]
+    Stock --> Save[Save paid transaction JSON]
+    Save -->|Success| Paid[Paid transaction]
+    Save -->|Failure| Compensate[Restore removed stock in reverse order]
+    Compensate --> Failure[Propagate failure; reconcile if compensation failed]
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> Open
+    Open --> Paid: checkout
+    Open --> Voided: assigned active Branch Manager + reason
+    Paid --> Refunded: assigned active Branch Manager + reason
+    Voided --> [*]
+    Refunded --> [*]
+```
+
+Multi-file JSON persistence is not atomic. The service uses an in-process branch lock to serialize its own mixed-basket workflows and the existing per-file inventory mutation lock to prevent overselling. Checkout removes stock before saving the transaction and compensates it if save fails; if a process ends between writes or a compensation write fails, reconciliation is required. Refund persists its status before restoring inventory and explicitly reports a restoration failure; voiding an open basket restores no stock because checkout only removes stock when it marks a transaction paid. These guarantees do not coordinate multiple application processes sharing JSON files, nor do they provide database-grade atomicity.
+
 ## Planned HTTP request flow
 
 The following is an intended design, not current functionality. Components marked **planned** do not yet exist in the implementation.
