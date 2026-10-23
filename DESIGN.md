@@ -178,7 +178,7 @@ Missing files are treated as empty repositories. Empty, null, malformed, and dom
 
 ## Step 8 deterministic demo seed data
 
-`DemoDataSeeder` is an Infrastructure component, not a web startup action. It builds valid Domain entities and saves branches, counters, staff, products, and inventory through the existing JSON repositories. It also writes Infrastructure-owned `shipping-rates.json` and `historical-transactions.json` snapshots because the current Application model has no rate repository or transaction aggregate. These records are seed data for future configuration/report consumers, not transaction, reporting, or authentication workflows.
+`DemoDataSeeder` is an Infrastructure component, not a web startup action. It builds valid Domain entities and saves branches, counters, staff, products, and inventory through the existing JSON repositories. It also writes `shipping-rates.json`, now consumed by `JsonShippingRateProvider` through the Application `IShippingRateProvider` abstraction, and `historical-transactions.json`, which remains a seed snapshot because there is no transaction aggregate. These records do not implement transaction, reporting, or authentication workflows.
 
 ```mermaid
 flowchart LR
@@ -226,6 +226,27 @@ flowchart TB
 ```
 
 The JSON lock is process-wide and keyed by the inventory file path, so concurrent operations through JSON repository instances in one application process cannot oversell. It is not a cross-process lock and does not provide distributed transactions. Low-stock alerts are sent only on a downward threshold crossing and are awaited; without an outbox, a notification delivery failure can be reported after persistence, and delivery is not retried in this step.
+
+## Step 10 shipping workflow
+
+`ShippingWorkflowService` is an Application-layer coordinator. It translates raw request data into the existing validated Domain `Shipment` and value objects, checks the origin branch through `IBranchRepository`, obtains storage-agnostic configured rates through `IShippingRateProvider`, delegates all matching, fixed-price, and maximum-weight behavior to `ShippingPriceCalculator`, then saves through `IShipmentRepository`. `JsonShippingRateProvider` is the Infrastructure implementation that reads `shipping-rates.json` asynchronously.
+
+```mermaid
+flowchart LR
+    Input[Shipment creation request] --> Values[Create Domain value objects and Shipment]
+    Values --> Branch{Origin branch exists and is open?}
+    Branch -->|No| RejectBranch[Not-found or closed-branch error]
+    Branch -->|Yes| Duplicate{Shipment id already exists?}
+    Duplicate -->|Yes| RejectDuplicate[Duplicate-id error]
+    Duplicate -->|No| Rates[Load configured rates via IShippingRateProvider]
+    Rates --> Price[ShippingPriceCalculator]
+    Price --> Eligible{One matching rate and within max weight?}
+    Eligible -->|No| RejectRate[Rate or weight validation error]
+    Eligible -->|Yes| Save[Save through IShipmentRepository]
+    Save --> Result[Shipment and configured price]
+```
+
+The workflow does not define rates, formulas, dimensional surcharges, or a universal service limit. `shipping-rates.json` configuration supplies one fixed charge and maximum weight for each applicable type/service/zone. The current Domain model requires positive dimensions for every shipment, including a letter, and no additional type-specific dimensions are invented. Persistence I/O errors propagate unchanged; missing origin branches and shipment retrieval use explicit Application exceptions. Courier integrations, labels, MVC, and transaction composition remain planned.
 
 ## Planned HTTP request flow
 

@@ -30,6 +30,8 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 - Shipping pricing selects exactly one configured fixed charge using shipment type, service level, and destination zone. It rejects shipments whose weight is above that rate's configured maximum; a weight equal to the maximum is accepted.
 - `InventoryService` coordinates branch/product stock changes through atomic repository updates. Adds and removals require positive quantities; a general adjustment must be non-zero. Domain inventory rejects any removal that would make stock negative.
 - A low-stock notification is prepared only when stock crosses from above a configured non-negative threshold to at/below it. Notification delivery is an existing Application abstraction; no delivery implementation is introduced here.
+- `ShippingWorkflowService` creates a shipment only when its origin branch exists and is open, its identifier is unused, and `ShippingPriceCalculator` finds exactly one configured rate for its type, service level, and destination zone.
+- The selected rate supplies the fixed price and maximum weight. A shipment at the limit is accepted; one above it is rejected before persistence. The current shipment model requires strictly positive dimensions for letters and parcels alike; no letter defaults or further dimension limits are inferred.
 
 ### Demo seed data
 
@@ -40,7 +42,7 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 
 ### Deferred to future steps
 
-- JSON configuration loading and persistence for shipping rates are not implemented for runtime application use; Step 8 creates deterministic rate seed snapshots for future configuration consumers, while callers currently supply rate data directly to the calculator.
+- `JsonShippingRateProvider` loads `shipping-rates.json` for runtime workflow use. Configuration must contain exactly one valid rate for a supported type/service/zone combination; missing or ambiguous rates are rejected by the pricing component.
 - The high-value threshold and same-transaction linkage for money-order identity verification require transaction composition and configuration.
 - Counter transaction line items, pricing, tax, voids, refunds, Branch Manager authorization, and reason capture require later transaction workflows.
 - Branch closure must be coordinated with counter transaction creation in a later workflow; this step exposes branch state without adding a transaction process.
