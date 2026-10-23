@@ -2,12 +2,12 @@
 
 ## Current architecture
 
-The solution is structured as a layered application. The Domain layer provides validated value objects and core entities, while Application owns contracts for persistence and external capabilities. Use cases, concrete persistence, and application-specific MVC workflows are not yet implemented.
+The solution is structured as a layered application. The Domain layer provides validated value objects and core entities, while Application owns contracts for persistence and external capabilities plus deterministic pricing calculators. Concrete persistence and application-specific MVC workflows are not yet implemented.
 
 | Project | Responsibility | Current state |
 | --- | --- | --- |
 | `ApexPost.Domain` | Business entities, value objects, and invariants. | Core entities and local invariants implemented; workflows planned. |
-| `ApexPost.Application` | Use cases, service contracts, repository abstractions, and external-capability contracts. | Repository, audit, notification, and current-staff-context contracts implemented; services planned. |
+| `ApexPost.Application` | Use cases, service contracts, repository abstractions, external-capability contracts, and pricing rules. | Repository, audit, notification, current-staff-context contracts, and pricing calculators implemented; services planned. |
 | `ApexPost.Infrastructure` | Technical adapters, including planned JSON persistence. | Project shell only. |
 | `ApexPost.Web` | ASP.NET Core MVC UI and composition root. | Minimal MVC template; no application-specific registration or workflow. |
 | `ApexPost.Domain.Tests` | Unit tests for Domain. | Value-object and entity unit tests implemented. |
@@ -56,6 +56,34 @@ flowchart LR
     Repository -. implemented by .-> Infrastructure[Infrastructure adapter<br/>planned]
     Capability -. implemented by .-> Infrastructure
     Repository --> Domain[Domain entity/value object<br/>implemented]
+```
+
+## Pricing rules
+
+Application owns the calculation logic. `RetailPriceCalculator` multiplies a `Product`'s existing `Money` unit price by a positive quantity, preserving decimal precision without rounding. `ShippingPriceCalculator` receives a `ShippingPricingRequest` and caller-supplied `ShippingRate` collection. A rate has a shipment type (`Letter` or `Parcel`), service level (`Standard`, `Express`, or `Registered`), destination zone, fixed `Money` charge, and maximum `ParcelWeight`.
+
+The calculator requires exactly one matching rate and rejects a shipment above the selected rate's maximum weight; an equal weight is permitted. The assignment repository supplies no authoritative charge, formula, rounding rule, or dimensional surcharge, so the fixed charges and maximum weights are configuration data. Dimensions remain part of the validated `Shipment` but do not currently affect price. Infrastructure-based rate loading is planned.
+
+```mermaid
+flowchart LR
+    Product[Product + quantity] --> Retail[RetailPriceCalculator<br/>implemented]
+    Retail --> RetailPrice[Money result]
+    Shipment[Shipment + type + service level] --> Request[ShippingPricingRequest<br/>implemented]
+    Request --> Shipping[ShippingPriceCalculator<br/>implemented]
+    Rates[Caller-supplied ShippingRate data<br/>implemented contract data] --> Shipping
+    Shipping --> ShippingPrice[Money result or validation error]
+    PlannedConfig[Infrastructure configuration loader<br/>planned] -. supplies .-> Rates
+```
+
+```mermaid
+flowchart LR
+    Input[Pricing request and rates] --> Validate[Validate request and rate match]
+    Validate --> Match{Exactly one rate?}
+    Match -->|No| RateError[Validation error]
+    Match -->|Yes| Weight{Within configured maximum weight?}
+    Weight -->|No| WeightError[Ineligible shipment error]
+    Weight -->|Yes| Calculate[Return configured shipping charge or retail multiplication]
+    Calculate --> Result[Money result]
 ```
 
 ## Domain value objects
@@ -132,7 +160,7 @@ flowchart LR
     Infrastructure --> Files[(JSON files<br/>planned)]
 ```
 
-MVC, Razor Views, and the template HTTP pipeline are present through the ASP.NET Core template. Application contracts are implemented; the depicted application services, JSON implementations, and JSON files remain planned.
+MVC, Razor Views, and the template HTTP pipeline are present through the ASP.NET Core template. Application contracts and pricing calculators are implemented; the depicted application services, JSON implementations, and JSON files remain planned.
 
 ## Test structure
 
@@ -140,4 +168,4 @@ Each test project references only the layer it tests: Domain Tests references Do
 
 ## Planned architectural components
 
-Later steps may add application services and workflows, JSON persistence adapters, dependency-injection registrations, authentication and authorization, and MVC workflows. Domain entities and Application contracts are already implemented; concrete contract implementations are not.
+Later steps may add application services and workflows, JSON persistence adapters, dependency-injection registrations, authentication and authorization, and MVC workflows. Domain entities, Application contracts, and pricing calculators are already implemented; concrete contract implementations are not.
