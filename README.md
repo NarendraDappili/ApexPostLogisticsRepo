@@ -66,3 +66,9 @@ dotnet test ApexPost.slnx --no-build
 `ApexPost.Infrastructure` implements the seven existing Application repository interfaces with asynchronous JSON files; no database or ORM is used. Create repositories with `JsonRepositoryOptions { DataDirectory = "<application-data-directory>" }`. The directory is configuration, not a secret, and is intentionally not wired into the template web app yet.
 
 Files below that directory are `branches.json`, `counters.json`, `staff-members.json`, `products.json`, `inventory.json`, `shipments.json`, and `money-orders.json`. Missing files behave as empty repositories. Empty or malformed JSON and filesystem failures are reported to the caller and are not overwritten.
+
+## Step 8 demo data
+
+`DemoDataSeeder` in Infrastructure creates deterministic, synthetic local demonstration data through the JSON repositories: 5 branches, 10 counters, 20 staff, 30 products, 150 inventory records, 10 zones with 60 shipping rates, and 40 historical retail records. It is intentionally not invoked from `Program.cs`; a future local composition step may opt in by constructing it with the same `JsonRepositoryOptions` used for persistence.
+
+Call `await new DemoDataSeeder(options).SeedAsync(cancellationToken)` only with an empty, local data directory. A completed `apexpost-demo-seed.json` manifest makes a rerun a no-op. Any non-empty directory without the matching manifest is rejected without modification, preventing accidental overwrite of user data. The generated people, identifiers, and transaction references are synthetic. No passwords, secrets, identity-document references, or real personal data are seeded.
