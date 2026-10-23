@@ -44,6 +44,25 @@ public sealed class JsonInventoryRepository(JsonRepositoryOptions options) : IIn
     public async Task<BranchInventoryItem?> FindAsync(BranchCode branchCode, ProductId productId, CancellationToken cancellationToken = default) =>
         (await _store.ReadAsync(static () => [], cancellationToken).ConfigureAwait(false)).FirstOrDefault(x => x.BranchCode == branchCode.Value && x.ProductId == productId.Value)?.ToEntity();
     public Task SaveAsync(BranchInventoryItem inventoryItem, CancellationToken cancellationToken = default) => JsonRepositorySave.SaveAsync(_store, inventoryItem, static x => $"{x.BranchCode}\u001f{x.ProductId}", InventoryDto.From, cancellationToken);
+    public Task<TResult> UpdateAsync<TResult>(BranchCode branchCode, ProductId productId, Func<BranchInventoryItem, TResult> update, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(branchCode);
+        ArgumentNullException.ThrowIfNull(productId);
+        ArgumentNullException.ThrowIfNull(update);
+        return _store.UpdateAsync(static () => [], items =>
+        {
+            var index = items.FindIndex(item => item.BranchCode == branchCode.Value && item.ProductId == productId.Value);
+            if (index < 0)
+            {
+                throw new InvalidOperationException("No inventory item exists for the branch and product.");
+            }
+
+            var item = items[index].ToEntity();
+            var result = update(item);
+            items[index] = InventoryDto.From(item);
+            return result;
+        }, cancellationToken);
+    }
 }
 
 public sealed class JsonShipmentRepository(JsonRepositoryOptions options) : IShipmentRepository

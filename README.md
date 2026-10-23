@@ -72,3 +72,9 @@ Files below that directory are `branches.json`, `counters.json`, `staff-members.
 `DemoDataSeeder` in Infrastructure creates deterministic, synthetic local demonstration data through the JSON repositories: 5 branches, 10 counters, 20 staff, 30 products, 150 inventory records, 10 zones with 60 shipping rates, and 40 historical retail records. It is intentionally not invoked from `Program.cs`; a future local composition step may opt in by constructing it with the same `JsonRepositoryOptions` used for persistence.
 
 Call `await new DemoDataSeeder(options).SeedAsync(cancellationToken)` only with an empty, local data directory. A completed `apexpost-demo-seed.json` manifest makes a rerun a no-op. Any non-empty directory without the matching manifest is rejected without modification, preventing accidental overwrite of user data. The generated people, identifiers, and transaction references are synthetic. No passwords, secrets, identity-document references, or real personal data are seeded.
+
+## Step 9 inventory behavior
+
+`InventoryService` in Application provides branch-specific available-stock lookup, positive stock additions/removals, and non-zero signed adjustments. A removal or negative adjustment that exceeds available stock fails without persisting a change. Construct it with `IInventoryRepository`, `InventoryServiceOptions` (non-negative low-stock threshold and recipient), and optionally the existing `INotificationSender`; no delivery adapter is implemented here.
+
+The JSON repository performs every inventory mutation inside its per-file in-process lock, preventing same-process read–modify–write overselling across service/repository instances. It does not coordinate multiple application processes sharing a directory. Low-stock notification is awaited only when a change crosses from above the threshold to at/below it; a delivery failure is surfaced after the stock change is already persisted.

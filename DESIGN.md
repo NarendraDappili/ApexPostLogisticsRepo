@@ -194,6 +194,39 @@ flowchart LR
 
 The seeder accepts only a nonexistent or empty configured data directory. It writes the fixed `apexpost-demo-v1` manifest last; a matching manifest makes a later call a no-op. If any unmarked data or an incompatible manifest exists, it fails without changing files. This protects user data but cannot make a failed multi-file initial seed atomic: a partial seed has no completion manifest and must be inspected or removed explicitly by the local operator before retrying. All identities are synthetic and no document references, passwords, or secrets are produced.
 
+## Step 9 inventory application behavior
+
+`InventoryService` owns inventory orchestration in Application. `BranchInventoryItem` remains the Domain owner of positive-change and non-negative-stock invariants. The narrowly extended `IInventoryRepository.UpdateAsync` contract runs one mutation against one branch/product item without exposing an intervening read/write window. `JsonInventoryRepository` implements it inside the existing `inventory.json` per-file lock.
+
+```mermaid
+flowchart LR
+    Request[Add, remove, or signed adjustment] --> Validate{Valid quantity?}
+    Validate -->|No| Reject[Argument error]
+    Validate -->|Yes| Atomic[Repository UpdateAsync under inventory file lock]
+    Atomic --> Domain[BranchInventoryItem AddStock or RemoveStock]
+    Domain --> Enough{Stock sufficient?}
+    Enough -->|No| Fail[No file change; insufficient stock error]
+    Enough -->|Yes| Persist[Persist updated inventory item]
+    Persist --> Threshold{Crossed low-stock threshold?}
+    Threshold -->|Yes| Notify[Await NotificationSender]
+    Threshold -->|No| Result[Return available quantity]
+    Notify --> Result
+```
+
+```mermaid
+flowchart TB
+    Lookup[Branch + product] --> Item{Inventory item exists?}
+    Item -->|No| Missing[Missing-item error]
+    Item -->|Yes| Read[Return branch-specific quantity]
+    Remove[Removal request] --> Lock[Same-process JSON file lock]
+    Lock --> Recheck[Read current quantity within mutation]
+    Recheck --> Compare{Requested <= current?}
+    Compare -->|No| Reject[Reject without write]
+    Compare -->|Yes| Save[Save non-negative quantity]
+```
+
+The JSON lock is process-wide and keyed by the inventory file path, so concurrent operations through JSON repository instances in one application process cannot oversell. It is not a cross-process lock and does not provide distributed transactions. Low-stock alerts are sent only on a downward threshold crossing and are awaited; without an outbox, a notification delivery failure can be reported after persistence, and delivery is not retried in this step.
+
 ## Planned HTTP request flow
 
 The following is an intended design, not current functionality. Components marked **planned** do not yet exist in the implementation.
