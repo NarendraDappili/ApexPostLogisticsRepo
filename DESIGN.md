@@ -364,6 +364,28 @@ flowchart TD
 
 Cookies are validated against the persisted staff record on every authenticated request. The application service remains the final authority for manager assignment, active staff status, transaction status transitions, and reversal reasons; endpoint policies reduce the HTTP attack surface but do not replace Domain/Application invariants.
 
+## Step 16 middleware pipeline
+
+```mermaid
+flowchart TD
+    Request --> Correlation[Correlation ID: validate/generate and echo]
+    Correlation --> Timing[Structured request timing/logging]
+    Timing --> Errors[Safe Problem Details exception boundary]
+    Errors --> Headers[Security headers via OnStarting]
+    Headers --> HTTPS[HSTS outside Development + HTTPS redirect]
+    HTTPS --> Routing[Endpoint routing]
+    Routing --> Maintenance[Maintenance mode; /health bypass]
+    Maintenance --> CORS[Approved partner CORS policy]
+    CORS --> Limits[Login/partner rate limits]
+    Limits --> ApiKey[Integration API-key metadata check]
+    ApiKey --> IP[Integration/admin IP allowlist metadata check]
+    IP --> Cookie[Cookie authentication]
+    Cookie --> Authz[Role and branch authorization]
+    Authz --> Endpoint[MVC, integration, or health endpoint]
+```
+
+Correlation runs first so every later log/error response has an ID. Timing surrounds the exception boundary so failures are measured. Headers are registered before short-circuiting controls. Routing precedes endpoint-metadata middleware; CORS handles approved preflight requests before API-key checks. API-key and IP checks occur before cookie processing because the integration endpoint is partner-authenticated rather than user-authenticated. `/health` is mapped after the pipeline but bypasses maintenance by path so infrastructure can still observe the service.
+
 ```mermaid
 flowchart TD
     Login[Login UI placeholder] --> Dashboard[Branch dashboard]

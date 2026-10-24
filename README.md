@@ -120,3 +120,15 @@ dotnet user-secrets set --project src/ApexPost.Web "ApexPost:Authentication:Demo
 ```
 
 The configuration key is `ApexPost:Authentication:DemoAccounts:<StaffId>`; its value is the local demo password. It is intentionally absent from `appsettings.json`. This mechanism is for local assignment demonstration only, not production credential storage. The auth cookie is HttpOnly, SameSite=Strict, uses an eight-hour sliding expiration, and is marked Secure when the request uses HTTPS. Run the app over HTTPS outside local development.
+
+## Step 16 middleware and integration security
+
+The web pipeline adds correlation IDs, structured request timing, safe JSON Problem Details for unhandled failures, security headers, maintenance mode, CORS, rate limiting, integration API-key/IP controls, cookie authentication/authorization, and `/health`. Valid incoming `X-Correlation-Id` values are reused; otherwise the application generates one and always returns it in the response. Logs contain the correlation ID, method, path, response status, and elapsed time, but never passwords, API keys, document numbers, or payment data.
+
+Configuration keys (without values) are: `ApexPost:Maintenance:Enabled`, `ApexPost:Maintenance:RetryAfterSeconds`, `ApexPost:RateLimiting:LoginPermitLimit`, `ApexPost:RateLimiting:IntegrationPermitLimit`, `ApexPost:Security:PartnerTrackingWidgetOrigin`, `ApexPost:Security:Integration:AllowedIps`, and `ApexPost:Security:Integration:ApiKey`. Store the API key only in user secrets or deployment secret storage, for example:
+
+```powershell
+dotnet user-secrets set --project src/ApexPost.Web "ApexPost:Security:Integration:ApiKey" "<local-integration-key>"
+```
+
+Maintenance mode returns `503` with `Retry-After` for normal paths but does not block `/health`. `/integration/parcel-status` is a creation-snapshot integration endpoint protected by API key, IP allowlist, partner rate limit, and the approved tracking-widget CORS policy. CORS only controls browser origin access; it is not authentication. Deploy behind a proxy only after configuring forwarded headers and trusted proxies so the IP allowlist sees a trustworthy client IP.
