@@ -1,0 +1,10 @@
+@model ApexPost.Web.Models.ShipmentFormViewModel
+@using ApexPost.Domain.Enums
+@{ ViewData["Title"] = "Create shipment"; }
+<h1>Create shipment</h1>
+<form asp-action="Create" method="post"><div asp-validation-summary="ModelOnly" class="text-danger"></div>
+<div class="row"><div class="col-md-4"><label asp-for="ShipmentId"></label><input asp-for="ShipmentId" class="form-control" /></div><div class="col-md-4"><label asp-for="OriginBranchCode"></label><input asp-for="OriginBranchCode" class="form-control" /></div><div class="col-md-4"><label asp-for="DestinationZoneCode"></label><input asp-for="DestinationZoneCode" class="form-control" /></div></div>
+<div class="row mt-3"><div class="col-md-3"><label asp-for="ShipmentType"></label><select asp-for="ShipmentType" asp-items="Html.GetEnumSelectList<ShipmentType>()" class="form-select"></select></div><div class="col-md-3"><label asp-for="ServiceLevel"></label><select asp-for="ServiceLevel" asp-items="Html.GetEnumSelectList<ShippingServiceLevel>()" class="form-select"></select></div><div class="col-md-3"><label asp-for="WeightKilograms"></label><input asp-for="WeightKilograms" class="form-control" /></div></div>
+<div class="row mt-3"><div class="col-md-3"><label asp-for="LengthCentimetres"></label><input asp-for="LengthCentimetres" class="form-control" /></div><div class="col-md-3"><label asp-for="WidthCentimetres"></label><input asp-for="WidthCentimetres" class="form-control" /></div><div class="col-md-3"><label asp-for="HeightCentimetres"></label><input asp-for="HeightCentimetres" class="form-control" /></div></div>
+<button class="btn btn-primary mt-3">Create label preview</button></form>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

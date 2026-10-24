@@ -1,0 +1,11 @@
+@model ApexPost.Web.Models.ReportsViewModel
+@{ ViewData["Title"] = "Branch reports"; }
+<h1>Branch reports</h1>
+<form method="get" class="row g-2 mb-3"><div class="col-md-3"><label for="branchCode">Branch code</label><input id="branchCode" name="branchCode" value="@Model?.BranchCode" class="form-control" required /></div><div class="col-md-3"><label for="day">Day</label><input id="day" name="day" type="date" value="@Model?.Day.ToString("yyyy-MM-dd")" class="form-control" /></div><div class="col-md-2 align-self-end"><button class="btn btn-primary">Run reports</button></div></form>
+@if (Model is null) { <p class="text-muted">Choose a branch to view its branch-scoped reports.</p> }
+else {
+<h2>Daily sales: @Model.Day</h2><dl class="row"><dt class="col-sm-3">Retail</dt><dd class="col-sm-9">@Model.DailySales.RetailSales.Amount.ToString("0.00")</dd><dt class="col-sm-3">Services</dt><dd class="col-sm-9">@Model.DailySales.ServiceSales.Amount.ToString("0.00")</dd><dt class="col-sm-3">Tax</dt><dd class="col-sm-9">@Model.DailySales.Tax.Amount.ToString("0.00")</dd><dt class="col-sm-3">Paid transactions</dt><dd class="col-sm-9">@Model.DailySales.PaidTransactionCount</dd></dl>
+<h2>Low stock (threshold: @Model.LowStock.Threshold)</h2><ul>@foreach (var item in Model.LowStock.Items) { <li>@item.ProductId.Value: @item.Quantity</li> }</ul>
+<h2>Shipping volume</h2><ul>@foreach (var item in Model.Shipping.Items) { <li>@item.DestinationZoneCode.Value / @item.ServiceLevel: @item.Count</li> }</ul>
+<h2>Money orders and verification</h2><dl class="row"><dt class="col-sm-3">Orders</dt><dd class="col-sm-9">@Model.MoneyOrders.TotalCount</dd><dt class="col-sm-3">Verified</dt><dd class="col-sm-9">@Model.MoneyOrders.VerifiedCount</dd><dt class="col-sm-3">Failed</dt><dd class="col-sm-9">@Model.MoneyOrders.FailedCount</dd><dt class="col-sm-3">Pending</dt><dd class="col-sm-9">@Model.MoneyOrders.PendingCount</dd></dl>
+}

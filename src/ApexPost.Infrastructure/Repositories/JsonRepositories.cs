@@ -35,6 +35,8 @@ public sealed class JsonProductRepository(JsonRepositoryOptions options) : IProd
     private readonly JsonFileStore<List<ProductDto>> _store = new(options, "products.json");
     public async Task<Product?> FindByIdAsync(ProductId id, CancellationToken cancellationToken = default) =>
         (await _store.ReadAsync(static () => [], cancellationToken).ConfigureAwait(false)).FirstOrDefault(x => x.Id == id.Value)?.ToEntity();
+    public async Task<IReadOnlyCollection<Product>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        (await _store.ReadAsync(static () => [], cancellationToken).ConfigureAwait(false)).Select(item => item.ToEntity()).OrderBy(item => item.Id.Value).ToArray();
     public Task SaveAsync(Product product, CancellationToken cancellationToken = default) => JsonRepositorySave.SaveAsync(_store, product, static x => x.Id, ProductDto.From, cancellationToken);
 }
 

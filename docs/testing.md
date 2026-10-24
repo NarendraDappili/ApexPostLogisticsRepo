@@ -26,6 +26,8 @@ Step 12 adds mixed-counter-transaction tests for retail/service totals and confi
 
 Step 13 adds report tests for paid-sales grouping/totals, UTC date boundaries, branch isolation, low-stock thresholds, shipping zone/service grouping, privacy-safe money-order verification counts, and cancellation. Notification tests cover high-value money orders, void/refund delivery, and delivery failures after persisted state.
 
+Step 14 replaces the template Web test with deterministic MVC integration tests using `WebApplicationFactory`: all required GET routes render successfully, and a POST with a valid antiforgery token but missing login input returns the validation view. The tests use the application’s local test-host data directory only; no demo data or external service is required.
+
 Later steps should add focused unit tests for domain invariants and application use cases, plus web integration tests for relevant HTTP behavior. Tests should verify the assignment rules described in [business-rules.md](business-rules.md) and security-sensitive behavior described in [security.md](security.md) as those features are implemented.
 
 ## Commands
