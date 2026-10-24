@@ -10,8 +10,11 @@ using ApexPost.Domain.ValueObjects;
 using ApexPost.Infrastructure.Persistence;
 using ApexPost.Infrastructure.Pricing;
 using ApexPost.Infrastructure.Repositories;
+using ApexPost.Infrastructure.Auditing;
 using ApexPost.Web.Services;
 using ApexPost.Web.Security;
+using ApexPost.Web.Filters;
+using ApexPost.Application.Auditing;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
@@ -20,7 +23,13 @@ using System.Threading.RateLimiting;
 using ApexPost.Web.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews(options =>
+{
+    options.Filters.AddService<AuditActionFilter>();
+    options.Filters.AddService<ValidationActionFilter>();
+    options.Filters.AddService<PerformanceActionFilter>();
+});
+builder.Services.Configure<ActionPerformanceOptions>(builder.Configuration.GetSection("ApexPost:Performance"));
 builder.Services.AddProblemDetails();
 builder.Services.Configure<MaintenanceOptions>(builder.Configuration.GetSection("ApexPost:Maintenance"));
 builder.Services.Configure<IntegrationSecurityOptions>(builder.Configuration.GetSection("ApexPost:Security:Integration"));
@@ -72,6 +81,10 @@ builder.Services.AddSingleton<IShipmentRepository, JsonShipmentRepository>();
 builder.Services.AddSingleton<IMoneyOrderRepository, JsonMoneyOrderRepository>();
 builder.Services.AddSingleton<ICounterTransactionRepository, JsonCounterTransactionRepository>();
 builder.Services.AddSingleton<IShippingRateProvider, JsonShippingRateProvider>();
+builder.Services.AddSingleton<IAuditStore, JsonAuditStore>();
+builder.Services.AddScoped<AuditActionFilter>();
+builder.Services.AddScoped<ValidationActionFilter>();
+builder.Services.AddScoped<PerformanceActionFilter>();
 builder.Services.AddSingleton<INotificationSender, LoggingNotificationSender>();
 builder.Services.AddSingleton<LocalStaffAuthenticator>();
 

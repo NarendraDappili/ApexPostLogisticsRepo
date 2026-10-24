@@ -1,6 +1,6 @@
 namespace ApexPost.Application.Auditing;
 
-public interface IAuditWriter
+public interface IAuditWriter : IAuditStore
 {
     Task WriteAsync(AuditRecord record, CancellationToken cancellationToken = default);
 }
