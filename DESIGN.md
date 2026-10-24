@@ -330,25 +330,37 @@ flowchart LR
 
 Notifications are observer-style calls through the existing Application abstraction, not an external provider. Each is sent after the relevant persistence succeeds; a delivery failure is observable to the caller but is not a distributed transaction and does not undo the stock/order/transaction state. Reports intentionally omit money-order sender, recipient, document type, and masked reference.
 
-## Planned HTTP request flow
-
-The following is an intended design, not current functionality. Components marked **planned** do not yet exist in the implementation.
+## Step 14 MVC request flow
 
 ```mermaid
 flowchart LR
-    Client[Client] --> Middleware[ASP.NET Core middleware<br/>planned pipeline configuration]
-    Middleware --> Controller[MVC controllers / Razor Views<br/>planned application workflows]
-    Controller --> AppService[Application services<br/>planned]
-    AppService --> Repository[Repository abstractions<br/>planned]
-    Repository --> Infrastructure[Infrastructure JSON implementations<br/>implemented]
-    Infrastructure --> Files[(JSON files<br/>configured at composition time)]
+    Client[Browser] --> Routing[Conventional MVC routing]
+    Routing --> Controller[Thin controller + view model validation]
+    Controller --> AppService[Application workflow or report service]
+    AppService --> Repository[Application repository abstraction]
+    Repository --> Infrastructure[Infrastructure JSON implementation]
+    Infrastructure --> Files[(Configured JSON files)]
+    Controller --> Razor[Razor View / PRG redirect]
 ```
 
-MVC, Razor Views, and the template HTTP pipeline are present through the ASP.NET Core template. Application contracts and pricing calculators are implemented; the depicted application services, JSON implementations, and JSON files remain planned.
+Controllers convert HTTP/view-model input into Application requests and return Views, redirects after successful POSTs, or relevant HTTP status results. They do not contain pricing, stock, verification, or persistence rules. Authentication/authorization is explicitly outside this step, despite the login UI placeholder.
+
+```mermaid
+flowchart TD
+    Login[Login UI placeholder] --> Dashboard[Branch dashboard]
+    Dashboard --> Catalogue[Catalogue and branch stock]
+    Catalogue --> Basket[Counter basket]
+    Dashboard --> Shipping[Create shipment]
+    Shipping --> Label[Shipping-label preview]
+    Dashboard --> Money[Money order + identity form]
+    Dashboard --> Reports[Branch reports]
+    Basket --> Receipt[POST then redirect]
+    Money --> Receipt
+```
 
 ## Test structure
 
-Each test project references only the layer it tests: Domain Tests references Domain, Application Tests references Application, and Web Integration Tests references Web. The projects use xUnit; Web Integration Tests also references `Microsoft.AspNetCore.Mvc.Testing` for its planned web-hosting setup. Application-specific tests and use of that hosting setup are planned for later steps.
+Each test project references only the layer it tests: Domain Tests references Domain, Application Tests references Application, and Web Integration Tests references Web. The projects use xUnit; Web Integration Tests uses `Microsoft.AspNetCore.Mvc.Testing` to exercise MVC routes and form validation through a test host.
 
 ## Planned architectural components
 

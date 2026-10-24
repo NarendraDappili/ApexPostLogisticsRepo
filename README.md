@@ -102,3 +102,9 @@ Checkout requires an open branch and counter plus an active Counter Clerk assign
 `BranchReportService` provides branch-scoped daily sales (retail/service/tax), low stock, shipping volume by zone/service level, and money-order verification counts. Report outputs contain counts, totals, product IDs, zones, and verification outcomes only; sender, recipient, document type, and masked identity data are excluded. Low-stock reports accept an explicit non-negative threshold from their caller.
 
 `INotificationSender` now receives simulated low-stock crossing alerts, successful high-value-money-order alerts, and every successful void/refund alert. Delivery is awaited after the related state is persisted; failures are propagated and do not roll back that persisted state. No external notification provider is implemented.
+
+## Step 14 MVC and Razor Views
+
+Run the local web application with `dotnet run --project src/ApexPost.Web`. The default conventional route is `https://localhost:<assigned-port>/`; `dotnet run` prints the actual launch URL. The MVC screens cover a clearly marked login UI placeholder, branch dashboard, catalogue/branch stock, counter basket, shipment creation and label preview, money order/identity-verification form, and branch reports. Authentication and authorization are deliberately not implemented, so the screens must not be treated as access control.
+
+`ApexPost:DataDirectory` defaults to the local `src/ApexPost.Web/App_Data` directory. It holds JSON data and local ASP.NET Core data-protection keys for antiforgery; it is ignored by Git. It starts empty. For synthetic demo data, call the existing `DemoDataSeeder` explicitly against that empty directory before using data-dependent screens; the web app never overwrites or seeds existing data automatically. The shown threshold and tax settings are local development configuration, not production policy.

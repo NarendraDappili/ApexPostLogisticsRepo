@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] - ApexPost.Web</title>
+    <title>@ViewData["Title"] - ApexPost Logistics</title>
     <script type="importmap"></script>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
@@ -13,7 +13,7 @@
     <header>
         <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
             <div class="container-fluid">
-                <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">ApexPost.Web</a>
+                <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">ApexPost Logistics</a>
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
                         aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
@@ -26,6 +26,13 @@
                         <li class="nav-item">
                             <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
                         </li>
+                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="Branch" asp-action="Dashboard">Branch</a></li>
+                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="Catalogue" asp-action="Index">Catalogue</a></li>
+                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="CounterTransactions" asp-action="New">Counter basket</a></li>
+                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="Shipping" asp-action="Create">Shipping</a></li>
+                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="MoneyOrders" asp-action="Create">Money orders</a></li>
+                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="Reports" asp-action="Index">Reports</a></li>
+                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="Account" asp-action="Login">Login</a></li>
                     </ul>
                 </div>
             </div>

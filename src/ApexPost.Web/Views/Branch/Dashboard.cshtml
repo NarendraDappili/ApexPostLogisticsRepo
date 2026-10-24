@@ -1,0 +1,6 @@
+@model ApexPost.Web.Models.BranchDashboardViewModel
+@{ ViewData["Title"] = "Branch dashboard"; }
+<h1>Branch dashboard</h1>
+<form method="get" class="row g-2 mb-3"><div class="col-sm-4"><label for="branchCode" class="form-label">Branch code</label><input id="branchCode" name="branchCode" value="@Model.BranchCode" class="form-control" /></div><div class="col-sm-2 align-self-end"><button class="btn btn-primary">View</button></div></form>
+@if (Model.Message is not null) { <p class="text-muted">@Model.Message</p> }
+@if (Model.BranchName is not null) { <dl><dt>Name</dt><dd>@Model.BranchName</dd><dt>Status</dt><dd>@(Model.IsOpen == true ? "Open" : "Closed")</dd></dl> }
