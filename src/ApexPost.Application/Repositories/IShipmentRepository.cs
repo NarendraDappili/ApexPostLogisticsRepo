@@ -8,4 +8,5 @@ public interface IShipmentRepository
     Task<Shipment?> FindByIdAsync(ShipmentId id, CancellationToken cancellationToken = default);
 
     Task SaveAsync(Shipment shipment, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<Shipment>> FindByOriginBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default);
 }

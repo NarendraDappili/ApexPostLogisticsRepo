@@ -1,4 +1,5 @@
 using ApexPost.Application.Repositories;
+using ApexPost.Application.Notifications;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
@@ -11,8 +12,9 @@ public sealed class MoneyOrderWorkflowService
     private readonly IBranchRepository _branches;
     private readonly IMoneyOrderRepository _moneyOrders;
     private readonly IMoneyOrderPolicy _policy;
+    private readonly INotificationSender? _notifications;
 
-    public MoneyOrderWorkflowService(IBranchRepository branches, IMoneyOrderRepository moneyOrders, IMoneyOrderPolicy policy)
+    public MoneyOrderWorkflowService(IBranchRepository branches, IMoneyOrderRepository moneyOrders, IMoneyOrderPolicy policy, INotificationSender? notifications = null)
     {
         ArgumentNullException.ThrowIfNull(branches);
         ArgumentNullException.ThrowIfNull(moneyOrders);
@@ -20,6 +22,7 @@ public sealed class MoneyOrderWorkflowService
         _branches = branches;
         _moneyOrders = moneyOrders;
         _policy = policy;
+        _notifications = notifications;
     }
 
     public async Task<MoneyOrderCreationResult> CreateAsync(MoneyOrderCreationRequest request, CancellationToken cancellationToken = default)
@@ -54,6 +57,10 @@ public sealed class MoneyOrderWorkflowService
         }
 
         await _moneyOrders.SaveAsync(moneyOrder, cancellationToken).ConfigureAwait(false);
+        if (requiresVerification && _notifications is not null)
+        {
+            await _notifications.SendAsync(new NotificationMessage("compliance-alerts@example.test", "ApexPost high-value money order", $"Money order {moneyOrder.Id.Value} at {moneyOrder.BranchCode.Value} was verified."), cancellationToken).ConfigureAwait(false);
+        }
         return new MoneyOrderCreationResult(moneyOrder, moneyOrder.Total, requiresVerification);
     }
 

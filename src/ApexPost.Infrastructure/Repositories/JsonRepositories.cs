@@ -44,6 +44,8 @@ public sealed class JsonInventoryRepository(JsonRepositoryOptions options) : IIn
     public async Task<BranchInventoryItem?> FindAsync(BranchCode branchCode, ProductId productId, CancellationToken cancellationToken = default) =>
         (await _store.ReadAsync(static () => [], cancellationToken).ConfigureAwait(false)).FirstOrDefault(x => x.BranchCode == branchCode.Value && x.ProductId == productId.Value)?.ToEntity();
     public Task SaveAsync(BranchInventoryItem inventoryItem, CancellationToken cancellationToken = default) => JsonRepositorySave.SaveAsync(_store, inventoryItem, static x => $"{x.BranchCode}\u001f{x.ProductId}", InventoryDto.From, cancellationToken);
+    public async Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
+        (await _store.ReadAsync(static () => [], cancellationToken).ConfigureAwait(false)).Where(item => item.BranchCode == branchCode.Value).Select(item => item.ToEntity()).ToArray();
     public Task<TResult> UpdateAsync<TResult>(BranchCode branchCode, ProductId productId, Func<BranchInventoryItem, TResult> update, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(branchCode);
@@ -71,6 +73,8 @@ public sealed class JsonShipmentRepository(JsonRepositoryOptions options) : IShi
     public async Task<Shipment?> FindByIdAsync(ShipmentId id, CancellationToken cancellationToken = default) =>
         (await _store.ReadAsync(static () => [], cancellationToken).ConfigureAwait(false)).FirstOrDefault(x => x.Id == id.Value)?.ToEntity();
     public Task SaveAsync(Shipment shipment, CancellationToken cancellationToken = default) => JsonRepositorySave.SaveAsync(_store, shipment, static x => x.Id, ShipmentDto.From, cancellationToken);
+    public async Task<IReadOnlyCollection<Shipment>> FindByOriginBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
+        (await _store.ReadAsync(static () => [], cancellationToken).ConfigureAwait(false)).Where(item => item.OriginBranchCode == branchCode.Value).Select(item => item.ToEntity()).ToArray();
 }
 
 public sealed class JsonMoneyOrderRepository(JsonRepositoryOptions options) : IMoneyOrderRepository
@@ -79,6 +83,8 @@ public sealed class JsonMoneyOrderRepository(JsonRepositoryOptions options) : IM
     public async Task<MoneyOrder?> FindByIdAsync(MoneyOrderId id, CancellationToken cancellationToken = default) =>
         (await _store.ReadAsync(static () => [], cancellationToken).ConfigureAwait(false)).FirstOrDefault(x => x.Id == id.Value)?.ToEntity();
     public Task SaveAsync(MoneyOrder moneyOrder, CancellationToken cancellationToken = default) => JsonRepositorySave.SaveAsync(_store, moneyOrder, static x => x.Id, MoneyOrderDto.From, cancellationToken);
+    public async Task<IReadOnlyCollection<MoneyOrder>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
+        (await _store.ReadAsync(static () => [], cancellationToken).ConfigureAwait(false)).Where(item => item.BranchCode == branchCode.Value).Select(item => item.ToEntity()).ToArray();
 }
 
 internal static class JsonRepositorySave
@@ -105,8 +111,8 @@ internal sealed record ProductDto(string Id, string Name, decimal UnitPrice)
 { public static ProductDto From(Product x) => new(x.Id.Value, x.Name, x.UnitPrice.Amount); public Product ToEntity() => new(new ProductId(Id), Name, new(UnitPrice)); }
 internal sealed record InventoryDto(string BranchCode, string ProductId, int Quantity)
 { public static InventoryDto From(BranchInventoryItem x) => new(x.BranchCode.Value, x.ProductId.Value, x.Quantity); public BranchInventoryItem ToEntity() => new(new(BranchCode), new(ProductId), Quantity); }
-internal sealed record ShipmentDto(string Id, string OriginBranchCode, string DestinationZoneCode, decimal WeightKilograms, decimal LengthCentimetres, decimal WidthCentimetres, decimal HeightCentimetres)
-{ public static ShipmentDto From(Shipment x) => new(x.Id.Value, x.OriginBranchCode.Value, x.DestinationZoneCode.Value, x.Weight.Kilograms, x.Dimensions.LengthCentimetres, x.Dimensions.WidthCentimetres, x.Dimensions.HeightCentimetres); public Shipment ToEntity() => new(new(Id), new(OriginBranchCode), new(DestinationZoneCode), new(WeightKilograms), new(LengthCentimetres, WidthCentimetres, HeightCentimetres)); }
+internal sealed record ShipmentDto(string Id, string OriginBranchCode, string DestinationZoneCode, decimal WeightKilograms, decimal LengthCentimetres, decimal WidthCentimetres, decimal HeightCentimetres, ShipmentType ShipmentType, ShippingServiceLevel ServiceLevel)
+{ public static ShipmentDto From(Shipment x) => new(x.Id.Value, x.OriginBranchCode.Value, x.DestinationZoneCode.Value, x.Weight.Kilograms, x.Dimensions.LengthCentimetres, x.Dimensions.WidthCentimetres, x.Dimensions.HeightCentimetres, x.ShipmentType, x.ServiceLevel); public Shipment ToEntity() => new(new(Id), new(OriginBranchCode), new(DestinationZoneCode), new(WeightKilograms), new(LengthCentimetres, WidthCentimetres, HeightCentimetres), ShipmentType, ServiceLevel); }
 internal sealed record MoneyOrderDto(string Id, string BranchCode, decimal Amount, string Sender, string Recipient, decimal Fee, string TransactionContextId, IdentityVerificationOutcome VerificationOutcome, string? VerificationDocumentType, string? MaskedDocumentReference)
 {
     public static MoneyOrderDto From(MoneyOrder x) => new(x.Id.Value, x.BranchCode.Value, x.Amount.Amount, x.Sender, x.Recipient, x.Fee.Amount, x.TransactionContextId.Value, x.IdentityVerificationOutcome, x.IdentityVerification?.DocumentType, x.IdentityVerification?.MaskedDocumentReference.Value);

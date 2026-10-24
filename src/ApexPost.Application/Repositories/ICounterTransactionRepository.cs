@@ -7,4 +7,5 @@ public interface ICounterTransactionRepository
 {
     Task<CounterTransaction?> FindByIdAsync(CounterTransactionId id, CancellationToken cancellationToken = default);
     Task SaveAsync(CounterTransaction transaction, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<CounterTransaction>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default);
 }
