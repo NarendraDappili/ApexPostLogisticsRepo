@@ -1,6 +1,7 @@
 using ApexPost.Application.Auditing;
 using ApexPost.Infrastructure.Auditing;
 using ApexPost.Infrastructure.Persistence;
+using System.Text.Json;
 
 namespace ApexPost.Infrastructure.Tests;
 
@@ -19,6 +20,21 @@ public sealed class JsonAuditStoreTests : IAsyncLifetime
         var records = await store.ReadAsync();
         Assert.Equal(40, records.Count);
         Assert.Equal(40, records.Select(record => record.CorrelationId).Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
+    public async Task Cancellation_is_distinct_from_a_malformed_audit_file_failure()
+    {
+        var store = new JsonAuditStore(new JsonRepositoryOptions { DataDirectory = _directory });
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.AppendAsync(CreateRecord(1), cancellation.Token));
+        Assert.Empty(await store.ReadAsync());
+
+        Directory.CreateDirectory(_directory);
+        await File.WriteAllTextAsync(Path.Combine(_directory, "audit-records.json"), "not-json");
+        await Assert.ThrowsAsync<JsonException>(() => store.AppendAsync(CreateRecord(2)));
     }
 
     private static AuditRecord CreateRecord(int index) => new(

@@ -42,6 +42,12 @@ Infrastructure tests isolate every JSON test under a new temporary directory, in
 
 No implementation gap remains among the required cases for endpoints currently implemented. The known environmental limitation is that TestServer does not model a realistic remote client IP for the manager-reversal path; the endpoint is therefore denied by the real IP gate in that host. The independently blocked-IP integration-endpoint test validates the allowlist behavior. Cross-process JSON durability/tamper resistance also remains outside the guarantees of this project.
 
+## Step 19 concurrency and asynchronous test evidence
+
+Concurrency tests verify that concurrent same-process inventory removals and checkouts cannot oversell stock, concurrent JSON audit appends preserve every record, and JSON locking protects read-modify-write operations. The audit-store tests now also prove cancellation is reported as `OperationCanceledException` without creating a record, while malformed JSON is a separate `JsonException` failure. Existing Application/Infrastructure tests cover cancellation propagation for shipping, money orders, reports, repositories, and transaction checkout; notification-delivery failures are asserted separately from persistence outcomes.
+
+The checkout validation fan-out uses `Task.WhenAll` only for branch/counter/clerk/duplicate-ID reads, which target independent aggregates. Tests retain serialized assertions for stock and transaction mutations; no test assumes parallel writes. No benchmark is recorded because the repository has no supported benchmark harness or representative load data. Cache and `ValueTask` tests are intentionally absent because neither optimization is implemented: there is no measured repeated-read hot path that justifies cache invalidation complexity, and existing async operations are genuinely I/O-bound `Task` operations rather than commonly synchronous completions.
+
 Later steps should add focused unit tests for domain invariants and application use cases, plus web integration tests for relevant HTTP behavior. Tests should verify the assignment rules described in [business-rules.md](business-rules.md) and security-sensitive behavior described in [security.md](security.md) as those features are implemented.
 
 ## Commands

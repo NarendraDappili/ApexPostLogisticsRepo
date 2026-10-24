@@ -433,6 +433,28 @@ flowchart LR
 
 The security integration suite tests the full HTTP pipeline rather than individual middleware in isolation: headers/correlation IDs, API-key failure, IP deny, fixed-window rate limiting, authentication redirect, and unauthorized Clerk reversal requests. TestServer does not provide a realistic remote IP for manager reversal calls; those requests are expected to be denied by the existing IP gate, while the integration endpoint independently verifies the configured-blocked-IP behavior.
 
+## Step 19 concurrency and advanced C# review
+
+The codebase uses advanced C# features to support concrete concerns, not as a checklist. Immutable records and validated value objects carry business data safely; pattern matching selects status/rate behavior; generic `JsonFileStore<TDocument>` accepts `Func`/`Action` delegates so a document mutation remains inside its file lock; custom endpoint metadata selects MVC validation behavior; and `INotificationSender` is an awaited observer abstraction. All persistence/workflow calls are asynchronous and take a `CancellationToken`; cancellation tests keep it distinct from malformed-data and I/O failures.
+
+`SemaphoreSlim` is used for same-process per-file serialization and per-branch checkout/reversal serialization. Both acquisition paths pass cancellation to `WaitAsync` and release only in `finally`. Checkout validation now fans out branch, counter, clerk, and duplicate-ID reads using `Task.WhenAll`: they query independent aggregates and have no ordering dependency. It intentionally does not parallelize stock changes, transaction persistence, compensation, report reads, or audit writes—those require ordering, coherent behavior, or lock protection.
+
+```mermaid
+flowchart TD
+    Checkout[Checkout request] --> Gate[Per-branch SemaphoreSlim]
+    Gate --> Reads[Independent validation reads]
+    Reads --> Fanout[Task.WhenAll: branch, counter, clerk, transaction ID]
+    Fanout --> Build[Build and price basket]
+    Build --> Stock[Ordered atomic inventory updates]
+    Stock --> Save[Save transaction]
+    Save -->|Failure| Compensate[Reverse ordered stock changes]
+    Save -->|Success| Done[Paid transaction]
+    Json[JSON repository update] --> FileGate[Per-file SemaphoreSlim]
+    FileGate --> CompleteWrite[Async temp write then replace]
+```
+
+No benchmark framework or representative load profile exists in the repository, so the review records no fabricated throughput/latency values. It identifies reduced sequential waiting as a design improvement only. `ValueTask` and an in-memory cache are intentionally absent: the JSON shipping-rate source has no measured hot-read profile, and cache invalidation would change configuration freshness semantics. The notification adapter is synchronous local logging rather than an external lookup; therefore no timeout is appropriate today. A future external provider must combine a bounded timeout with the request cancellation token and surface cancellation separately from provider failure.
+
 ```mermaid
 flowchart TD
     Login[Login UI placeholder] --> Dashboard[Branch dashboard]
