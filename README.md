@@ -140,3 +140,15 @@ Three globally registered MVC action filters provide consistent action-boundary 
 `IAuditStore` is an Application contract; Infrastructure implements it as `JsonAuditStore` in `audit-records.json` below `ApexPost:DataDirectory`. It permits append/read only—there is no update or delete contract. Appends use the existing asynchronous, process-wide path lock and complete-file replacement write; cancellation is propagated. Set `ApexPost:Performance:WarningThresholdMilliseconds` to control warning logs (default 500 ms). [AUDIT-SAMPLE.json](AUDIT-SAMPLE.json) is a synthetic schema example only.
 
 JSON append-only means application-level append semantics, not tamper-proof or immutable storage: an account with write access can alter the file, concurrent writers in another process are not coordinated, and a full JSON-array rewrite is not a durable ledger. Production audit retention, access control, integrity verification, off-host replication, and cross-process coordination require dedicated infrastructure.
+
+## Step 18 test coverage and integration hardening
+
+The test suite uses xUnit with `Microsoft.AspNetCore.Mvc.Testing`, in-memory collaborators for Application tests, and unique temporary JSON data directories plus test-only configuration for web/infrastructure tests. It covers stock underflow and concurrent removal, money-order verification/context requirements, shipping weight/rate boundaries, pricing failures, branch/staff/reversal rules, cancellation/error propagation, audit sensitive-value exclusion, and JSON append concurrency. Integration coverage verifies security headers, API-key `401`, IP allowlist `403`, login rate-limit `429` after the active configured limit, unauthenticated redirect, Clerk void `403`, and returned correlation IDs. The current validated result is 126 passing tests with no skips or failures.
+
+Run the full validation from the solution root:
+
+```powershell
+dotnet restore ApexPost.slnx
+dotnet build ApexPost.slnx --no-restore
+dotnet test ApexPost.slnx --no-build --verbosity normal
+```

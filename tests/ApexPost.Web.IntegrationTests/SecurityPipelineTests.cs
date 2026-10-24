@@ -73,10 +73,18 @@ public sealed class SecurityPipelineTests
     [Fact]
     public async Task Login_rate_limit_returns_429()
     {
-        await using var factory = new SecurityWebApplicationFactory(loginPermitLimit: 2);
+        await using var factory = new SecurityWebApplicationFactory();
         using var client = factory.CreateClient();
-        for (var attempt = 0; attempt < 20; attempt++) await client.PostAsync("/Account/Login", new FormUrlEncodedContent([]));
+        var permittedRequests = factory.Services.GetRequiredService<IConfiguration>().GetValue<int>("ApexPost:RateLimiting:LoginPermitLimit");
+        Assert.True(permittedRequests > 0);
+        var permittedResponses = new List<HttpResponseMessage>();
+        for (var attempt = 0; attempt < permittedRequests; attempt++)
+        {
+            permittedResponses.Add(await client.PostAsync("/Account/Login", new FormUrlEncodedContent([])));
+        }
         var rejected = await client.PostAsync("/Account/Login", new FormUrlEncodedContent([]));
+
+        Assert.All(permittedResponses, response => Assert.NotEqual((System.Net.HttpStatusCode)429, response.StatusCode));
         Assert.Equal((System.Net.HttpStatusCode)429, rejected.StatusCode);
     }
 
@@ -107,14 +115,12 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
     private readonly bool _maintenance;
     private readonly string? _apiKey;
     private readonly string _allowedIp;
-    private readonly int _loginPermitLimit;
 
-    public SecurityWebApplicationFactory(bool maintenance = false, string? apiKey = "test-integration-key", string allowedIp = "127.0.0.1", int loginPermitLimit = 100)
+    public SecurityWebApplicationFactory(bool maintenance = false, string? apiKey = "test-integration-key", string allowedIp = "127.0.0.1")
     {
         _maintenance = maintenance;
         _apiKey = apiKey;
         _allowedIp = allowedIp;
-        _loginPermitLimit = loginPermitLimit;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -126,8 +132,7 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
             ["ApexPost:Maintenance:RetryAfterSeconds"] = "120",
             ["ApexPost:Security:Integration:ApiKey"] = _apiKey,
             ["ApexPost:Security:Integration:AllowedIps:0"] = _allowedIp,
-            ["ApexPost:Security:PartnerTrackingWidgetOrigin"] = PartnerOrigin,
-            ["ApexPost:RateLimiting:LoginPermitLimit"] = _loginPermitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            ["ApexPost:Security:PartnerTrackingWidgetOrigin"] = PartnerOrigin
         }));
         builder.ConfigureLogging(logging => logging.ClearProviders());
         builder.ConfigureTestServices(services =>

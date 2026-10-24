@@ -12,13 +12,19 @@ public sealed class PerformanceActionFilter(IOptions<ActionPerformanceOptions> o
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
         var stopwatch = Stopwatch.StartNew();
-        await next().ConfigureAwait(false);
-        stopwatch.Stop();
-        var threshold = Math.Max(0, options.Value.WarningThresholdMilliseconds);
-        if (stopwatch.ElapsedMilliseconds >= threshold)
+        try
         {
-            logger.LogWarning("MVC action {Controller}/{Action} took {ElapsedMilliseconds} ms, exceeding the {ThresholdMilliseconds} ms threshold.",
-                context.RouteData.Values["controller"], context.RouteData.Values["action"], stopwatch.ElapsedMilliseconds, threshold);
+            await next().ConfigureAwait(false);
+        }
+        finally
+        {
+            stopwatch.Stop();
+            var threshold = Math.Max(0, options.Value.WarningThresholdMilliseconds);
+            if (stopwatch.ElapsedMilliseconds >= threshold)
+            {
+                logger.LogWarning("MVC action {Controller}/{Action} took {ElapsedMilliseconds} ms, exceeding the {ThresholdMilliseconds} ms threshold.",
+                    context.RouteData.Values["controller"], context.RouteData.Values["action"], stopwatch.ElapsedMilliseconds, threshold);
+            }
         }
     }
 }
