@@ -386,6 +386,37 @@ flowchart TD
 
 Correlation runs first so every later log/error response has an ID. Timing surrounds the exception boundary so failures are measured. Headers are registered before short-circuiting controls. Routing precedes endpoint-metadata middleware; CORS handles approved preflight requests before API-key checks. API-key and IP checks occur before cookie processing because the integration endpoint is partner-authenticated rather than user-authenticated. `/health` is mapped after the pipeline but bypasses maintenance by path so infrastructure can still observe the service.
 
+## Step 17 MVC filters and audit boundary
+
+`IAuditStore` lives in Application because it describes an operational requirement without choosing a persistence mechanism. `JsonAuditStore` lives in Infrastructure and writes `audit-records.json` through the existing asynchronous, path-keyed JSON lock. The store exposes only `AppendAsync` and `ReadAsync`; it has no mutation or deletion operation. An `AuditRecord` contains UTC occurrence time, nullable authenticated staff ID/role/branch, controller/action, allow-listed route values, status code, duration, correlation ID, and outcome. It deliberately does not have a request-body, model, summary, or exception-detail field.
+
+`AuditActionFilter`, `ValidationActionFilter`, and `PerformanceActionFilter` are registered globally using `AddService`, so DI supplies the store, logger, and options. Audit runs outermost so an invalid model is still audited; validation returns the bound model to a conventional MVC view, while endpoints explicitly marked `InvalidModelResponse` and API controllers receive `400 ValidationProblemDetails`. Performance logging is configurable through `ApexPost:Performance:WarningThresholdMilliseconds` and emits a warning at or above the threshold.
+
+| Concern | MVC filter | Middleware |
+| --- | --- | --- |
+| Audit controller/action and model-validation outcome | Has selected action descriptor, route data, action result, and ModelState | Runs before/after endpoint execution but does not naturally observe action result or ModelState |
+| MVC invalid-model response | Can choose View vs `ValidationProblemDetails` using controller/action metadata | Cannot safely select an MVC result/view model |
+| Action performance warning | Measures the action/filter segment and logs controller/action identity | Better for complete HTTP pipeline latency, already handled by request logging middleware |
+| Correlation IDs, headers, CORS, API-key/IP checks | Too early or HTTP-wide for an action filter | Correctly applies to all matching requests, including non-MVC endpoints |
+
+```mermaid
+flowchart TD
+    Request --> Correlation[Correlation middleware assigns/reuses ID]
+    Correlation --> Auth[Authentication and authorization]
+    Auth --> Audit[AuditActionFilter starts timer]
+    Audit --> Validation[ValidationActionFilter]
+    Validation -->|Invalid| Invalid[View or 400 ValidationProblemDetails]
+    Validation -->|Valid| Performance[PerformanceActionFilter]
+    Performance --> Action[Sales / void / refund / money order / identity / stock action]
+    Action --> Result[Action result]
+    Invalid --> Record[Safe AuditRecord]
+    Result --> Record
+    Record --> Store[IAuditStore.AppendAsync]
+    Store --> Json[Infrastructure audit-records.json]
+```
+
+The JSON implementation is append-only at the application API: it serializes same-process appends and writes a complete replacement document. It is not tamper-proof, WORM storage, a cross-process lock, or a durable ledger. File permissions, retention, integrity controls, off-host replication, and a ledger-capable audit service are required for those properties.
+
 ```mermaid
 flowchart TD
     Login[Login UI placeholder] --> Dashboard[Branch dashboard]

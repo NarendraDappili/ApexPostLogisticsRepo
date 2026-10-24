@@ -1,0 +1,28 @@
+[
+  {
+    "occurredAt": "2026-10-24T09:15:42.123+00:00",
+    "staffId": "STF-DEMO-CLERK-01",
+    "role": "CounterClerk",
+    "branchCode": "BR-NORTH",
+    "controller": "CounterTransactions",
+    "action": "New",
+    "routeValues": {},
+    "statusCode": 302,
+    "durationMilliseconds": 18,
+    "correlationId": "sample-checkout-001",
+    "outcome": "Succeeded"
+  },
+  {
+    "occurredAt": "2026-10-24T09:17:08.450+00:00",
+    "staffId": "STF-DEMO-MANAGER-01",
+    "role": "BranchManager",
+    "branchCode": "BR-NORTH",
+    "controller": "CounterTransactions",
+    "action": "Refund",
+    "routeValues": {},
+    "statusCode": 400,
+    "durationMilliseconds": 4,
+    "correlationId": "sample-refund-002",
+    "outcome": "Failed"
+  }
+]

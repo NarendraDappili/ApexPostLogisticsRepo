@@ -32,6 +32,8 @@ Step 15 replaces those unauthenticated screen assertions with isolated cookie-au
 
 Step 16 adds isolated middleware integration tests for security headers and correlation-ID reuse, maintenance-mode `503` with `/health` bypass, integration API-key missing/configuration-failure responses, IP allowlist denial, login `429` rate limiting, and approved/unapproved CORS preflight behavior. The in-memory test configuration uses only test keys and temporary, test-owned data directories. TestServer does not populate a remote client IP for manager POSTs, so those endpoints are intentionally denied by the new IP gate in that host; the integration endpoint independently verifies the required `403` behavior.
 
+Step 17 adds JSON audit-store concurrency coverage, verifying that simultaneous same-process appends preserve every record. MVC integration tests verify a successful authenticated action records staff identity, role, branch, action metadata, status, and a supplied correlation ID; invalid-model login returns the validation view and is audited as failed; the submitted password is absent from the JSON audit file; and a zero-millisecond performance threshold produces an MVC-action warning. Test records, credentials, identifiers, and correlation IDs are synthetic. Cross-process append coordination and tamper resistance are intentionally not claimed or tested because the JSON store does not provide them.
+
 Later steps should add focused unit tests for domain invariants and application use cases, plus web integration tests for relevant HTTP behavior. Tests should verify the assignment rules described in [business-rules.md](business-rules.md) and security-sensitive behavior described in [security.md](security.md) as those features are implemented.
 
 ## Commands

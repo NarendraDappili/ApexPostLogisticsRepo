@@ -132,3 +132,11 @@ dotnet user-secrets set --project src/ApexPost.Web "ApexPost:Security:Integratio
 ```
 
 Maintenance mode returns `503` with `Retry-After` for normal paths but does not block `/health`. `/integration/parcel-status` is a creation-snapshot integration endpoint protected by API key, IP allowlist, partner rate limit, and the approved tracking-widget CORS policy. CORS only controls browser origin access; it is not authentication. Deploy behind a proxy only after configuring forwarded headers and trusted proxies so the IP allowlist sees a trustworthy client IP.
+
+## Step 17 MVC filters and append-only audit
+
+Three globally registered MVC action filters provide consistent action-boundary behavior: `AuditActionFilter`, `ValidationActionFilter`, and `PerformanceActionFilter`. The audit filter records every MVC action that reaches action execution, including sales/checkout, voids, refunds, money orders with identity verification, shipping, and any future stock-adjustment actions. Each record contains UTC time, authenticated staff ID/role/branch when available, controller/action, only allow-listed route values (`id`, branch, counter, transaction, shipment, money-order, and product identifiers), result status, duration, correlation ID, and outcome. It never serializes request bodies, view models, or action arguments, so passwords, full document numbers, API keys, and card data are excluded by design.
+
+`IAuditStore` is an Application contract; Infrastructure implements it as `JsonAuditStore` in `audit-records.json` below `ApexPost:DataDirectory`. It permits append/read only—there is no update or delete contract. Appends use the existing asynchronous, process-wide path lock and complete-file replacement write; cancellation is propagated. Set `ApexPost:Performance:WarningThresholdMilliseconds` to control warning logs (default 500 ms). [AUDIT-SAMPLE.json](AUDIT-SAMPLE.json) is a synthetic schema example only.
+
+JSON append-only means application-level append semantics, not tamper-proof or immutable storage: an account with write access can alter the file, concurrent writers in another process are not coordinated, and a full JSON-array rewrite is not a durable ledger. Production audit retention, access control, integrity verification, off-host replication, and cross-process coordination require dedicated infrastructure.

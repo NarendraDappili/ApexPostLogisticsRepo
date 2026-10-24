@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ApexPost.Web.Middleware;
+using ApexPost.Application.Auditing;
 
 namespace ApexPost.Web.IntegrationTests;
 
@@ -88,6 +89,58 @@ public sealed class AuthenticationTests(AuthWebApplicationFactory factory) : ICl
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Audit_records_successful_authenticated_action_with_correlation_and_no_sensitive_input()
+    {
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/CounterTransactions/New");
+        request.Headers.Add("X-Correlation-Id", "audit-success-1");
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        var record = (await factory.GetAuditRecordsAsync()).Last(entry => entry.CorrelationId == "audit-success-1");
+        Assert.Equal("STF-CLERK-01", record.StaffId);
+        Assert.Equal("CounterClerk", record.Role);
+        Assert.Equal("BR-NORTH", record.BranchCode);
+        Assert.Equal("CounterTransactions", record.Controller);
+        Assert.Equal("New", record.Action);
+        Assert.Equal(200, record.StatusCode);
+        Assert.Equal("Succeeded", record.Outcome);
+        Assert.DoesNotContain("password", record.RouteValues.Keys, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("document", record.RouteValues.Keys, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Invalid_model_returns_validation_view_and_is_audited_without_password()
+    {
+        using var client = factory.CreateClient();
+        var token = await GetAntiforgeryTokenAsync(client);
+        var response = await client.PostAsync("/Account/Login?documentNumber=FULL-DOCUMENT-1234&apiKey=not-an-audit-key", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("StaffId", ""), new("Password", "do-not-audit-this-password") ]));
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains("required", await response.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
+        var record = (await factory.GetAuditRecordsAsync()).Last(entry => entry.Controller == "Account" && entry.Action == "Login");
+        Assert.Equal("Failed", record.Outcome);
+        var serializedRecord = System.Text.Json.JsonSerializer.Serialize(record);
+        Assert.DoesNotContain("do-not-audit-this-password", serializedRecord, StringComparison.Ordinal);
+        Assert.DoesNotContain("FULL-DOCUMENT-1234", serializedRecord, StringComparison.Ordinal);
+        Assert.DoesNotContain("not-an-audit-key", serializedRecord, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Performance_filter_warns_when_threshold_is_zero()
+    {
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        await client.GetAsync("/CounterTransactions/New");
+
+        Assert.Contains(factory.LogMessages, message => message.Contains("MVC action CounterTransactions/New took", StringComparison.Ordinal));
+    }
+
     private static async Task<HttpResponseMessage> SignInAsync(HttpClient client, string staffId, string password)
     {
         var token = await GetAntiforgeryTokenAsync(client);
@@ -108,6 +161,10 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
 {
     public const string TestPassword = "test-only-password";
     private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "ApexPost-WebTests", Guid.NewGuid().ToString("N"));
+    private readonly TestLoggerProvider _loggerProvider = new();
+
+    public string DataDirectory => _dataDirectory;
+    public IReadOnlyCollection<string> LogMessages => _loggerProvider.Messages;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -120,8 +177,9 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
             ["ApexPost:Security:Integration:AllowedIps:0"] = "127.0.0.1",
             ["ApexPost:Security:Integration:AllowedIps:1"] = "::1",
             ["ApexPost:RateLimiting:LoginPermitLimit"] = "100"
+            , ["ApexPost:Performance:WarningThresholdMilliseconds"] = "0"
         }));
-        builder.ConfigureLogging(logging => logging.ClearProviders());
+        builder.ConfigureLogging(logging => { logging.ClearProviders(); logging.AddProvider(_loggerProvider); });
         builder.ConfigureTestServices(services => services.PostConfigure<IntegrationSecurityOptions>(options => options.AllowedIps = ["127.0.0.1", "::1"]));
     }
 
@@ -147,9 +205,30 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         await staff.SaveAsync(clerk);
     }
 
+    public async Task<IReadOnlyList<AuditRecord>> GetAuditRecordsAsync()
+    {
+        using var scope = Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<IAuditStore>().ReadAsync();
+    }
+
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
         if (disposing && Directory.Exists(_dataDirectory)) Directory.Delete(_dataDirectory, recursive: true);
+    }
+}
+
+public sealed class TestLoggerProvider : ILoggerProvider
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _messages = new();
+    public IReadOnlyCollection<string> Messages => _messages.ToArray();
+    public ILogger CreateLogger(string categoryName) => new TestLogger(_messages);
+    public void Dispose() { }
+
+    private sealed class TestLogger(System.Collections.Concurrent.ConcurrentQueue<string> messages) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) => messages.Enqueue(formatter(state, exception));
     }
 }
