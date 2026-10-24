@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace ApexPost.Web.Controllers;
 
@@ -12,7 +13,7 @@ public sealed class AccountController(LocalStaffAuthenticator authenticator) : C
     [AllowAnonymous, HttpGet]
     public IActionResult Login() => View(new LoginViewModel());
 
-    [AllowAnonymous, HttpPost, ValidateAntiForgeryToken]
+    [AllowAnonymous, HttpPost, ValidateAntiForgeryToken, EnableRateLimiting("login")]
     public async Task<IActionResult> Login(LoginViewModel input, string? returnUrl, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid) return View(input);

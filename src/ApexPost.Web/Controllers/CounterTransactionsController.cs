@@ -36,10 +36,10 @@ public sealed class CounterTransactionsController(CounterTransactionWorkflowServ
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { ModelState.AddModelError(string.Empty, exception.Message); return View(input); }
     }
 
-    [Authorize(Policy = AuthorizationPolicies.BranchManagerOnly), HttpPost, ValidateAntiForgeryToken]
+    [Authorize(Policy = AuthorizationPolicies.BranchManagerOnly), RequireIpAllowlist, HttpPost, ValidateAntiForgeryToken]
     public Task<IActionResult> Void(TransactionReversalViewModel input, CancellationToken cancellationToken) => ReverseAsync(input, refund: false, cancellationToken);
 
-    [Authorize(Policy = AuthorizationPolicies.BranchManagerOnly), HttpPost, ValidateAntiForgeryToken]
+    [Authorize(Policy = AuthorizationPolicies.BranchManagerOnly), RequireIpAllowlist, HttpPost, ValidateAntiForgeryToken]
     public Task<IActionResult> Refund(TransactionReversalViewModel input, CancellationToken cancellationToken) => ReverseAsync(input, refund: true, cancellationToken);
 
     private async Task<IActionResult> ReverseAsync(TransactionReversalViewModel input, bool refund, CancellationToken cancellationToken)

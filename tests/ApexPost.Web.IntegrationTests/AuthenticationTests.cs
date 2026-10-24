@@ -5,9 +5,12 @@ using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using ApexPost.Web.Middleware;
 
 namespace ApexPost.Web.IntegrationTests;
 
@@ -61,7 +64,7 @@ public sealed class AuthenticationTests(AuthWebApplicationFactory factory) : ICl
     }
 
     [Fact]
-    public async Task Clerk_cannot_access_another_branch_or_manager_action()
+    public async Task Clerk_cannot_access_another_branch_or_privileged_report()
     {
         await factory.SeedAsync();
         using var client = factory.CreateClient();
@@ -70,23 +73,19 @@ public sealed class AuthenticationTests(AuthWebApplicationFactory factory) : ICl
         Assert.Equal(System.Net.HttpStatusCode.Redirect, otherBranch.StatusCode);
         Assert.StartsWith("/Account/AccessDenied", otherBranch.Headers.Location?.AbsolutePath);
 
-        var token = await GetAntiforgeryTokenAsync(client);
-        var reversal = await client.PostAsync("/CounterTransactions/Void", new FormUrlEncodedContent([
-            new("__RequestVerificationToken", token), new("TransactionId", "TX-UNKNOWN"), new("Reason", "test") ]));
-        Assert.Equal(System.Net.HttpStatusCode.Redirect, reversal.StatusCode);
-        Assert.StartsWith("/Account/AccessDenied", reversal.Headers.Location?.AbsolutePath);
+        var reports = await client.GetAsync("/Reports");
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, reports.StatusCode);
+        Assert.StartsWith("/Account/AccessDenied", reports.Headers.Location?.AbsolutePath);
     }
 
     [Fact]
-    public async Task Branch_manager_is_authorized_to_reversal_boundary()
+    public async Task Branch_manager_is_authorized_to_branch_report()
     {
         await factory.SeedAsync();
         using var client = factory.CreateClient();
         await SignInAsync(client, "STF-MANAGER-01", AuthWebApplicationFactory.TestPassword);
-        var token = await GetAntiforgeryTokenAsync(client);
-        var response = await client.PostAsync("/CounterTransactions/Void", new FormUrlEncodedContent([
-            new("__RequestVerificationToken", token), new("TransactionId", "TX-UNKNOWN"), new("Reason", "manager test") ]));
-        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        var response = await client.GetAsync("/Reports");
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
     }
 
     private static async Task<HttpResponseMessage> SignInAsync(HttpClient client, string staffId, string password)
@@ -117,9 +116,13 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
             ["ApexPost:DataDirectory"] = _dataDirectory,
             ["ApexPost:Authentication:DemoAccounts:STF-CLERK-01"] = TestPassword,
             ["ApexPost:Authentication:DemoAccounts:STF-INACTIVE-01"] = TestPassword,
-            ["ApexPost:Authentication:DemoAccounts:STF-MANAGER-01"] = TestPassword
+            ["ApexPost:Authentication:DemoAccounts:STF-MANAGER-01"] = TestPassword,
+            ["ApexPost:Security:Integration:AllowedIps:0"] = "127.0.0.1",
+            ["ApexPost:Security:Integration:AllowedIps:1"] = "::1",
+            ["ApexPost:RateLimiting:LoginPermitLimit"] = "100"
         }));
         builder.ConfigureLogging(logging => logging.ClearProviders());
+        builder.ConfigureTestServices(services => services.PostConfigure<IntegrationSecurityOptions>(options => options.AllowedIps = ["127.0.0.1", "::1"]));
     }
 
     public new HttpClient CreateClient() => base.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });

@@ -15,9 +15,30 @@ using ApexPost.Web.Security;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
+using ApexPost.Web.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
+builder.Services.AddProblemDetails();
+builder.Services.Configure<MaintenanceOptions>(builder.Configuration.GetSection("ApexPost:Maintenance"));
+builder.Services.Configure<IntegrationSecurityOptions>(builder.Configuration.GetSection("ApexPost:Security:Integration"));
+var approvedPartnerOrigin = builder.Configuration["ApexPost:Security:PartnerTrackingWidgetOrigin"];
+builder.Services.AddCors(options => options.AddPolicy("PartnerTrackingWidget", policy =>
+{
+    if (Uri.TryCreate(approvedPartnerOrigin, UriKind.Absolute, out _)) policy.WithOrigins(approvedPartnerOrigin!).AllowAnyHeader().WithMethods("GET");
+}));
+var loginPermitLimit = builder.Configuration.GetValue<int?>("ApexPost:RateLimiting:LoginPermitLimit") ?? 5;
+var integrationPermitLimit = builder.Configuration.GetValue<int?>("ApexPost:RateLimiting:IntegrationPermitLimit") ?? 60;
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(1, loginPermitLimit), Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+    options.AddPolicy("partner-integration", context => RateLimitPartition.GetFixedWindowLimiter(
+        (context.Request.Headers["X-Partner-Id"].FirstOrDefault() ?? "unknown")[..Math.Min(128, (context.Request.Headers["X-Partner-Id"].FirstOrDefault() ?? "unknown").Length)], _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(1, integrationPermitLimit), Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+});
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
@@ -68,17 +89,22 @@ builder.Services.AddSingleton<CounterTransactionWorkflowService>();
 builder.Services.AddSingleton<BranchReportService>();
 
 var app = builder.Build();
-if (!app.Environment.IsDevelopment())
-{
-    app.UseExceptionHandler("/Home/Error");
-    app.UseHsts();
-}
-
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<RequestLoggingMiddleware>();
+app.UseMiddleware<ProblemDetailsExceptionMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+if (!app.Environment.IsDevelopment()) app.UseHsts();
 app.UseHttpsRedirection();
 app.UseRouting();
+app.UseMiddleware<MaintenanceModeMiddleware>();
+app.UseCors();
+app.UseRateLimiter();
+app.UseMiddleware<IntegrationApiKeyMiddleware>();
+app.UseMiddleware<IpAllowlistMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapStaticAssets();
+app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).AllowAnonymous();
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}").WithStaticAssets();
 app.Run();
 
