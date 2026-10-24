@@ -80,6 +80,18 @@ public sealed class AuthenticationTests(AuthWebApplicationFactory factory) : ICl
     }
 
     [Fact]
+    public async Task Clerk_receives_forbidden_response_for_void_endpoint()
+    {
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+
+        var response = await client.PostAsync("/CounterTransactions/Void", new FormUrlEncodedContent([]));
+
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Branch_manager_is_authorized_to_branch_report()
     {
         await factory.SeedAsync();
@@ -163,7 +175,6 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
     private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "ApexPost-WebTests", Guid.NewGuid().ToString("N"));
     private readonly TestLoggerProvider _loggerProvider = new();
 
-    public string DataDirectory => _dataDirectory;
     public IReadOnlyCollection<string> LogMessages => _loggerProvider.Messages;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -176,8 +187,8 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
             ["ApexPost:Authentication:DemoAccounts:STF-MANAGER-01"] = TestPassword,
             ["ApexPost:Security:Integration:AllowedIps:0"] = "127.0.0.1",
             ["ApexPost:Security:Integration:AllowedIps:1"] = "::1",
-            ["ApexPost:RateLimiting:LoginPermitLimit"] = "100"
-            , ["ApexPost:Performance:WarningThresholdMilliseconds"] = "0"
+            ["ApexPost:RateLimiting:LoginPermitLimit"] = "100",
+            ["ApexPost:Performance:WarningThresholdMilliseconds"] = "0"
         }));
         builder.ConfigureLogging(logging => { logging.ClearProviders(); logging.AddProvider(_loggerProvider); });
         builder.ConfigureTestServices(services => services.PostConfigure<IntegrationSecurityOptions>(options => options.AllowedIps = ["127.0.0.1", "::1"]));

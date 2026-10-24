@@ -417,6 +417,22 @@ flowchart TD
 
 The JSON implementation is append-only at the application API: it serializes same-process appends and writes a complete replacement document. It is not tamper-proof, WORM storage, a cross-process lock, or a durable ledger. File permissions, retention, integrity controls, off-host replication, and a ledger-capable audit service are required for those properties.
 
+## Step 18 test architecture
+
+Tests follow the production dependency direction. Domain tests exercise entity/value-object invariants without I/O. Application tests use deterministic in-memory repository/notification collaborators to cover workflows, cancellation, and failure propagation. Infrastructure tests use a unique OS-temporary directory per test and clean only that owned directory. Web integration tests start the actual composition root through `WebApplicationFactory`, set synthetic in-memory configuration, and use cookie/antiforgery interactions through `HttpClient`; no test uses a real credential, external service, or arbitrary delay.
+
+```mermaid
+flowchart LR
+    DomainTests[Domain tests\nvalue objects and invariants] --> Domain
+    AppTests[Application tests\nin-memory collaborators] --> Application
+    InfraTests[Infrastructure tests\nunique temp JSON directory] --> Infrastructure
+    WebTests[Web integration tests\nWebApplicationFactory + test config] --> Web
+    Web --> Application
+    Web --> Infrastructure
+```
+
+The security integration suite tests the full HTTP pipeline rather than individual middleware in isolation: headers/correlation IDs, API-key failure, IP deny, fixed-window rate limiting, authentication redirect, and unauthorized Clerk reversal requests. TestServer does not provide a realistic remote IP for manager reversal calls; those requests are expected to be denied by the existing IP gate, while the integration endpoint independently verifies the configured-blocked-IP behavior.
+
 ```mermaid
 flowchart TD
     Login[Login UI placeholder] --> Dashboard[Branch dashboard]
