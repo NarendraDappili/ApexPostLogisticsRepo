@@ -345,6 +345,25 @@ flowchart LR
 
 Controllers convert HTTP/view-model input into Application requests and return Views, redirects after successful POSTs, or relevant HTTP status results. They do not contain pricing, stock, verification, or persistence rules. Authentication/authorization is explicitly outside this step, despite the login UI placeholder.
 
+## Step 15 authentication and authorization flow
+
+```mermaid
+flowchart TD
+    Login[Login form + antiforgery token] --> Credentials[Local demo credential configuration]
+    Credentials --> Staff[Load StaffMember from repository]
+    Staff -->|Active| Claims[Issue HttpOnly cookie: StaffId, Role, BranchCode]
+    Staff -->|Inactive / missing / invalid| Deny[Generic sign-in failure]
+    Claims --> Request[Protected MVC request]
+    Request --> Recheck[Reload staff record]
+    Recheck -->|Active, role and branch unchanged| Policy[Role and SameBranchOnly policies]
+    Recheck -->|Inactive or changed| Reject[Reject cookie and redirect to login]
+    Policy --> Clerk[Counter Clerk own-branch workflows]
+    Policy --> Manager[BranchManagerOnly void/refund + reason]
+    Policy --> Reports[Auditor / Administrator / Manager own-branch reports]
+```
+
+Cookies are validated against the persisted staff record on every authenticated request. The application service remains the final authority for manager assignment, active staff status, transaction status transitions, and reversal reasons; endpoint policies reduce the HTTP attack surface but do not replace Domain/Application invariants.
+
 ```mermaid
 flowchart TD
     Login[Login UI placeholder] --> Dashboard[Branch dashboard]

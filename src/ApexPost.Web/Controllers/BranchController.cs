@@ -1,10 +1,13 @@
 using ApexPost.Application.Repositories;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Web.Models;
+using ApexPost.Web.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ApexPost.Web.Controllers;
 
+[Authorize(Policy = AuthorizationPolicies.SameBranchOnly)]
 public sealed class BranchController(IBranchRepository branches) : Controller
 {
     [HttpGet]

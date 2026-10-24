@@ -1,10 +1,13 @@
 using ApexPost.Application.MoneyOrders;
 using ApexPost.Domain.Enums;
 using ApexPost.Web.Models;
+using ApexPost.Web.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ApexPost.Web.Controllers;
 
+[Authorize(Roles = "CounterClerk")]
 public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders) : Controller
 {
     [HttpGet]
@@ -15,6 +18,7 @@ public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders)
     {
         if (!string.IsNullOrWhiteSpace(input.DocumentNumber) && string.IsNullOrWhiteSpace(input.DocumentType)) ModelState.AddModelError(nameof(input.DocumentType), "Document type is required when a document reference is provided.");
         if (!ModelState.IsValid) return View(input);
+        if (!string.Equals(User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value, input.BranchCode, StringComparison.OrdinalIgnoreCase)) return Forbid();
         try
         {
             IdentityVerificationRequest? verification = string.IsNullOrWhiteSpace(input.DocumentNumber)

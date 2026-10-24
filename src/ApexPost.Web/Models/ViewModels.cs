@@ -7,7 +7,8 @@ namespace ApexPost.Web.Models;
 
 public sealed class LoginViewModel
 {
-    [Required, StringLength(80)] public string UserName { get; set; } = string.Empty;
+    [Required, StringLength(80)] public string StaffId { get; set; } = string.Empty;
+    [Required, DataType(DataType.Password), StringLength(256)] public string Password { get; set; } = string.Empty;
 }
 
 public sealed record BranchDashboardViewModel(string BranchCode, string? BranchName, bool? IsOpen, string? Message = null);
@@ -65,3 +66,9 @@ public sealed record ReportsViewModel(
     LowStockReport LowStock,
     ShippingVolumeReport Shipping,
     MoneyOrderVerificationReport MoneyOrders);
+
+public sealed class TransactionReversalViewModel
+{
+    [Required, StringLength(48)] public string TransactionId { get; set; } = string.Empty;
+    [Required, StringLength(500)] public string Reason { get; set; } = string.Empty;
+}

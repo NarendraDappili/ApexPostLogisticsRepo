@@ -1,10 +1,10 @@
 @model ApexPost.Web.Models.LoginViewModel
 @{ ViewData["Title"] = "Login"; }
 <h1>Login</h1>
-<p class="text-muted">UI placeholder only. Authentication is not available in this step.</p>
 <form asp-action="Login" method="post">
     <div asp-validation-summary="ModelOnly" class="text-danger"></div>
-    <div class="mb-3"><label asp-for="UserName" class="form-label"></label><input asp-for="UserName" class="form-control" autocomplete="username" /><span asp-validation-for="UserName" class="text-danger"></span></div>
-    <button class="btn btn-primary" type="submit">Continue</button>
+    <div class="mb-3"><label asp-for="StaffId" class="form-label"></label><input asp-for="StaffId" class="form-control" autocomplete="username" /><span asp-validation-for="StaffId" class="text-danger"></span></div>
+    <div class="mb-3"><label asp-for="Password" class="form-label"></label><input asp-for="Password" class="form-control" autocomplete="current-password" /><span asp-validation-for="Password" class="text-danger"></span></div>
+    <button class="btn btn-primary" type="submit">Sign in</button>
 </form>
 @section Scripts { <partial name="_ValidationScriptsPartial" /> }

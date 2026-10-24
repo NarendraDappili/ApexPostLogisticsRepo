@@ -1,10 +1,13 @@
 using ApexPost.Application.Shipping;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Web.Models;
+using ApexPost.Web.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ApexPost.Web.Controllers;
 
+[Authorize(Roles = "CounterClerk")]
 public sealed class ShippingController(ShippingWorkflowService shipping) : Controller
 {
     [HttpGet]
@@ -14,6 +17,7 @@ public sealed class ShippingController(ShippingWorkflowService shipping) : Contr
     public async Task<IActionResult> Create(ShipmentFormViewModel input, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid) return View(input);
+        if (!string.Equals(User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value, input.OriginBranchCode, StringComparison.OrdinalIgnoreCase)) return Forbid();
         try
         {
             var result = await shipping.CreateAsync(new ShipmentCreationRequest(input.ShipmentId, input.OriginBranchCode, input.DestinationZoneCode, input.ShipmentType, input.ServiceLevel, input.WeightKilograms, input.LengthCentimetres, input.WidthCentimetres, input.HeightCentimetres), cancellationToken);

@@ -1,10 +1,13 @@
 using ApexPost.Application.Reports;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Web.Models;
+using ApexPost.Web.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ApexPost.Web.Controllers;
 
+[Authorize(Roles = "BranchManager,Auditor,Administrator", Policy = AuthorizationPolicies.SameBranchOnly)]
 public sealed class ReportsController(BranchReportService reports, IConfiguration configuration) : Controller
 {
     [HttpGet]

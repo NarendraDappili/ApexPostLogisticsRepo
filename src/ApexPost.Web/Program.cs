@@ -11,10 +11,32 @@ using ApexPost.Infrastructure.Persistence;
 using ApexPost.Infrastructure.Pricing;
 using ApexPost.Infrastructure.Repositories;
 using ApexPost.Web.Services;
+using ApexPost.Web.Security;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Account/Login";
+        options.AccessDeniedPath = "/Account/AccessDenied";
+        options.Cookie.Name = "ApexPost.Auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Strict;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.SlidingExpiration = true;
+        options.Events.OnValidatePrincipal = StaffCookieValidator.ValidateAsync;
+    });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(AuthorizationPolicies.BranchManagerOnly, policy => policy.RequireRole("BranchManager"));
+    options.AddPolicy(AuthorizationPolicies.SameBranchOnly, policy => policy.RequireAuthenticatedUser().AddRequirements(new SameBranchRequirement()));
+});
+builder.Services.AddSingleton<IAuthorizationHandler, SameBranchAuthorizationHandler>();
 
 var configuredDataDirectory = builder.Configuration["ApexPost:DataDirectory"] ?? "App_Data";
 var dataDirectory = Path.IsPathRooted(configuredDataDirectory) ? configuredDataDirectory : Path.Combine(builder.Environment.ContentRootPath, configuredDataDirectory);
@@ -30,6 +52,7 @@ builder.Services.AddSingleton<IMoneyOrderRepository, JsonMoneyOrderRepository>()
 builder.Services.AddSingleton<ICounterTransactionRepository, JsonCounterTransactionRepository>();
 builder.Services.AddSingleton<IShippingRateProvider, JsonShippingRateProvider>();
 builder.Services.AddSingleton<INotificationSender, LoggingNotificationSender>();
+builder.Services.AddSingleton<LocalStaffAuthenticator>();
 
 var inventoryThreshold = builder.Configuration.GetValue<int?>("ApexPost:Inventory:LowStockThreshold") ?? 10;
 var notificationRecipient = builder.Configuration["ApexPost:Inventory:LowStockRecipient"] ?? "operations-alerts@example.test";
@@ -53,6 +76,7 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseRouting();
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapStaticAssets();
 app.MapControllerRoute(name: "default", pattern: "{controller=Home}/{action=Index}/{id?}").WithStaticAssets();
