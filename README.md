@@ -152,3 +152,21 @@ dotnet restore ApexPost.slnx
 dotnet build ApexPost.slnx --no-restore
 dotnet test ApexPost.slnx --no-build --verbosity normal
 ```
+
+## Step 19 performance, concurrency, and advanced C# review
+
+The review found no `.Result`, `.Wait()`, or `Thread.Sleep` calls in production code. The checkout validation now starts its four independent aggregate reads (branch, counter, clerk, and duplicate transaction ID) together with `Task.WhenAll`; all writes, stock mutations, compensation, and audit appends remain ordered/serialized. This removes avoidable sequential JSON-read latency on the checkout validation path, but no elapsed-time improvement is claimed because no representative production workload or benchmark harness exists.
+
+| Technique | Location | Problem solved / evidence |
+| --- | --- | --- |
+| Immutable records/value objects | `Domain/ValueObjects`, request/result records | Validated IDs and monetary/measurement data have value equality and cannot be partially mutated. Domain tests cover boundaries. |
+| Pattern matching | `AuditActionFilter`, `ShippingPriceCalculator` | Maps action-result/status cases and validates rate selection without unsafe casts. Filter/pricing tests cover cases. |
+| Generics plus delegates | `JsonFileStore<TDocument>` | Reuses one lock-protected JSON read/update algorithm; `Func`/`Action` keep mutations inside the critical section. Repository/concurrency tests cover it. |
+| Async/await + cancellation | repositories, workflows, controllers | Avoids blocking threads and carries request cancellation through I/O. Cancellation tests cover workflow, repository, report, and audit paths. |
+| `Task.WhenAll` for independent reads | `CounterTransactionWorkflowService.ValidatePointOfSaleAsync` | Fans out four unrelated validation reads; mutations remain sequential under the branch gate. |
+| `SemaphoreSlim` | `JsonFileStore`, transaction branch locks | Serializes same-file updates and branch checkout/reversal work with cancellation-safe `finally` release. Concurrent stock/audit tests cover this. |
+| Observer abstraction | `INotificationSender`, workflows | Awaits simulated low-stock, high-value-order, and reversal notifications without coupling Application to delivery. Tests cover delivery and failure propagation. |
+| Custom attributes and endpoint metadata | `InvalidModelResponseAttribute`, `ValidationActionFilter` | Selects the safe validation response shape without controller-specific duplication. MVC validation tests cover the paths. |
+| Exception filters / outcome pattern matching | MVC filters and middleware | Treats cancellation as cancellation and known validation/business outcomes separately from unexpected errors. Audit and cancellation tests provide evidence. |
+
+`ValueTask` and an in-memory rate cache are intentionally not added: shipping-rate JSON reads do not yet have measured repeated-read pressure, and caching configuration would introduce invalidation/staleness semantics. Likewise, the current notification sender is in-process logging, not a slow external lookup, so inventing timeouts would not improve behavior. Future external providers must use a caller-linked timeout and distinguish `OperationCanceledException` from transport/provider failure.

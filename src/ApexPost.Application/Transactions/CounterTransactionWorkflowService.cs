@@ -136,13 +136,21 @@ public sealed class CounterTransactionWorkflowService
 
     private async Task ValidatePointOfSaleAsync(CounterTransactionId id, BranchCode branchCode, CounterCode counterCode, StaffId clerkId, CancellationToken cancellationToken)
     {
-        var branch = await _branches.FindByCodeAsync(branchCode, cancellationToken).ConfigureAwait(false) ?? throw new InvalidOperationException("The transaction branch was not found.");
+        // These repository reads address separate aggregates/files and have no ordering dependency.
+        // Keep mutations below the branch gate; only this validation fan-out is safe to parallelize.
+        var branchTask = _branches.FindByCodeAsync(branchCode, cancellationToken);
+        var counterTask = _counters.FindByCodeAsync(branchCode, counterCode, cancellationToken);
+        var clerkTask = _staff.FindByIdAsync(clerkId, cancellationToken);
+        var existingTransactionTask = _transactions.FindByIdAsync(id, cancellationToken);
+        await Task.WhenAll(branchTask, counterTask, clerkTask, existingTransactionTask).ConfigureAwait(false);
+
+        var branch = await branchTask.ConfigureAwait(false) ?? throw new InvalidOperationException("The transaction branch was not found.");
         if (!branch.CanAcceptTransactions) throw new InvalidOperationException("The transaction branch is closed.");
-        var counter = await _counters.FindByCodeAsync(branchCode, counterCode, cancellationToken).ConfigureAwait(false) ?? throw new InvalidOperationException("The transaction counter was not found.");
+        var counter = await counterTask.ConfigureAwait(false) ?? throw new InvalidOperationException("The transaction counter was not found.");
         if (!counter.IsOpen) throw new InvalidOperationException("The transaction counter is closed.");
-        var clerk = await _staff.FindByIdAsync(clerkId, cancellationToken).ConfigureAwait(false) ?? throw new InvalidOperationException("The transaction clerk was not found.");
+        var clerk = await clerkTask.ConfigureAwait(false) ?? throw new InvalidOperationException("The transaction clerk was not found.");
         if (clerk.Role != StaffRole.CounterClerk || !clerk.CanProcessTransactionsAt(branchCode)) throw new InvalidOperationException("An active Counter Clerk assigned to the branch is required.");
-        if (await _transactions.FindByIdAsync(id, cancellationToken).ConfigureAwait(false) is not null) throw new InvalidOperationException("A transaction with this identifier already exists.");
+        if (await existingTransactionTask.ConfigureAwait(false) is not null) throw new InvalidOperationException("A transaction with this identifier already exists.");
     }
 
     private async Task<IReadOnlyCollection<CounterTransactionLine>> CreateRetailLinesAsync(IEnumerable<RetailBasketLineRequest> requests, CancellationToken cancellationToken)
