@@ -1,5 +1,6 @@
 using ApexPost.Application.MoneyOrders;
 using ApexPost.Application.Repositories;
+using ApexPost.Application.Notifications;
 using ApexPost.Application.Transactions;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
@@ -112,6 +113,23 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
+    public async Task Void_and_refund_emit_simulated_notifications_and_delivery_failure_is_propagated()
+    {
+        var notifications = new RecordingNotificationSender();
+        var fixture = new Fixture { Notifications = notifications };
+        var paid = await fixture.Service.CheckoutAsync(fixture.Request());
+        await fixture.Service.RefundAsync(paid.Id, new("MANAGER-A", "customer request"));
+        Assert.Single(notifications.Messages);
+        Assert.Contains("Refunded", notifications.Messages[0].Subject, StringComparison.Ordinal);
+
+        var failingFixture = new Fixture { Notifications = new FailingNotificationSender() };
+        var open = new CounterTransaction(new("OPEN-NOTIFY"), new("BR-A"), new("C-1"), new("CLERK-A"), [new(new ProductId("P-1"), "Envelope", 1, new(10m))], new(10m), new(1m), PaymentMethod.Cash);
+        await failingFixture.Transactions.SaveAsync(open);
+        await Assert.ThrowsAsync<IOException>(() => failingFixture.Service.VoidAsync(open.Id, new("MANAGER-A", "correction")));
+        Assert.Equal(CounterTransactionStatus.Voided, (await failingFixture.Transactions.FindByIdAsync(open.Id))!.Status);
+    }
+
+    [Fact]
     public async Task Failed_transaction_save_compensates_previously_removed_inventory()
     {
         var fixture = new Fixture(stock: 5) { Transactions = new MemoryTransactionRepository { SaveException = new IOException("write failed") } };
@@ -135,7 +153,8 @@ public sealed class CounterTransactionWorkflowServiceTests
         public MemoryInventoryRepository Inventory { get; }
         public MemoryMoneyOrderRepository MoneyOrders { get; } = new();
         public MemoryTransactionRepository Transactions { get; set; } = new();
-        public CounterTransactionWorkflowService Service => new(new BranchRepo(Branch), new CounterRepo(Counter), new StaffRepo(() => [Clerk, Manager]), new ProductRepo(new Product(new("P-1"), "Envelope", new(10m))), Inventory, MoneyOrders, Transactions, new MoneyOrderPolicy(new(100m)), new FixedRateTaxPolicy(.1m));
+        public INotificationSender? Notifications { get; set; }
+        public CounterTransactionWorkflowService Service => new(new BranchRepo(Branch), new CounterRepo(Counter), new StaffRepo(() => [Clerk, Manager]), new ProductRepo(new Product(new("P-1"), "Envelope", new(10m))), Inventory, MoneyOrders, Transactions, new MoneyOrderPolicy(new(100m)), new FixedRateTaxPolicy(.1m), Notifications);
 
         public Fixture(int stock = 5) => Inventory = new MemoryInventoryRepository(new BranchInventoryItem(new("BR-A"), new("P-1"), stock));
         public CounterCheckoutRequest Request(int retailQuantity = 1, IReadOnlyCollection<ServiceBasketLineRequest>? services = null, IReadOnlyCollection<string>? moneyOrders = null, string transactionId = "TX-1") => new(transactionId, "BR-A", "C-1", Clerk.Id.Value, PaymentMethod.Cash, [new("P-1", retailQuantity)], services ?? [], moneyOrders ?? []);
@@ -145,7 +164,9 @@ public sealed class CounterTransactionWorkflowServiceTests
     private sealed class CounterRepo(Counter counter) : ICounterRepository { public Task<Counter?> FindByCodeAsync(BranchCode b, CounterCode c, CancellationToken t = default) => Task.FromResult<Counter?>(b == counter.BranchCode && c == counter.Code ? counter : null); public Task SaveAsync(Counter c, CancellationToken t = default) => Task.CompletedTask; }
     private sealed class StaffRepo(Func<IReadOnlyCollection<StaffMember>> staff) : IStaffMemberRepository { public Task<StaffMember?> FindByIdAsync(StaffId id, CancellationToken t = default) => Task.FromResult(staff().FirstOrDefault(x => x.Id == id)); public Task SaveAsync(StaffMember s, CancellationToken t = default) => Task.CompletedTask; }
     private sealed class ProductRepo(Product product) : IProductRepository { public Task<Product?> FindByIdAsync(ProductId id, CancellationToken t = default) => Task.FromResult<Product?>(id == product.Id ? product : null); public Task SaveAsync(Product p, CancellationToken t = default) => Task.CompletedTask; }
-    private sealed class MemoryMoneyOrderRepository : IMoneyOrderRepository { public MoneyOrder? Order { get; set; } public Task<MoneyOrder?> FindByIdAsync(MoneyOrderId id, CancellationToken t = default) => Task.FromResult(Order?.Id == id ? Order : null); public Task SaveAsync(MoneyOrder m, CancellationToken t = default) { Order = m; return Task.CompletedTask; } }
-    private sealed class MemoryTransactionRepository : ICounterTransactionRepository { private readonly Dictionary<string, CounterTransaction> _items = []; public Exception? SaveException { get; init; } public Task<CounterTransaction?> FindByIdAsync(CounterTransactionId id, CancellationToken t = default) => Task.FromResult(_items.GetValueOrDefault(id.Value)); public Task SaveAsync(CounterTransaction tx, CancellationToken t = default) { if (SaveException is not null) throw SaveException; _items[tx.Id.Value] = tx; return Task.CompletedTask; } }
-    private sealed class MemoryInventoryRepository(BranchInventoryItem item) : IInventoryRepository { private readonly SemaphoreSlim _gate = new(1, 1); public int Quantity => item.Quantity; public Task<BranchInventoryItem?> FindAsync(BranchCode b, ProductId p, CancellationToken t = default) => Task.FromResult<BranchInventoryItem?>(item); public Task SaveAsync(BranchInventoryItem i, CancellationToken t = default) => Task.CompletedTask; public async Task<T> UpdateAsync<T>(BranchCode b, ProductId p, Func<BranchInventoryItem, T> update, CancellationToken t = default) { await _gate.WaitAsync(t); try { return update(item); } finally { _gate.Release(); } } }
+    private sealed class MemoryMoneyOrderRepository : IMoneyOrderRepository { public MoneyOrder? Order { get; set; } public Task<MoneyOrder?> FindByIdAsync(MoneyOrderId id, CancellationToken t = default) => Task.FromResult(Order?.Id == id ? Order : null); public Task<IReadOnlyCollection<MoneyOrder>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<MoneyOrder>>(Order is not null && Order.BranchCode == b ? [Order] : []); public Task SaveAsync(MoneyOrder m, CancellationToken t = default) { Order = m; return Task.CompletedTask; } }
+    private sealed class MemoryTransactionRepository : ICounterTransactionRepository { private readonly Dictionary<string, CounterTransaction> _items = []; public Exception? SaveException { get; init; } public Task<CounterTransaction?> FindByIdAsync(CounterTransactionId id, CancellationToken t = default) => Task.FromResult(_items.GetValueOrDefault(id.Value)); public Task<IReadOnlyCollection<CounterTransaction>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<CounterTransaction>>(_items.Values.Where(x => x.BranchCode == b).ToArray()); public Task SaveAsync(CounterTransaction tx, CancellationToken t = default) { if (SaveException is not null) throw SaveException; _items[tx.Id.Value] = tx; return Task.CompletedTask; } }
+    private sealed class MemoryInventoryRepository(BranchInventoryItem item) : IInventoryRepository { private readonly SemaphoreSlim _gate = new(1, 1); public int Quantity => item.Quantity; public Task<BranchInventoryItem?> FindAsync(BranchCode b, ProductId p, CancellationToken t = default) => Task.FromResult<BranchInventoryItem?>(item); public Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<BranchInventoryItem>>(item.BranchCode == b ? [item] : []); public Task SaveAsync(BranchInventoryItem i, CancellationToken t = default) => Task.CompletedTask; public async Task<T> UpdateAsync<T>(BranchCode b, ProductId p, Func<BranchInventoryItem, T> update, CancellationToken t = default) { await _gate.WaitAsync(t); try { return update(item); } finally { _gate.Release(); } } }
+    private sealed class RecordingNotificationSender : INotificationSender { public List<NotificationMessage> Messages { get; } = []; public Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default) { Messages.Add(message); return Task.CompletedTask; } }
+    private sealed class FailingNotificationSender : INotificationSender { public Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default) => Task.FromException(new IOException("simulated notification failure")); }
 }

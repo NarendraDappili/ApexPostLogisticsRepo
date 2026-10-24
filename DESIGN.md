@@ -302,6 +302,34 @@ stateDiagram-v2
 
 Multi-file JSON persistence is not atomic. The service uses an in-process branch lock to serialize its own mixed-basket workflows and the existing per-file inventory mutation lock to prevent overselling. Checkout removes stock before saving the transaction and compensates it if save fails; if a process ends between writes or a compensation write fails, reconciliation is required. Refund persists its status before restoring inventory and explicitly reports a restoration failure; voiding an open basket restores no stock because checkout only removes stock when it marks a transaction paid. These guarantees do not coordinate multiple application processes sharing JSON files, nor do they provide database-grade atomicity.
 
+## Step 13 reports and simulated notifications
+
+`BranchReportService` has four focused branch-scoped queries: paid daily sales split by retail/service plus tax, inventory at/below a caller-supplied threshold, shipment count grouped by destination zone/service level, and money-order verification outcome counts. The repository contracts add focused branch filters; no generic specification framework is introduced. Report reads are sequenced deliberately: each JSON repository uses its own same-process file lock, while `Task.WhenAll` would add little benefit and create a potentially inconsistent cross-file snapshot.
+
+```mermaid
+flowchart LR
+    Request[Branch-scoped report request] --> Service[BranchReportService]
+    Service --> TxRepo[Counter transaction repository]
+    Service --> InvRepo[Inventory repository]
+    Service --> ShipRepo[Shipment repository]
+    Service --> MORepo[Money-order repository]
+    TxRepo --> Sales[Daily retail/service/tax totals]
+    InvRepo --> Low[Low-stock product IDs and quantities]
+    ShipRepo --> Volume[Zone/service shipping volumes]
+    MORepo --> Verify[Verification outcome counts]
+```
+
+```mermaid
+flowchart LR
+    Stock[Inventory crosses low threshold] --> Sender[INotificationSender]
+    HighValue[Verified high-value money order saved] --> Sender
+    Reversal[Void/refund saved] --> Sender
+    Sender --> Simulated[Simulated delivery implementation]
+    Simulated --> Result[Await success or propagate failure]
+```
+
+Notifications are observer-style calls through the existing Application abstraction, not an external provider. Each is sent after the relevant persistence succeeds; a delivery failure is observable to the caller but is not a distributed transaction and does not undo the stock/order/transaction state. Reports intentionally omit money-order sender, recipient, document type, and masked reference.
+
 ## Planned HTTP request flow
 
 The following is an intended design, not current functionality. Components marked **planned** do not yet exist in the implementation.

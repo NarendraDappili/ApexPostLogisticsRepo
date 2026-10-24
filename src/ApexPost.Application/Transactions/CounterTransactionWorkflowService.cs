@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using ApexPost.Application.MoneyOrders;
 using ApexPost.Application.Pricing;
 using ApexPost.Application.Repositories;
+using ApexPost.Application.Notifications;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
@@ -21,8 +22,9 @@ public sealed class CounterTransactionWorkflowService
     private readonly ICounterTransactionRepository _transactions;
     private readonly IMoneyOrderPolicy _moneyOrderPolicy;
     private readonly ITaxPolicy _taxPolicy;
+    private readonly INotificationSender? _notifications;
 
-    public CounterTransactionWorkflowService(IBranchRepository branches, ICounterRepository counters, IStaffMemberRepository staff, IProductRepository products, IInventoryRepository inventory, IMoneyOrderRepository moneyOrders, ICounterTransactionRepository transactions, IMoneyOrderPolicy moneyOrderPolicy, ITaxPolicy taxPolicy)
+    public CounterTransactionWorkflowService(IBranchRepository branches, ICounterRepository counters, IStaffMemberRepository staff, IProductRepository products, IInventoryRepository inventory, IMoneyOrderRepository moneyOrders, ICounterTransactionRepository transactions, IMoneyOrderPolicy moneyOrderPolicy, ITaxPolicy taxPolicy, INotificationSender? notifications = null)
     {
         _branches = branches ?? throw new ArgumentNullException(nameof(branches));
         _counters = counters ?? throw new ArgumentNullException(nameof(counters));
@@ -33,6 +35,7 @@ public sealed class CounterTransactionWorkflowService
         _transactions = transactions ?? throw new ArgumentNullException(nameof(transactions));
         _moneyOrderPolicy = moneyOrderPolicy ?? throw new ArgumentNullException(nameof(moneyOrderPolicy));
         _taxPolicy = taxPolicy ?? throw new ArgumentNullException(nameof(taxPolicy));
+        _notifications = notifications;
     }
 
     public async Task<CounterTransaction> CheckoutAsync(CounterCheckoutRequest request, CancellationToken cancellationToken = default)
@@ -107,22 +110,26 @@ public sealed class CounterTransactionWorkflowService
                 throw new InvalidOperationException("A Branch Manager assigned to the transaction branch must authorize this action.");
             if (refund) transaction.Refund(manager.Id, action.Reason); else transaction.Void(manager.Id, action.Reason);
             await _transactions.SaveAsync(transaction, cancellationToken).ConfigureAwait(false);
-            try
+            if (refund)
             {
-                if (refund)
+                try
                 {
                     foreach (var line in transaction.Lines.Where(line => line.IsRetail))
                     {
                         await AddStockAsync(transaction.BranchCode, line.ProductId!, line.Quantity, cancellationToken).ConfigureAwait(false);
                     }
                 }
-                return transaction;
+                catch (Exception failure)
+                {
+                    // The state was already persisted, so report this explicitly rather than claim atomic reversal.
+                    throw new InvalidOperationException("Transaction status was persisted but inventory restoration failed; reconciliation is required.", failure);
+                }
             }
-            catch (Exception failure)
+            if (_notifications is not null)
             {
-                // The state was already persisted, so report this explicitly rather than claim atomic reversal.
-                throw new InvalidOperationException("Transaction status was persisted but inventory restoration failed; reconciliation is required.", failure);
+                await _notifications.SendAsync(new NotificationMessage("operations-alerts@example.test", $"ApexPost transaction {transaction.Status}", $"Transaction {transaction.Id.Value} at {transaction.BranchCode.Value} was {transaction.Status.ToString().ToLowerInvariant()}."), cancellationToken).ConfigureAwait(false);
             }
+            return transaction;
         }
         finally { gate.Release(); }
     }

@@ -125,6 +125,8 @@ public sealed class InventoryServiceTests
             _items.TryGetValue((branchCode.Value, productId.Value), out var item);
             return Task.FromResult(item);
         }
+        public Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyCollection<BranchInventoryItem>>(_items.Values.Where(item => item.BranchCode == branchCode).ToArray());
 
         public Task SaveAsync(BranchInventoryItem inventoryItem, CancellationToken cancellationToken = default)
         {

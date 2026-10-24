@@ -5,7 +5,7 @@ namespace ApexPost.Domain.Entities;
 
 public sealed class CounterTransaction : IEquatable<CounterTransaction>
 {
-    public CounterTransaction(CounterTransactionId id, BranchCode branchCode, CounterCode counterCode, StaffId clerkId, IReadOnlyCollection<CounterTransactionLine> lines, Money subtotal, Money tax, PaymentMethod paymentMethod)
+    public CounterTransaction(CounterTransactionId id, BranchCode branchCode, CounterCode counterCode, StaffId clerkId, IReadOnlyCollection<CounterTransactionLine> lines, Money subtotal, Money tax, PaymentMethod paymentMethod, DateTimeOffset? occurredAtUtc = null)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(branchCode);
@@ -20,6 +20,7 @@ public sealed class CounterTransaction : IEquatable<CounterTransaction>
         Id = id; BranchCode = branchCode; CounterCode = counterCode; ClerkId = clerkId;
         Lines = lines.ToArray(); Subtotal = subtotal; Tax = tax; PaymentMethod = paymentMethod;
         Status = CounterTransactionStatus.Open;
+        OccurredAtUtc = (occurredAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
     }
 
     public CounterTransactionId Id { get; }
@@ -31,6 +32,7 @@ public sealed class CounterTransaction : IEquatable<CounterTransaction>
     public Money Tax { get; }
     public Money Total => new(checked(Subtotal.Amount + Tax.Amount));
     public PaymentMethod PaymentMethod { get; }
+    public DateTimeOffset OccurredAtUtc { get; }
     public CounterTransactionStatus Status { get; private set; }
     public string? StatusReason { get; private set; }
     public StaffId? AuthorizedBy { get; private set; }

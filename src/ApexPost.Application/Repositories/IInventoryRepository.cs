@@ -11,6 +11,7 @@ public interface IInventoryRepository
         CancellationToken cancellationToken = default);
 
     Task SaveAsync(BranchInventoryItem inventoryItem, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Runs a mutation against one inventory item as one repository operation.

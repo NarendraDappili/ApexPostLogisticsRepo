@@ -57,5 +57,7 @@ public sealed class ShippingWorkflowService
         new BranchCode(request.OriginBranchCode),
         new ZoneCode(request.DestinationZoneCode),
         new ParcelWeight(request.WeightKilograms),
-        new ParcelDimensions(request.LengthCentimetres, request.WidthCentimetres, request.HeightCentimetres));
+        new ParcelDimensions(request.LengthCentimetres, request.WidthCentimetres, request.HeightCentimetres),
+        request.ShipmentType,
+        request.ServiceLevel);
 }

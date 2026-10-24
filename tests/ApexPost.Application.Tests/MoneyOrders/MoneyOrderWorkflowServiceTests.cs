@@ -1,5 +1,6 @@
 using ApexPost.Application.MoneyOrders;
 using ApexPost.Application.Repositories;
+using ApexPost.Application.Notifications;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
@@ -78,8 +79,19 @@ public sealed class MoneyOrderWorkflowServiceTests
         await Assert.ThrowsAsync<IOException>(() => service.CreateAsync(Request(10m, null)));
     }
 
-    private static MoneyOrderWorkflowService CreateService(InMemoryMoneyOrderRepository orders, decimal threshold) =>
-        new(new InMemoryBranchRepository(new Branch(new("BR-A"), "Branch A")), orders, new MoneyOrderPolicy(new Money(threshold)));
+    [Fact]
+    public async Task High_value_money_order_sends_a_simulated_notification_after_persistence()
+    {
+        var notifications = new RecordingNotificationSender();
+        var service = CreateService(new InMemoryMoneyOrderRepository(), 100m, notifications);
+        await service.CreateAsync(Request(101m, Verified("CTX-1")));
+
+        Assert.Single(notifications.Messages);
+        Assert.Contains("high-value", notifications.Messages[0].Subject, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static MoneyOrderWorkflowService CreateService(InMemoryMoneyOrderRepository orders, decimal threshold, INotificationSender? notifications = null) =>
+        new(new InMemoryBranchRepository(new Branch(new("BR-A"), "Branch A")), orders, new MoneyOrderPolicy(new Money(threshold)), notifications);
 
     private static MoneyOrderCreationRequest Request(decimal amount, IdentityVerificationRequest? verification) =>
         new("MO-1", "BR-A", amount, "Synthetic Sender", "Synthetic Recipient", 2m, "CTX-1", verification);
@@ -108,6 +120,8 @@ public sealed class MoneyOrderWorkflowServiceTests
             _orders.TryGetValue(id.Value, out var order);
             return Task.FromResult(order);
         }
+        public Task<IReadOnlyCollection<MoneyOrder>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyCollection<MoneyOrder>>(_orders.Values.Where(order => order.BranchCode == branchCode).ToArray());
         public Task SaveAsync(MoneyOrder moneyOrder, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -115,5 +129,11 @@ public sealed class MoneyOrderWorkflowServiceTests
             _orders[moneyOrder.Id.Value] = moneyOrder;
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class RecordingNotificationSender : INotificationSender
+    {
+        public List<NotificationMessage> Messages { get; } = [];
+        public Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default) { Messages.Add(message); return Task.CompletedTask; }
     }
 }

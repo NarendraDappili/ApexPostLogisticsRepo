@@ -129,6 +129,8 @@ public sealed class ShippingWorkflowServiceTests
             _shipments.TryGetValue(id.Value, out var shipment);
             return Task.FromResult(shipment);
         }
+        public Task<IReadOnlyCollection<Shipment>> FindByOriginBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyCollection<Shipment>>(_shipments.Values.Where(shipment => shipment.OriginBranchCode == branchCode).ToArray());
         public Task SaveAsync(Shipment shipment, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
