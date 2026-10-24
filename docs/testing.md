@@ -28,6 +28,8 @@ Step 13 adds report tests for paid-sales grouping/totals, UTC date boundaries, b
 
 Step 14 replaces the template Web test with deterministic MVC integration tests using `WebApplicationFactory`: all required GET routes render successfully, and a POST with a valid antiforgery token but missing login input returns the validation view. The tests use the application’s local test-host data directory only; no demo data or external service is required.
 
+Step 15 replaces those unauthenticated screen assertions with isolated cookie-authentication integration tests. They seed only test-owned JSON data and use a test-only in-memory password configuration. Coverage verifies unauthenticated login redirects, successful and failed sign-in, inactive-login rejection, cookie invalidation after deactivation, HttpOnly/SameSite cookie settings, cross-branch denial, Counter Clerk denial of manager actions, and Branch Manager access to the reversal application boundary.
+
 Later steps should add focused unit tests for domain invariants and application use cases, plus web integration tests for relevant HTTP behavior. Tests should verify the assignment rules described in [business-rules.md](business-rules.md) and security-sensitive behavior described in [security.md](security.md) as those features are implemented.
 
 ## Commands

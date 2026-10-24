@@ -108,3 +108,15 @@ Checkout requires an open branch and counter plus an active Counter Clerk assign
 Run the local web application with `dotnet run --project src/ApexPost.Web`. The default conventional route is `https://localhost:<assigned-port>/`; `dotnet run` prints the actual launch URL. The MVC screens cover a clearly marked login UI placeholder, branch dashboard, catalogue/branch stock, counter basket, shipment creation and label preview, money order/identity-verification form, and branch reports. Authentication and authorization are deliberately not implemented, so the screens must not be treated as access control.
 
 `ApexPost:DataDirectory` defaults to the local `src/ApexPost.Web/App_Data` directory. It holds JSON data and local ASP.NET Core data-protection keys for antiforgery; it is ignored by Git. It starts empty. For synthetic demo data, call the existing `DemoDataSeeder` explicitly against that empty directory before using data-dependent screens; the web app never overwrites or seeds existing data automatically. The shown threshold and tax settings are local development configuration, not production policy.
+
+## Step 15 local cookie sign-in
+
+The web app uses ASP.NET Core cookie authentication without ASP.NET Core Identity. A signed-in principal contains `StaffId`, role, and assigned `BranchCode` claims. Counter Clerks can use operational screens only for their assigned branch; Branch Managers are required for void/refund endpoints; branch reports are available to Branch Managers, Auditors, and Administrators within their assigned branch. Every request rechecks the staff JSON record, so an inactive staff member cannot sign in and an existing cookie is rejected when the staff member becomes inactive or their role/branch changes.
+
+No account password is committed. After creating synthetic data locally, configure a local-only demo account with user secrets, substituting your own value for the placeholder:
+
+```powershell
+dotnet user-secrets set --project src/ApexPost.Web "ApexPost:Authentication:DemoAccounts:STF-CLERK-01-A" "<local-demo-password>"
+```
+
+The configuration key is `ApexPost:Authentication:DemoAccounts:<StaffId>`; its value is the local demo password. It is intentionally absent from `appsettings.json`. This mechanism is for local assignment demonstration only, not production credential storage. The auth cookie is HttpOnly, SameSite=Strict, uses an eight-hour sliding expiration, and is marked Secure when the request uses HTTPS. Run the app over HTTPS outside local development.
