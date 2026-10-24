@@ -22,6 +22,8 @@ Step 10 adds Application shipping-workflow tests for letters and parcels, Standa
 
 Step 11 adds money-order workflow tests for below/at/above configurable thresholds, successful/failed/pending/missing/mismatched-context verification, masked document references, invalid amounts, cancellation, and persistence failures. Repository serialization tests verify that only the masked identity-document reference appears in JSON, not the original full value.
 
+Step 12 adds mixed-counter-transaction tests for retail/service totals and configured tax, insufficient stock, inactive/wrong-branch clerks, closed branches, high-value money-order verification, manager/reason/state-transition constraints, retail-stock restoration on refund, and transaction-save failure compensation.
+
 Later steps should add focused unit tests for domain invariants and application use cases, plus web integration tests for relevant HTTP behavior. Tests should verify the assignment rules described in [business-rules.md](business-rules.md) and security-sensitive behavior described in [security.md](security.md) as those features are implemented.
 
 ## Commands

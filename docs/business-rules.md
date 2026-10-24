@@ -35,6 +35,9 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 - Money orders require a positive decimal amount, non-empty sender/recipient names, a non-negative fee, and a context identifier. Their total is amount plus fee without a new fee or rounding formula.
 - The configured `IMoneyOrderPolicy.HighValueThreshold` is exclusive: an amount strictly above it requires a verified identity record in the same money-order context; an amount equal to it does not. Failed, pending, absent, or mismatched-context verification rejects a high-value order before persistence.
 - Identity verification records retain only document type, result, context ID, and a masked document reference. Full document numbers are not retained by Domain or JSON persistence.
+- Counter transactions contain one or more retail or service lines, a configured-policy tax amount, payment method, and `Open`, `Paid`, `Voided`, or `Refunded` status. Checkout produces a paid transaction only after open branch/counter and active, assigned Counter Clerk checks pass.
+- Retail lines use the existing retail calculator. A service line carries a price produced by its owning service; checkout does not duplicate shipping, money-order, or other service pricing formulas. Existing money-order lines must match the transaction ID as their context and satisfy the high-value verification policy.
+- Transaction state transitions are `Open → Paid`, `Open → Voided`, and `Paid → Refunded`. Void/refund require a non-empty reason and an active Branch Manager assigned to the transaction branch. Checkout removes retail stock only as it marks a transaction paid, so refunds restore retail stock while voiding an open basket does not.
 
 ### Demo seed data
 
@@ -47,7 +50,7 @@ The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator
 
 - `JsonShippingRateProvider` loads `shipping-rates.json` for runtime workflow use. Configuration must contain exactly one valid rate for a supported type/service/zone combination; missing or ambiguous rates are rejected by the pricing component.
 - The high-value threshold and same-transaction linkage for money-order identity verification require transaction composition and configuration.
-- Counter transaction line items, pricing, tax, voids, refunds, Branch Manager authorization, and reason capture require later transaction workflows.
+- JSON transaction operations span inventory and transaction files and are not atomic. Checkout compensates inventory if transaction persistence fails; process interruption, failed compensation, and multiple application processes require operational reconciliation.
 - Branch closure must be coordinated with counter transaction creation in a later workflow; this step exposes branch state without adding a transaction process.
 - Application now owns contracts that future workflows will use to retrieve and persist entities, identify the current staff member, write audits, and send notifications. The contracts do not themselves enforce business rules or persist data.
 - JSON inventory atomicity is limited to repository instances in one application process. Multiple processes writing the same JSON data directory require external coordination and are unsupported.
