@@ -6,11 +6,57 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ApexPost.Web.Middleware;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ApexPost.Web.IntegrationTests;
 
 public sealed class SecurityPipelineTests
 {
+    [Fact]
+    public async Task Problem_details_does_not_expose_unexpected_exception_details()
+    {
+        var logger = new CapturingLogger<ProblemDetailsExceptionMiddleware>();
+        var context = new DefaultHttpContext();
+        context.Items[CorrelationIdMiddleware.ItemName] = "safe-correlation-1";
+        await using var responseBody = new MemoryStream();
+        context.Response.Body = responseBody;
+        var middleware = new ProblemDetailsExceptionMiddleware(
+            _ => throw new InvalidOperationException("synthetic-sensitive-detail"),
+            logger);
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status500InternalServerError, context.Response.StatusCode);
+        responseBody.Position = 0;
+        var body = await new StreamReader(responseBody).ReadToEndAsync();
+        Assert.DoesNotContain("synthetic-sensitive-detail", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("stackTrace", body, StringComparison.OrdinalIgnoreCase);
+        var logs = string.Join(Environment.NewLine, logger.Messages);
+        Assert.Contains("safe-correlation-1", logs, StringComparison.Ordinal);
+        Assert.Contains(nameof(InvalidOperationException), logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("synthetic-sensitive-detail", logs, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Aborted_request_cancellation_is_not_reported_as_server_error()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var context = new DefaultHttpContext();
+        context.RequestAborted = cancellation.Token;
+        await using var responseBody = new MemoryStream();
+        context.Response.Body = responseBody;
+        var middleware = new ProblemDetailsExceptionMiddleware(
+            _ => Task.FromCanceled(cancellation.Token),
+            NullLogger<ProblemDetailsExceptionMiddleware>.Instance);
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(499, context.Response.StatusCode);
+        Assert.Equal(0, responseBody.Length);
+    }
+
     [Fact]
     public async Task Health_response_has_security_headers_and_reuses_valid_correlation_id()
     {
@@ -138,6 +184,22 @@ public sealed class SecurityPipelineTests
         denied.Headers.Add("Access-Control-Request-Method", "GET");
         var deniedResponse = await client.SendAsync(denied);
         Assert.False(deniedResponse.Headers.Contains("Access-Control-Allow-Origin"));
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var message = formatter(state, exception);
+            if (exception is not null) message = $"{message}{Environment.NewLine}{exception}";
+            Messages.Add(message);
+        }
     }
 }
 

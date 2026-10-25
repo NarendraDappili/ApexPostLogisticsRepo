@@ -18,7 +18,7 @@ dotnet test ApexPost.slnx --no-build --verbosity normal
 dotnet run --project src/ApexPost.Web
 ```
 
-The most recently verified suite contains 128 passing tests, with 0 failures and 0 skipped tests. The web host prints its assigned URL; use HTTPS outside local development.
+The most recently verified suite contains 132 passing tests, with 0 failures and 0 skipped tests. The web host prints its assigned URL; use HTTPS outside local development.
 
 ## Configuration and local secrets
 
@@ -50,6 +50,8 @@ The project references follow the intended dependency direction: Domain has no p
 
 Integration requests now share a single bounded fixed-window rate-limit partition, and API-key validation precedes integration rate limiting. The limiter no longer creates partitions from caller-controlled `X-Partner-Id` values, preventing arbitrary header values from bypassing the configured limit and growing limiter state; invalid credentials do not consume the shared quota. A WebApplicationFactory regression test covers the configured aggregate limit. No business rules, persistence guarantees, or approved package dependencies changed.
 
+Request-abort cancellation is now distinguished from unexpected server failures at the Problem Details boundary. Checkout rollback and post-persist refund stock restoration complete with a non-cancelable compensation token, so a disconnected client cannot interrupt the immediate inventory correction. Regression tests cover cancelled checkout persistence, failed JSON replacement cleanup, generic exception responses, and request cancellation handling.
+
 ## Demo seed data
 
 `DemoDataSeeder` is not invoked by web startup. Against an empty or nonexistent data directory, it writes synthetic data verified by Infrastructure tests:
@@ -70,9 +72,10 @@ The seeder writes `apexpost-demo-seed.json` last. A matching manifest makes a la
 ## Known limitations and gaps
 
 - JSON writes are coordinated only within one process. Multi-file workflows are not database transactions; a crash or failed compensation can require reconciliation.
-- JSON audit append is application-level append-only, not tamper-proof, WORM, cross-process safe, or durable-ledger storage.
+- JSON audit append is application-level append-only, not tamper-proof, WORM, cross-process safe, or durable-ledger storage. The MVC audit filter logs append failures but deliberately does not fail an otherwise completed business action.
 - Notifications are local logging, not external delivery. No external identity verification, payment processing, MFA, account lockout, password rotation, or production session revocation is implemented.
 - Shipping rates are read from JSON without a measured cache. No external lookup exists, so no provider timeout is implemented.
+- Compensation is limited to the current process and immediate workflow; it is not a durable recovery queue. A process crash between separate JSON file writes can still require manual reconciliation.
 - No screenshots, Postman collection, or reproducible successful integration sample response is supplied; this repository intentionally does not fabricate them.
 
 ## Documentation

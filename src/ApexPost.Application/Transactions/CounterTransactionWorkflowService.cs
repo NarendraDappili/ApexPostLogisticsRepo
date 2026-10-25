@@ -77,9 +77,10 @@ public sealed class CounterTransactionWorkflowService
             catch (Exception failure)
             {
                 var compensationFailures = new List<Exception>();
+                // Once inventory has changed, rollback must outlive request cancellation.
                 foreach (var line in removed.AsEnumerable().Reverse())
                 {
-                    try { await AddStockAsync(branchCode, line.ProductId!, line.Quantity, cancellationToken).ConfigureAwait(false); }
+                    try { await AddStockAsync(branchCode, line.ProductId!, line.Quantity, CancellationToken.None).ConfigureAwait(false); }
                     catch (Exception compensationFailure) { compensationFailures.Add(compensationFailure); }
                 }
                 if (compensationFailures.Count > 0) throw new AggregateException("Checkout failed and inventory compensation was incomplete.", [failure, .. compensationFailures]);
@@ -114,9 +115,10 @@ public sealed class CounterTransactionWorkflowService
             {
                 try
                 {
+                    // The refund status is persisted; finish stock restoration even if the client disconnects.
                     foreach (var line in transaction.Lines.Where(line => line.IsRetail))
                     {
-                        await AddStockAsync(transaction.BranchCode, line.ProductId!, line.Quantity, cancellationToken).ConfigureAwait(false);
+                        await AddStockAsync(transaction.BranchCode, line.ProductId!, line.Quantity, CancellationToken.None).ConfigureAwait(false);
                     }
                 }
                 catch (Exception failure)

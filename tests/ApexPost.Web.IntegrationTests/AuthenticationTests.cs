@@ -140,6 +140,10 @@ public sealed class AuthenticationTests(AuthWebApplicationFactory factory) : ICl
         Assert.DoesNotContain("do-not-audit-this-password", serializedRecord, StringComparison.Ordinal);
         Assert.DoesNotContain("FULL-DOCUMENT-1234", serializedRecord, StringComparison.Ordinal);
         Assert.DoesNotContain("not-an-audit-key", serializedRecord, StringComparison.Ordinal);
+        var logs = string.Join(Environment.NewLine, factory.LogMessages);
+        Assert.DoesNotContain("do-not-audit-this-password", logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("FULL-DOCUMENT-1234", logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("not-an-audit-key", logs, StringComparison.Ordinal);
     }
 
     [Fact]

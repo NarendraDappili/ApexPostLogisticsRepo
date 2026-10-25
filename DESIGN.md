@@ -306,6 +306,64 @@ stateDiagram-v2
 
 Multi-file JSON persistence is not atomic. The service uses an in-process branch lock to serialize its own mixed-basket workflows and the existing per-file inventory mutation lock to prevent overselling. Checkout removes stock before saving the transaction and compensates it if save fails; if a process ends between writes or a compensation write fails, reconciliation is required. Refund persists its status before restoring inventory and explicitly reports a restoration failure; voiding an open basket restores no stock because checkout only removes stock when it marks a transaction paid. These guarantees do not coordinate multiple application processes sharing JSON files, nor do they provide database-grade atomicity.
 
+Compensating inventory writes use `CancellationToken.None` after a mutation has started or a refund status has been persisted. This is intentional: request cancellation must not interrupt the immediate rollback/restoration path. It does not make compensation durable or atomic, and failures continue to surface for reconciliation.
+
+```mermaid
+flowchart LR
+    Checkout[Checkout request token] --> Remove[Remove stock]
+    Remove --> Save[Save transaction]
+    Save -->|Success| Complete[Paid transaction]
+    Save -->|Failure or cancellation| Rollback[Restore removed stock with non-cancelable token]
+    Rollback -->|Success| Propagate[Propagate original failure]
+    Rollback -->|Failure| Reconcile[Surface compensation failure for reconciliation]
+    Refund[Persist refund status] --> Restore[Restore stock with non-cancelable token]
+    Restore -->|Failure| Reconcile
+```
+
+## Security and request pipeline
+
+The application does not configure forwarded headers. The IP allowlist therefore evaluates the direct connection address and is not a reliable client-IP control behind an unconfigured reverse proxy.
+
+```mermaid
+flowchart LR
+    Request[HTTP request] --> Correlation[Correlation ID]
+    Correlation --> Timing[Structured request timing]
+    Timing --> Errors[Problem Details exception boundary]
+    Errors --> Headers[Security response headers]
+    Headers --> Https[HTTPS redirection and HSTS]
+    Https --> Routing[Endpoint routing]
+    Routing --> Maintenance[Maintenance mode; health bypass]
+    Maintenance --> Cors[Configured CORS]
+    Cors --> ApiKey[Integration API-key metadata gate]
+    ApiKey --> Limiter[Login or shared integration rate limit]
+    Limiter --> Ip[Direct-connection IP allowlist]
+    Ip --> Cookie[Cookie authentication]
+    Cookie --> Authorization[Role and branch authorization]
+    Authorization --> Endpoint[MVC or integration endpoint]
+```
+
+The exception boundary returns generic Problem Details for unexpected failures; client-abort cancellation is recorded internally as 499 without writing a response body. API-key validation is before rate limiting; IP allowlisting is after it. CORS does not authorize requests.
+
+## JSON write and concurrency flow
+
+```mermaid
+flowchart LR
+    Operation[Repository read or update] --> Lock[Path-keyed in-process semaphore]
+    Lock --> Read[Read existing JSON or create empty document if missing]
+    Read --> Parse{Valid non-empty JSON?}
+    Parse -->|No| Error[Propagate JSON/I/O error; preserve source]
+    Parse -->|Yes| Mutate[Apply update]
+    Mutate --> Temp[Create sibling temporary file]
+    Temp --> Serialize[Async serialize and flush]
+    Serialize --> Cancel{Cancellation requested before replace?}
+    Cancel -->|Yes| Cleanup[Clean temporary file; propagate cancellation]
+    Cancel -->|No| Replace[Replace target file]
+    Replace --> Cleanup
+    Cleanup --> Unlock[Release in-process semaphore]
+```
+
+The path lock is process-local. Temporary replacement avoids exposing a partially serialized target file during normal single-process writes, but does not guarantee cross-process coordination, multi-file atomicity, or database durability. Malformed and empty documents fail explicitly rather than being replaced with empty collections.
+
 ## Step 13 reports and simulated notifications
 
 `BranchReportService` has four focused branch-scoped queries: paid daily sales split by retail/service plus tax, inventory at/below a caller-supplied threshold, shipment count grouped by destination zone/service level, and money-order verification outcome counts. The repository contracts add focused branch filters; no generic specification framework is introduced. Report reads are sequenced deliberately: each JSON repository uses its own same-process file lock, while `Task.WhenAll` would add little benefit and create a potentially inconsistent cross-file snapshot.
@@ -501,6 +559,7 @@ These ADRs document existing decisions at Step 20; they do not claim unrecorded 
 4. [ADR 0004 — ordered security middleware](docs/adr/0004-order-security-middleware-before-endpoints.md)
 5. [ADR 0005 — MVC action audit with JSON store](docs/adr/0005-mvc-action-audit-with-json-store.md)
 6. [ADR 0006 — parallelize only independent checkout reads](docs/adr/0006-parallelize-only-independent-checkout-reads.md)
+7. [ADR 0007 — complete inventory compensation after request cancellation](docs/adr/0007-complete-compensation-after-cancellation.md)
 
 ```mermaid
 flowchart TD

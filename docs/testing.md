@@ -69,6 +69,23 @@ dotnet test ApexPost.slnx --no-build --verbosity normal
 
 The most recent Step 20 validation is 127 passed, 0 failed, 0 skipped. Required web integration coverage includes security headers, API-key `401`, blocked-IP `403`, rate-limit `429`, unauthenticated redirect, Clerk void `403`, and correlation-ID response. Seed tests verify the documented 5 branches, 20 staff, 30 products, 10 zones/60 rates, and 40 historical snapshots; 150 inventory records follow from five branches times 30 products. There is no browser screenshot, Postman collection, benchmark harness, external provider, or cross-process JSON test to present as a delivery artifact.
 
+## Step 23 security and reliability regressions
+
+Application tests cancel transaction persistence after stock has been removed and verify the compensation completes despite request cancellation. Infrastructure tests force JSON replacement to fail by making the target path a directory, then verify the existing target remains and the sibling temporary file is removed. Web tests verify unexpected exception details are excluded from Problem Details and application logs, correlation ID and exception type are retained, request-abort cancellation is recorded as internal status 499 without attempting a response body, and synthetic passwords, document numbers, and API keys are absent from request logs and audit records.
+
+Existing integration coverage continues to exercise wrong-branch access, inactive-staff cookie rejection, Clerk denial of void, API-key configuration/missing/invalid cases, blocked-IP behavior, rate limits, maintenance mode, CORS, correlation IDs, headers, and safe audit fields. These tests use synthetic values and temporary test-owned data directories. No penetration test, proxy deployment test, cross-process JSON test, or production certification is claimed.
+
+The required validation commands are:
+
+```powershell
+dotnet restore ApexPost.slnx
+dotnet build ApexPost.slnx --no-restore
+dotnet test ApexPost.slnx --no-build --verbosity normal
+git diff --check
+```
+
+Step 23 full solution validation completed with 132 passed, 0 failed, and 0 skipped: Domain (39), Application (56), Infrastructure (19), and Web integration (18).
+
 ## Commands
 
 From the solution root:
