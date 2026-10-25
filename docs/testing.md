@@ -11,7 +11,7 @@ The solution contains four xUnit test projects:
 
 `ApexPost.Web.IntegrationTests` references the approved `Microsoft.AspNetCore.Mvc.Testing` package for actual ASP.NET Core test hosting. Domain tests cover value objects/entities; Application tests cover workflows/pricing; Infrastructure tests cover JSON/seed behavior; and Web tests cover MVC, authentication, filters, and middleware. Test data, credentials, correlation IDs, and filesystem locations are synthetic/test-owned.
 
-## Planned coverage
+## Coverage delivered by roadmap steps
 
 Step 7 adds `ApexPost.Infrastructure.Tests`, which references Infrastructure and uses a unique directory below the OS temporary directory for every test. It cleans up only that test-owned directory. Coverage includes round trips for all seven repositories, identity-based update/upsert behavior, missing files, empty/malformed JSON, cancellation, sensitive-data-safe serialization, and concurrent same-process writes.
 
@@ -49,7 +49,13 @@ Concurrency tests verify that concurrent same-process inventory removals and che
 
 The checkout validation fan-out uses `Task.WhenAll` only for branch/counter/clerk/duplicate-ID reads, which target independent aggregates. Tests retain serialized assertions for stock and transaction mutations; no test assumes parallel writes. No benchmark is recorded because the repository has no supported benchmark harness or representative load data. Cache and `ValueTask` tests are intentionally absent because neither optimization is implemented: there is no measured repeated-read hot path that justifies cache invalidation complexity, and existing async operations are genuinely I/O-bound `Task` operations rather than commonly synchronous completions.
 
-Later steps should add focused unit tests for domain invariants and application use cases, plus web integration tests for relevant HTTP behavior. Tests should verify the assignment rules described in [business-rules.md](business-rules.md) and security-sensitive behavior described in [security.md](security.md) as those features are implemented.
+The roadmap coverage above is implemented and retained as a record of the delivered test scope. Additional tests should be added when future features or defects warrant them; all new tests should continue to verify the assignment rules in [business-rules.md](business-rules.md) and security constraints in [security.md](security.md).
+
+## Step 22 architecture regression coverage
+
+Integration rate limiting uses a shared bounded partition and does not trust `X-Partner-Id`. A WebApplicationFactory regression test sends 61 valid-key requests with distinct partner-header values against the configured 60-request limit and verifies the final request receives `429` instead of opening a new limiter partition. API-key failures occur before this limit and do not consume its quota. This is an aggregate per-process integration limit, not a per-partner quota or a distributed limit.
+
+The Step 22 full solution run completed with 128 passed, 0 failed, and 0 skipped across Domain (39), Application (55), Infrastructure (17), and Web integration (17).
 
 ## Step 20 delivery verification
 

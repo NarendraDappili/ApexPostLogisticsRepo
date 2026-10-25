@@ -18,7 +18,7 @@ dotnet test ApexPost.slnx --no-build --verbosity normal
 dotnet run --project src/ApexPost.Web
 ```
 
-The most recently verified suite contains 127 passing tests, with 0 failures and 0 skipped tests. The web host prints its assigned URL; use HTTPS outside local development.
+The most recently verified suite contains 128 passing tests, with 0 failures and 0 skipped tests. The web host prints its assigned URL; use HTTPS outside local development.
 
 ## Configuration and local secrets
 
@@ -43,6 +43,12 @@ There are no configured demo login accounts or passwords in source control. The 
 - Branch inventory operations, low-stock notifications, shipping/rate validation, money-order identity verification, mixed checkout, manager void/refund, reports, and simulated notifications.
 - MVC/Razor workflows with antiforgery, cookie authentication, role/branch authorization, health endpoint, integration parcel-status endpoint, rate limiting, CORS, correlation IDs, security headers, maintenance mode, and safe Problem Details.
 - Global MVC audit, validation, and performance filters. `audit-records.json` stores safe metadata only; see [AUDIT-SAMPLE.json](AUDIT-SAMPLE.json).
+
+## Architecture and quality review
+
+The project references follow the intended dependency direction: Domain has no project dependencies; Application references Domain; Infrastructure references Application and Domain; Web references Application and Infrastructure; and each test project references only its subject layer. `Program.cs` is the Web composition root and pipeline configuration.
+
+Integration requests now share a single bounded fixed-window rate-limit partition, and API-key validation precedes integration rate limiting. The limiter no longer creates partitions from caller-controlled `X-Partner-Id` values, preventing arbitrary header values from bypassing the configured limit and growing limiter state; invalid credentials do not consume the shared quota. A WebApplicationFactory regression test covers the configured aggregate limit. No business rules, persistence guarantees, or approved package dependencies changed.
 
 ## Demo seed data
 

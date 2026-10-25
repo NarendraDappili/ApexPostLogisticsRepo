@@ -26,10 +26,13 @@ flowchart RL
     Application --> Domain
     DomainTests[ApexPost.Domain.Tests] --> Domain
     ApplicationTests[ApexPost.Application.Tests] --> Application
+    InfrastructureTests[ApexPost.Infrastructure.Tests] --> Infrastructure
     WebIntegrationTests[ApexPost.Web.IntegrationTests] --> Web
 ```
 
 `ApexPost.Domain` deliberately has no solution-project references. This keeps business rules independent of HTTP, MVC, JSON, and persistence details. The dependency direction is inward: Application depends on Domain, Infrastructure adapts Application and Domain, and Web uses Application and Infrastructure at the outer edge.
+
+The test projects reference only the production layer they verify: Domain tests reference Domain, Application tests reference Application, Infrastructure tests reference Infrastructure, and Web integration tests reference Web. Transitive references follow the production graph rather than introducing direct test-to-unrelated-layer coupling.
 
 ## Composition root and dependency injection
 
@@ -377,15 +380,15 @@ flowchart TD
     HTTPS --> Routing[Endpoint routing]
     Routing --> Maintenance[Maintenance mode; /health bypass]
     Maintenance --> CORS[Approved partner CORS policy]
-    CORS --> Limits[Login/partner rate limits]
-    Limits --> ApiKey[Integration API-key metadata check]
-    ApiKey --> IP[Integration/admin IP allowlist metadata check]
+    CORS --> ApiKey[Integration API-key metadata check]
+    ApiKey --> Limits[Login/partner rate limits]
+    Limits --> IP[Integration/admin IP allowlist metadata check]
     IP --> Cookie[Cookie authentication]
     Cookie --> Authz[Role and branch authorization]
     Authz --> Endpoint[MVC, integration, or health endpoint]
 ```
 
-Correlation runs first so every later log/error response has an ID. Timing surrounds the exception boundary so failures are measured. Headers are registered before short-circuiting controls. Routing precedes endpoint-metadata middleware; CORS handles approved preflight requests before API-key checks. API-key and IP checks occur before cookie processing because the integration endpoint is partner-authenticated rather than user-authenticated. `/health` is mapped after the pipeline but bypasses maintenance by path so infrastructure can still observe the service.
+Correlation runs first so every later log/error response has an ID. Timing surrounds the exception boundary so failures are measured. Headers are registered before short-circuiting controls. Routing precedes endpoint-metadata middleware; CORS handles approved preflight requests before API-key checks. API-key validation precedes integration rate limiting so failed credentials do not consume the shared quota; the IP allowlist follows the limiter. These checks run before cookie processing because the integration endpoint is partner-authenticated rather than user-authenticated. `/health` is mapped after the pipeline but bypasses maintenance by path so infrastructure can still observe the service.
 
 ## Step 17 MVC filters and audit boundary
 
@@ -512,9 +515,31 @@ flowchart TD
     Money --> Receipt
 ```
 
+## Step 22 architecture and quality review
+
+The integration rate limiter uses one shared partition rather than keying on `X-Partner-Id`. That caller-controlled header is not a trusted partner identity and would allow arbitrary partition creation. API-key validation runs before integration rate limiting so invalid credentials cannot consume the shared quota. A constant partition gives bounded limiter state and enforces the configured aggregate request budget without changing application business rules. If independent partner quotas are later required, introduce a verified partner identity after authentication and make its partition lifecycle bounded.
+
+```mermaid
+flowchart LR
+    Request[Integration HTTP request] --> Routing[Endpoint routing]
+    Routing --> Cors[Configured partner CORS]
+    Cors --> ApiKey[API-key metadata validation]
+    ApiKey --> Limit[Shared bounded integration rate limiter]
+    Limit --> Ip[IP allowlist metadata validation]
+    Ip --> Controller[IntegrationController]
+    Controller --> Workflow[Application workflow or repository contract]
+    Workflow --> Domain[Domain entities and invariants]
+    Workflow --> Contract[Application repository interface]
+    Contract --> Adapter[Infrastructure JSON repository]
+    Adapter --> Store[Async JSON file store]
+    Store --> File[(Configured JSON file)]
+```
+
+The regression test sends 61 valid-key requests with different partner-header values against a 60-request limit and confirms the last request is rate-limited by the shared partition. This does not provide cross-process rate limiting; the built-in limiter state is process-local.
+
 ## Test structure
 
-Each test project references only the layer it tests: Domain Tests references Domain, Application Tests references Application, and Web Integration Tests references Web. The projects use xUnit; Web Integration Tests uses `Microsoft.AspNetCore.Mvc.Testing` to exercise MVC routes and form validation through a test host.
+Each test project references only the layer it tests: Domain Tests references Domain, Application Tests references Application, Infrastructure Tests references Infrastructure, and Web Integration Tests references Web. The projects use xUnit; Web Integration Tests uses `Microsoft.AspNetCore.Mvc.Testing` to exercise the full application pipeline through a test host.
 
 ## Future architectural work
 
