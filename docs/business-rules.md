@@ -1,64 +1,32 @@
-# Business rules
+# Business rules and implementation status
 
-## Assignment requirements
+## Enforced rules
 
-The assignment requires support for branches and counters, staff and roles, product catalogue and branch inventory, shipping, money orders, identity verification, mixed retail/service transactions, pricing and tax, voids and refunds, reports, and simulated notifications.
+| Rule | Enforcement |
+| --- | --- |
+| Stock never becomes negative | `BranchInventoryItem` and atomic `IInventoryRepository.UpdateAsync`; checkout and inventory tests cover underflow/concurrency. |
+| Inactive staff cannot transact | `StaffMember.CanProcessTransactionsAt`, checkout workflow, cookie validator, and authentication tests. |
+| Clerks use their assigned branch | Checkout validates the clerk/branch; MVC authorization and `SameBranchOnly` restrict HTTP access. |
+| High-value money orders need verified same-context identity | `MoneyOrderWorkflowService` and checkout compare configured threshold, outcome, and transaction context. |
+| Shipment service weight limit | `ShippingPriceCalculator` rejects a rate-limit exceedance before persistence. |
+| Void/refund require assigned active Branch Manager and reason | MVC policy narrows HTTP access; Application workflow is the final rule authority. |
+| Closed branches cannot transact | Shipping and checkout reject closed branches. |
 
-The required roles are Counter Clerk, Branch Manager, Auditor, and Administrator. Required invariants include:
+Money uses `decimal`. The repository does not invent a currency, production rounding policy, fee schedule, document-type policy, or dimensional surcharge; those require explicit future policy decisions.
 
-- Stock must not become negative.
-- Inactive staff cannot process transactions.
-- Clerks may transact only at their assigned branch.
-- High-value money orders require successful identity verification in the same transaction.
-- Shipments over the configured service-level weight limit are rejected.
-- Voids and refunds require Branch Manager authorization and a reason.
-- Closed branches cannot accept transactions.
+## Synthetic seed data
 
-## Implementation status
+`DemoDataSeeder` creates five open branches, ten counters, twenty active staff members across all four roles, thirty products, 150 inventory records, ten zones/60 rates, and forty historical transaction snapshots. It is deterministic and contains no password, API key, full identity-document number, or real personal data.
 
-### Enforced by Domain
+Historical transaction snapshots are seed artifacts, not a replacement for runtime `CounterTransaction` persistence. Runtime transactions use `counter-transactions.json`; reports query persisted runtime aggregates.
 
-- Branch, staff, product, and zone identifiers must be non-empty after trimming and are normalized to uppercase invariant text. No code format or maximum length has been specified, so none is enforced.
-- Monetary amounts are decimal, non-negative, and not rounded by the value object. Currency and rounding policy remain planned.
-- Parcel weights are strictly positive kilograms; the configured service-level maximum is not yet implemented.
-- Parcel length, width, and height are strictly positive centimetre values.
-- Branches and counters have explicit open/closed state. A closed branch reports that it cannot accept transactions.
-- Staff members can be activated or deactivated. Inactive staff cannot process transactions, and active Counter Clerks can process transactions only at their assigned branch.
-- Branch inventory rejects negative starting stock and cannot be reduced below zero.
-- Money orders retain only an identity-verification outcome; the model has no identity-document field.
-- Retail pricing multiplies a product's current decimal unit price by a positive quantity without rounding.
-- Shipping pricing selects exactly one configured fixed charge using shipment type, service level, and destination zone. It rejects shipments whose weight is above that rate's configured maximum; a weight equal to the maximum is accepted.
-- `InventoryService` coordinates branch/product stock changes through atomic repository updates. Adds and removals require positive quantities; a general adjustment must be non-zero. Domain inventory rejects any removal that would make stock negative.
-- A low-stock notification is prepared only when stock crosses from above a configured non-negative threshold to at/below it. Notification delivery is an existing Application abstraction; no delivery implementation is introduced here.
-- `ShippingWorkflowService` creates a shipment only when its origin branch exists and is open, its identifier is unused, and `ShippingPriceCalculator` finds exactly one configured rate for its type, service level, and destination zone.
-- The selected rate supplies the fixed price and maximum weight. A shipment at the limit is accepted; one above it is rejected before persistence. The current shipment model requires strictly positive dimensions for letters and parcels alike; no letter defaults or further dimension limits are inferred.
-- Money orders require a positive decimal amount, non-empty sender/recipient names, a non-negative fee, and a context identifier. Their total is amount plus fee without a new fee or rounding formula.
-- The configured `IMoneyOrderPolicy.HighValueThreshold` is exclusive: an amount strictly above it requires a verified identity record in the same money-order context; an amount equal to it does not. Failed, pending, absent, or mismatched-context verification rejects a high-value order before persistence.
-- Identity verification records retain only document type, result, context ID, and a masked document reference. Full document numbers are not retained by Domain or JSON persistence.
-- Counter transactions contain one or more retail or service lines, a configured-policy tax amount, payment method, and `Open`, `Paid`, `Voided`, or `Refunded` status. Checkout produces a paid transaction only after open branch/counter and active, assigned Counter Clerk checks pass.
-- Retail lines use the existing retail calculator. A service line carries a price produced by its owning service; checkout does not duplicate shipping, money-order, or other service pricing formulas. Existing money-order lines must match the transaction ID as their context and satisfy the high-value verification policy.
-- Transaction state transitions are `Open → Paid`, `Open → Voided`, and `Paid → Refunded`. Void/refund require a non-empty reason and an active Branch Manager assigned to the transaction branch. Checkout removes retail stock only as it marks a transaction paid, so refunds restore retail stock while voiding an open basket does not.
+## Operational boundaries
 
-### Demo seed data
+JSON files do not provide a multi-file transaction. Checkout compensates inventory after a transaction-save failure, while refund records its status before attempting stock restoration and reports restoration failure for reconciliation. Locks protect same-process paths only; multiple processes sharing a data directory are unsupported.
 
-- Step 8 seed data is synthetic and deterministic: it includes five open branches, active synthetic staff in every required role, products, non-negative inventory, ten valid zone codes with shipping-rate records, and forty historical retail records.
-- Every historical record refers to a seeded branch, an active Counter Clerk assigned to that branch, and a seeded product. Its total equals its decimal unit price multiplied by its positive quantity; a corresponding non-negative inventory record exists.
-- The current model has no transaction aggregate, tax policy, money-order threshold, or shipping-rate repository. Historical transaction and rate files are therefore Infrastructure seed snapshots for future consumers, not evidence of implemented transaction workflows.
-- Seed data contains no customer identity-document field or reference. Names and identifiers are explicitly synthetic; no passwords, API keys, or credentials are seeded.
+## Deliberately incomplete or external concerns
 
-### Deferred to future steps
-
-- `JsonShippingRateProvider` loads `shipping-rates.json` for runtime workflow use. Configuration must contain exactly one valid rate for a supported type/service/zone combination; missing or ambiguous rates are rejected by the pricing component.
-- The high-value threshold and same-transaction linkage for money-order identity verification require transaction composition and configuration.
-- JSON transaction operations span inventory and transaction files and are not atomic. Checkout compensates inventory if transaction persistence fails; process interruption, failed compensation, and multiple application processes require operational reconciliation.
-- Daily sales reports include only paid transactions on the requested UTC calendar day and split immutable transaction lines into retail versus service totals, then report tax separately.
-- Low-stock reports are branch-scoped and include quantities at or below an explicit non-negative threshold. Shipping reports are branch-scoped and group existing shipments by destination zone and stored service level. Auditor money-order reports return counts by verification outcome only.
-- Simulated notifications are emitted through `INotificationSender` after low-stock threshold crossings, successful high-value money orders, and completed void/refund operations. Delivery failure is surfaced after the business state has been saved.
-- Branch closure must be coordinated with counter transaction creation in a later workflow; this step exposes branch state without adding a transaction process.
-- Application now owns contracts that future workflows will use to retrieve and persist entities, identify the current staff member, write audits, and send notifications. The contracts do not themselves enforce business rules or persist data.
-- JSON inventory atomicity is limited to repository instances in one application process. Multiple processes writing the same JSON data directory require external coordination and are unsupported.
-- A production high-value threshold, supported document types, external identity-provider integration, fee schedule, currency, and rounding policies require explicit future configuration/policy decisions; no values are invented here.
-
-### Requiring clarification
-
-- Identifier formats and maximum lengths, supported currencies, rounding policy, dimensional surcharges or limits, and the high-value money-order threshold are not specified in the repository. Shipping rate values and service-level weight limits are caller-supplied configuration, not authoritative values in source code.
+- No external payment, identity-verification, notification, or shipping-carrier adapter.
+- No production account provisioning, MFA, lockout, password lifecycle, or cross-process session revocation.
+- No database/ORM, distributed lock, outbox, or reconciliation job.
+- No automatic seed/reset CLI command; operators must explicitly control a local data directory.

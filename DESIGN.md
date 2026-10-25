@@ -2,17 +2,18 @@
 
 ## Current architecture
 
-The solution is structured as a layered application. The Domain layer provides validated value objects and core entities, while Application owns contracts for persistence and external capabilities plus deterministic pricing calculators. Concrete persistence and application-specific MVC workflows are not yet implemented.
+The solution is a layered .NET 10 MVC application. Domain provides validated value objects and business entities; Application owns workflows and contracts; Infrastructure provides JSON adapters; and Web is the HTTP/MVC composition root. Persistence, MVC workflows, security controls, auditing, reports, and integration tests are implemented as described below.
 
 | Project | Responsibility | Current state |
 | --- | --- | --- |
-| `ApexPost.Domain` | Business entities, value objects, and invariants. | Core entities and local invariants implemented; workflows planned. |
-| `ApexPost.Application` | Use cases, service contracts, repository abstractions, external-capability contracts, and pricing rules. | Repository, audit, notification, current-staff-context contracts, and pricing calculators implemented; services planned. |
+| `ApexPost.Domain` | Business entities, value objects, and invariants. | Implemented. |
+| `ApexPost.Application` | Use cases, service contracts, repository abstractions, external-capability contracts, and pricing rules. | Implemented workflows for inventory, shipping, money orders, transactions, and reports. |
 | `ApexPost.Infrastructure` | Technical adapters, including JSON repository persistence. | Implements all current repository contracts. |
-| `ApexPost.Web` | ASP.NET Core MVC UI and composition root. | Minimal MVC template; no application-specific registration or workflow. |
+| `ApexPost.Web` | ASP.NET Core MVC UI and composition root. | Implemented MVC screens, filters, authentication/authorization, middleware, integration endpoint, and registrations. |
 | `ApexPost.Domain.Tests` | Unit tests for Domain. | Value-object and entity unit tests implemented. |
-| `ApexPost.Application.Tests` | Unit tests for Application. | Template test only. |
-| `ApexPost.Web.IntegrationTests` | Integration tests for Web. | Template test only. |
+| `ApexPost.Application.Tests` | Unit tests for Application. | Workflow, pricing, cancellation, failure, and concurrency coverage. |
+| `ApexPost.Infrastructure.Tests` | Tests for JSON adapters and seed data. | Persistence, seed, cancellation, and concurrency coverage. |
+| `ApexPost.Web.IntegrationTests` | Integration tests for Web. | Cookie, MVC filter, middleware, and integration-security coverage. |
 
 ## Verified project dependency flow
 
@@ -32,17 +33,17 @@ flowchart RL
 
 ## Composition root and dependency injection
 
-`src/ApexPost.Web/Program.cs` is the composition root. It currently contains only template application setup. In a later step, it will register Application services and Infrastructure implementations with built-in `Microsoft.Extensions.DependencyInjection`, then configure the HTTP pipeline. Business logic will not be placed there.
+`src/ApexPost.Web/Program.cs` is the composition root. It registers Infrastructure adapters, Application workflows, MVC filters, authentication/authorization, options, and middleware without placing business rules there.
 
 ## Application contracts
 
 Application owns repository interfaces for each implemented aggregate or independently persisted entity: branches, counters, staff members, products, branch inventory items, shipments, and money orders. Each contract returns an optional entity from `Find...Async` when absence is valid and persists an entity through `SaveAsync`. Every asynchronous operation accepts a final optional `CancellationToken`; contracts reveal neither file paths nor JSON details.
 
-`ICurrentStaffContext` makes the current operator's `StaffId` and branch context available without referencing ASP.NET Core. `IAuditWriter` accepts an `AuditRecord` and `INotificationSender` accepts a `NotificationMessage`; their concrete delivery and storage remain planned Infrastructure responsibilities. Audit summaries must exclude identity-document numbers, credentials, and payment-card data.
+`ICurrentStaffContext` makes the current operator's `StaffId` and branch context available without referencing ASP.NET Core. `IAuditStore` persists safe `AuditRecord` data through Infrastructure's `JsonAuditStore`; `INotificationSender` is fulfilled by local logging. Audit records exclude identity-document numbers, credentials, and payment-card data.
 
 ```mermaid
 flowchart RL
-    Web[ApexPost.Web<br/>planned consumer] --> Application[ApexPost.Application<br/>implemented contracts]
+    Web[ApexPost.Web<br/>MVC composition root] --> Application[ApexPost.Application<br/>workflows and contracts]
     Application --> Domain[ApexPost.Domain<br/>implemented model]
     Infrastructure[ApexPost.Infrastructure<br/>JSON repository implementations] --> Application
     Infrastructure --> Domain
@@ -50,7 +51,7 @@ flowchart RL
 
 ```mermaid
 flowchart LR
-    Consumer[Future Application service<br/>planned] --> Contract[Application contract<br/>implemented]
+    Consumer[Application workflow] --> Contract[Application contract]
     Contract --> Repository[Repository interface<br/>implemented]
     Contract --> Capability[Audit, notification, or staff-context interface<br/>implemented]
     Repository -. implemented by .-> Infrastructure[Infrastructure JSON adapter<br/>implemented]
@@ -62,7 +63,7 @@ flowchart LR
 
 Application owns the calculation logic. `RetailPriceCalculator` multiplies a `Product`'s existing `Money` unit price by a positive quantity, preserving decimal precision without rounding. `ShippingPriceCalculator` receives a `ShippingPricingRequest` and caller-supplied `ShippingRate` collection. A rate has a shipment type (`Letter` or `Parcel`), service level (`Standard`, `Express`, or `Registered`), destination zone, fixed `Money` charge, and maximum `ParcelWeight`.
 
-The calculator requires exactly one matching rate and rejects a shipment above the selected rate's maximum weight; an equal weight is permitted. The assignment repository supplies no authoritative charge, formula, rounding rule, or dimensional surcharge, so the fixed charges and maximum weights are configuration data. Dimensions remain part of the validated `Shipment` but do not currently affect price. Infrastructure-based rate loading is planned.
+The calculator requires exactly one matching rate and rejects a shipment above the selected rate's maximum weight; an equal weight is permitted. The assignment repository supplies no authoritative charge, formula, rounding rule, or dimensional surcharge, so the fixed charges and maximum weights are configuration data. Dimensions remain part of the validated `Shipment` but do not currently affect price. `JsonShippingRateProvider` loads the configured JSON rates.
 
 ```mermaid
 flowchart LR
@@ -72,7 +73,7 @@ flowchart LR
     Request --> Shipping[ShippingPriceCalculator<br/>implemented]
     Rates[Caller-supplied ShippingRate data<br/>implemented contract data] --> Shipping
     Shipping --> ShippingPrice[Money result or validation error]
-    PlannedConfig[Infrastructure configuration loader<br/>planned] -. supplies .-> Rates
+    Config[JSON shipping-rate provider] -. supplies .-> Rates
 ```
 
 ```mermaid
@@ -90,7 +91,7 @@ flowchart LR
 
 The Domain layer contains immutable sealed records, so equality is value-based and instances cannot be modified after construction. `BranchCode`, `StaffId`, `ProductId`, and `ZoneCode` reject null, empty, and whitespace-only input, then trim and normalize codes to uppercase invariant text. The assignment does not provide code-pattern or length limits, so none are invented here.
 
-`Money` retains its input as a `decimal` and accepts zero or positive amounts without rounding; currency and rounding policies are planned with future pricing and tax work. `ParcelWeight` represents a strictly positive kilogram value. `ParcelDimensions` represents strictly positive length, width, and height values in centimetres. Shipment weight limits remain a planned configurable business rule rather than a value-object maximum.
+`Money` retains its input as a `decimal` and accepts zero or positive amounts without rounding; currency and rounding policies remain deliberately unspecified. `ParcelWeight` represents a strictly positive kilogram value. `ParcelDimensions` represents strictly positive length, width, and height values in centimetres. Shipment weight limits are configured per shipping rate rather than embedded in the value object.
 
 ```mermaid
 flowchart TB
@@ -144,7 +145,7 @@ flowchart LR
     Remove -->|No| Update[Update inventory quantity]
 ```
 
-Branch closure and staff eligibility are exposed as entity state and operations. Coordinating those checks with counter transaction creation, shipment service limits, money-order thresholds, refunds, and authorization is planned application/domain-workflow work.
+Branch closure and staff eligibility are entity state and operations. Application workflows coordinate those checks with checkout, shipment creation, money-order thresholds, refunds, and HTTP authorization.
 
 ## Step 7 JSON repository persistence
 
@@ -178,7 +179,7 @@ Missing files are treated as empty repositories. Empty, null, malformed, and dom
 
 ## Step 8 deterministic demo seed data
 
-`DemoDataSeeder` is an Infrastructure component, not a web startup action. It builds valid Domain entities and saves branches, counters, staff, products, and inventory through the existing JSON repositories. It also writes `shipping-rates.json`, now consumed by `JsonShippingRateProvider` through the Application `IShippingRateProvider` abstraction, and `historical-transactions.json`, which remains a seed snapshot because there is no transaction aggregate. These records do not implement transaction, reporting, or authentication workflows.
+`DemoDataSeeder` is an Infrastructure component, not a web startup action. It builds valid Domain entities and saves branches, counters, staff, products, and inventory through JSON repositories. It also writes `shipping-rates.json`, consumed by `JsonShippingRateProvider`, and `historical-transactions.json`, which remains a seed snapshot separate from runtime `CounterTransaction` persistence. Seeded staff do not create usable login accounts until a local password secret is configured.
 
 ```mermaid
 flowchart LR
@@ -246,7 +247,7 @@ flowchart LR
     Save --> Result[Shipment and configured price]
 ```
 
-The workflow does not define rates, formulas, dimensional surcharges, or a universal service limit. `shipping-rates.json` configuration supplies one fixed charge and maximum weight for each applicable type/service/zone. The current Domain model requires positive dimensions for every shipment, including a letter, and no additional type-specific dimensions are invented. Persistence I/O errors propagate unchanged; missing origin branches and shipment retrieval use explicit Application exceptions. Courier integrations, labels, MVC, and transaction composition remain planned.
+The workflow does not define rates, formulas, dimensional surcharges, or a universal service limit. `shipping-rates.json` supplies one fixed charge and maximum weight for each applicable type/service/zone. The current Domain model requires positive dimensions for every shipment, including a letter, and no additional type-specific dimensions are invented. Persistence I/O errors propagate unchanged; missing origin branches and shipment retrieval use explicit Application exceptions. The MVC flow presents a label preview; carrier integration and rendered carrier labels are not implemented.
 
 ## Step 11 money orders and identity verification
 
@@ -455,6 +456,49 @@ flowchart TD
 
 No benchmark framework or representative load profile exists in the repository, so the review records no fabricated throughput/latency values. It identifies reduced sequential waiting as a design improvement only. `ValueTask` and an in-memory cache are intentionally absent: the JSON shipping-rate source has no measured hot-read profile, and cache invalidation would change configuration freshness semantics. The notification adapter is synchronous local logging rather than an external lookup; therefore no timeout is appropriate today. A future external provider must combine a bounded timeout with the request cancellation token and surface cancellation separately from provider failure.
 
+## Step 20 delivery architecture decisions
+
+### SOLID mapping
+
+| Principle | Actual code | Why it applies |
+| --- | --- | --- |
+| Single responsibility | `ShippingWorkflowService`, `InventoryService`, `JsonFileStore<TDocument>`, MVC controllers | Workflows coordinate one use case; JSON store owns file access/locking; controllers translate HTTP only. |
+| Open/closed | `IShippingRateProvider`, `INotificationSender`, `IAuditStore`, repository interfaces | A provider/store/sender can be replaced without changing workflows. |
+| Liskov substitution | JSON and test in-memory repository implementations | Workflows consume contract behavior and tests substitute deterministic implementations. |
+| Interface segregation | Separate repository, notification, audit, pricing, and tax contracts | Consumers do not depend on unrelated persistence or delivery operations. |
+| Dependency inversion | Application workflows depend on contracts; `Program.cs` supplies JSON/logging adapters | Business rules do not reference MVC or JSON types. |
+
+### DI lifetime decisions
+
+| Lifetime | Registrations | Rationale and capture prevention |
+| --- | --- | --- |
+| Singleton | JSON repositories/store/provider, Application workflows, policies/options, local authenticator, logging notification sender | These services are stateless or own process-wide file locks/configuration. They depend only on singleton-safe collaborators and do not capture request/scoped services. |
+| Scoped | MVC audit, validation, and performance filters | Filters are resolved per MVC request through `AddService`; they receive singleton-safe store/options/logging dependencies. |
+| Framework-managed request state | `HttpContext`, authentication principal, controller instances | It is accessed only within request/filter/controller execution and is not stored in singleton services. |
+
+### Security, audit, and deployment notes
+
+| Threat or concern | Current mitigation | Remaining boundary |
+| --- | --- | --- |
+| Credential/API-key disclosure | User secrets guidance, constant-time integration key comparison, generic sign-in failures, no secrets committed | No production credential lifecycle or vault integration. |
+| Cross-branch/role abuse | Cookie claims are revalidated against persisted staff; role and branch policies plus Application checks | No MFA or distributed session revocation. |
+| Sensitive audit leakage | Audit filter allow-lists route identifiers and never serializes bodies/models/headers | Filesystem writers can alter JSON audit data. |
+| Request correlation and unsafe errors | Correlation middleware, safe Problem Details, security headers | Proxy deployments must configure trusted forwarded headers. |
+| JSON corruption/concurrency | Async temporary replacement writes and same-process semaphores | No cross-process lock or multi-file transaction. |
+
+Deployment configuration belongs outside source control: data directory, local/demo passwords, integration API key, IP allowlist, partner origin, rate limits, thresholds, and maintenance settings. Terminate or serve TLS in production; configure explicit trusted proxies before enabling forwarded headers for client-IP policies. `/health` is intentionally available during maintenance mode for infrastructure checks.
+
+### Architecture decision records
+
+These ADRs document existing decisions at Step 20; they do not claim unrecorded historical deliberation.
+
+1. [ADR 0001 — layered project dependencies](docs/adr/0001-layered-project-dependencies.md)
+2. [ADR 0002 — JSON persistence and same-process locking](docs/adr/0002-json-persistence-and-same-process-locking.md)
+3. [ADR 0003 — local cookie authentication](docs/adr/0003-local-cookie-authentication.md)
+4. [ADR 0004 — ordered security middleware](docs/adr/0004-order-security-middleware-before-endpoints.md)
+5. [ADR 0005 — MVC action audit with JSON store](docs/adr/0005-mvc-action-audit-with-json-store.md)
+6. [ADR 0006 — parallelize only independent checkout reads](docs/adr/0006-parallelize-only-independent-checkout-reads.md)
+
 ```mermaid
 flowchart TD
     Login[Login UI placeholder] --> Dashboard[Branch dashboard]
@@ -472,6 +516,6 @@ flowchart TD
 
 Each test project references only the layer it tests: Domain Tests references Domain, Application Tests references Application, and Web Integration Tests references Web. The projects use xUnit; Web Integration Tests uses `Microsoft.AspNetCore.Mvc.Testing` to exercise MVC routes and form validation through a test host.
 
-## Planned architectural components
+## Future architectural work
 
-Later steps may add application services and workflows, JSON persistence adapters, dependency-injection registrations, authentication and authorization, and MVC workflows. Domain entities, Application contracts, and pricing calculators are already implemented; concrete contract implementations are not.
+Future work requires explicit decisions for production identity, payment, notification, carrier, currency/rounding, cache invalidation, distributed concurrency, audit retention/integrity, and reconciliation infrastructure. These are not represented as completed features.

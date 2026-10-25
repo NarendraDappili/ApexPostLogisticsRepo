@@ -2,13 +2,14 @@
 
 ## Current test projects
 
-The solution contains three xUnit test projects:
+The solution contains four xUnit test projects:
 
 - `ApexPost.Domain.Tests` references `ApexPost.Domain`.
 - `ApexPost.Application.Tests` references `ApexPost.Application`.
+- `ApexPost.Infrastructure.Tests` references `ApexPost.Infrastructure`.
 - `ApexPost.Web.IntegrationTests` references `ApexPost.Web`.
 
-`ApexPost.Web.IntegrationTests` also references the approved `Microsoft.AspNetCore.Mvc.Testing` package for future ASP.NET Core test hosting. Domain Tests cover value-object construction, normalization, invalid inputs, decimal precision, and value equality. They also cover branch and counter state, staff activity and branch assignment, product price updates, non-negative inventory, shipment composition, money-order verification outcomes, and entity identity equality. Application Tests now cover retail quantity calculations and configured shipping-rate selection, all three service levels, shipment type and zone selection, maximum-weight boundaries, missing/ambiguous rates, and invalid service levels. The shipping test rate values are controlled fixtures, not production configuration. Web Tests retain their template test.
+`ApexPost.Web.IntegrationTests` references the approved `Microsoft.AspNetCore.Mvc.Testing` package for actual ASP.NET Core test hosting. Domain tests cover value objects/entities; Application tests cover workflows/pricing; Infrastructure tests cover JSON/seed behavior; and Web tests cover MVC, authentication, filters, and middleware. Test data, credentials, correlation IDs, and filesystem locations are synthetic/test-owned.
 
 ## Planned coverage
 
@@ -49,6 +50,18 @@ Concurrency tests verify that concurrent same-process inventory removals and che
 The checkout validation fan-out uses `Task.WhenAll` only for branch/counter/clerk/duplicate-ID reads, which target independent aggregates. Tests retain serialized assertions for stock and transaction mutations; no test assumes parallel writes. No benchmark is recorded because the repository has no supported benchmark harness or representative load data. Cache and `ValueTask` tests are intentionally absent because neither optimization is implemented: there is no measured repeated-read hot path that justifies cache invalidation complexity, and existing async operations are genuinely I/O-bound `Task` operations rather than commonly synchronous completions.
 
 Later steps should add focused unit tests for domain invariants and application use cases, plus web integration tests for relevant HTTP behavior. Tests should verify the assignment rules described in [business-rules.md](business-rules.md) and security-sensitive behavior described in [security.md](security.md) as those features are implemented.
+
+## Step 20 delivery verification
+
+The documented full command is:
+
+```powershell
+dotnet restore ApexPost.slnx
+dotnet build ApexPost.slnx --no-restore
+dotnet test ApexPost.slnx --no-build --verbosity normal
+```
+
+The most recent Step 20 validation is 127 passed, 0 failed, 0 skipped. Required web integration coverage includes security headers, API-key `401`, blocked-IP `403`, rate-limit `429`, unauthenticated redirect, Clerk void `403`, and correlation-ID response. Seed tests verify the documented 5 branches, 20 staff, 30 products, 10 zones/60 rates, and 40 historical snapshots; 150 inventory records follow from five branches times 30 products. There is no browser screenshot, Postman collection, benchmark harness, external provider, or cross-process JSON test to present as a delivery artifact.
 
 ## Commands
 
