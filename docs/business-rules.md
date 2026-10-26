@@ -24,6 +24,8 @@ Historical transaction snapshots are seed artifacts, not a replacement for runti
 
 JSON files do not provide a multi-file transaction. Checkout compensates inventory after a transaction-save failure, while refund records its status before attempting stock restoration and reports restoration failure for reconciliation. Locks protect same-process paths only; multiple processes sharing a data directory are unsupported.
 
+The repository tracks synthetic JSON starting snapshots in `src/ApexPost.Web/App_Data/`, including audit and runtime record files. Running the application can modify them. Review these file changes before committing and never commit real personal or operational data. The generated `data-protection-keys/` directory in `App_Data` is excluded from Git and must remain local.
+
 ## Deliberately incomplete or external concerns
 
 - No external payment, identity-verification, notification, or shipping-carrier adapter.

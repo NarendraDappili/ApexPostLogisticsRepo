@@ -136,6 +136,11 @@ from a blocked address still consumes a permit. See
 - The audit store is append-only through its Application API, not tamper-proof;
   audit write failures are logged rather than changing an already completed
   business action.
+- The JSON snapshots under `src/ApexPost.Web/App_Data/` are tracked in Git as
+  synthetic starting data; runtime writes can change them. Review data diffs
+  carefully and never commit real personal or operational records.
+- `src/ApexPost.Web/App_Data/data-protection-keys/` is excluded from Git.
+  Generated keys are local secrets and must not be committed or shared.
 - Demo seed data is synthetic and the seeder is not invoked by web startup. The
   application currently provides no supported seed CLI.
 

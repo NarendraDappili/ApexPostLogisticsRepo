@@ -18,4 +18,4 @@ Use generic `JsonFileStore<TDocument>` with asynchronous streams, a process-wide
 
 ## Consequences
 
-Same-process writes are serialized and cancellation is honored. Multiple processes, filesystem durability, and multi-file atomicity are not guaranteed; reconciliation may be needed.
+Same-process writes are serialized and cancellation is honored. Multiple processes, filesystem durability, and multi-file atomicity are not guaranteed; reconciliation may be needed. The repository includes synthetic JSON starting snapshots under `src/ApexPost.Web/App_Data/`; runtime mutations can change tracked files and must be reviewed before committing. Real personal or production operational data must not be committed. The generated `data-protection-keys/` subdirectory is excluded from Git and remains local.
