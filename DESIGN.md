@@ -2,7 +2,7 @@
 
 ## Current architecture
 
-The solution is a layered .NET 10 MVC application. Domain provides validated value objects and business entities; Application owns workflows and contracts; Infrastructure provides JSON adapters; and Web is the HTTP/MVC composition root. Persistence, MVC workflows, security controls, auditing, reports, and integration tests are implemented as described below.
+The solution is a layered .NET 10 MVC application. Domain provides validated value objects and business entities; Application owns workflows and contracts; Infrastructure provides JSON adapters; and Web is the HTTP/MVC composition root. Persistence, MVC workflows, security controls, auditing, reports, and integration tests are implemented as described below. For the concise system context, project boundaries, HTTP pipeline, and operational limits, start with the [architecture overview](docs/architecture/README.md).
 
 | Project | Responsibility | Current state |
 | --- | --- | --- |

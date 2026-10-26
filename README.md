@@ -92,7 +92,8 @@ When a trusted local utility has seeded an empty `ApexPost:DataDirectory`, confi
 
 ## Documentation
 
-- [Architecture and ADRs](DESIGN.md)
+- [Architecture overview](docs/architecture/README.md)
+- [Detailed design and ADRs](DESIGN.md)
 - [Business rules and implementation status](docs/business-rules.md)
 - [Security and audit constraints](docs/security.md)
 - [Test strategy and verified coverage](docs/testing.md)
