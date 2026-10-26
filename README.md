@@ -24,15 +24,14 @@ The most recently verified suite contains 140 passing tests, with 0 failures and
 
 `ApexPost:DataDirectory` defaults to `App_Data` under the web application's content root. It contains operational JSON files and ASP.NET Core data-protection keys, is ignored by Git, and should be protected with ordinary OS access controls.
 
-Committed `appsettings.json` contains configuration shapes and non-secret local defaults only. Initialize user secrets for a local checkout before adding a demo password or integration key:
+Committed `appsettings.json` contains configuration shapes and non-secret local defaults only. The Web project already has a `UserSecretsId`; do not run `dotnet user-secrets init` again. Configure demo credentials locally with User Secrets:
 
 ```powershell
-dotnet user-secrets init --project src/ApexPost.Web
 dotnet user-secrets set --project src/ApexPost.Web "ApexPost:Authentication:DemoAccounts:STF-CLERK-01-A" "<local-demo-password>"
 dotnet user-secrets set --project src/ApexPost.Web "ApexPost:Security:Integration:ApiKey" "<local-integration-key>"
 ```
 
-Do not commit those values. Other active keys include `ApexPost:Inventory:LowStockThreshold`, `ApexPost:MoneyOrders:HighValueThreshold`, `ApexPost:Transactions:TaxRate`, `ApexPost:Performance:WarningThresholdMilliseconds`, maintenance settings, rate limits, partner origin, and integration IP allowlist.
+Replace each placeholder locally; never commit, push, or share the actual password or API key. User Secrets are stored outside the repository and are for local development, not production secret storage. Use your deployment platform's secret manager or protected environment configuration in production. The staff ID in the setting must exactly match an active staff record in the configured data directory; use the corresponding ID from `staff-members.json` if your data was seeded differently. Other active keys include `ApexPost:Inventory:LowStockThreshold`, `ApexPost:MoneyOrders:HighValueThreshold`, `ApexPost:Transactions:TaxRate`, `ApexPost:Performance:WarningThresholdMilliseconds`, maintenance settings, rate limits, partner origin, and integration IP allowlist.
 
 There are no configured demo login accounts or passwords in source control. The deterministic seed creates synthetic staff in Counter Clerk, Branch Manager, Auditor, and Administrator roles, but login works only after a matching local secret is configured. Seeded names and identifiers are synthetic.
 
