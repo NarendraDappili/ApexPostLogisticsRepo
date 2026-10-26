@@ -1,6 +1,6 @@
 # ADR 0005: Audit at the MVC action boundary with a JSON store
 
-Status: Accepted — documented at Step 20.
+Status: Accepted.
 
 ## Context
 

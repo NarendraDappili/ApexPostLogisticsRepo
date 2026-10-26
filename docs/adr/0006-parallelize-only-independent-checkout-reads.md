@@ -1,6 +1,6 @@
 # ADR 0006: Parallelize only independent checkout validation reads
 
-Status: Accepted — documented at Step 20.
+Status: Accepted.
 
 ## Context
 

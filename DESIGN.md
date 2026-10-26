@@ -147,7 +147,7 @@ flowchart LR
 
 Branch closure and staff eligibility are entity state and operations. Application workflows coordinate those checks with checkout, shipment creation, money-order thresholds, refunds, and HTTP authorization.
 
-## Step 7 JSON repository persistence
+## JSON repository persistence
 
 Infrastructure implements only the existing Application repository abstractions: `IBranchRepository`, `ICounterRepository`, `IStaffMemberRepository`, `IProductRepository`, `IInventoryRepository`, `IShipmentRepository`, and `IMoneyOrderRepository`. No delete contract exists, so deletion is deliberately not added. Each `SaveAsync` upserts by the Domain identity and `Find...Async` returns `null` when data is absent.
 
@@ -177,7 +177,7 @@ sequenceDiagram
 
 Missing files are treated as empty repositories. Empty, null, malformed, and domain-invalid JSON throws instead of being replaced; I/O exceptions also reach the caller. File streams are asynchronous and contract cancellation tokens are propagated. A process-wide, path-keyed `SemaphoreSlim` protects each read-modify-write operation for all repository instances in this process; it provides no cross-process coordination. A complete JSON payload is written to a unique temporary file in the same directory, then moved over the target, avoiding a truncated target if serialization fails. Atomic replacement and durability are filesystem/platform dependent, and operations spanning multiple files are not transactional.
 
-## Step 8 deterministic demo seed data
+## Deterministic demo seed data
 
 `DemoDataSeeder` is an Infrastructure component, not a web startup action. It builds valid Domain entities and saves branches, counters, staff, products, and inventory through JSON repositories. It also writes `shipping-rates.json`, consumed by `JsonShippingRateProvider`, and `historical-transactions.json`, which remains a seed snapshot separate from runtime `CounterTransaction` persistence. Seeded staff do not create usable login accounts until a local password secret is configured.
 
@@ -195,7 +195,7 @@ flowchart LR
 
 The seeder accepts only a nonexistent or empty configured data directory. It writes the fixed `apexpost-demo-v1` manifest last; a matching manifest makes a later call a no-op. If any unmarked data or an incompatible manifest exists, it fails without changing files. This protects user data but cannot make a failed multi-file initial seed atomic: a partial seed has no completion manifest and must be inspected or removed explicitly by the local operator before retrying. All identities are synthetic and no document references, passwords, or secrets are produced.
 
-## Step 9 inventory application behavior
+## Inventory application behavior
 
 `InventoryService` owns inventory orchestration in Application. `BranchInventoryItem` remains the Domain owner of positive-change and non-negative-stock invariants. The narrowly extended `IInventoryRepository.UpdateAsync` contract runs one mutation against one branch/product item without exposing an intervening read/write window. `JsonInventoryRepository` implements it inside the existing `inventory.json` per-file lock.
 
@@ -228,7 +228,7 @@ flowchart TB
 
 The JSON lock is process-wide and keyed by the inventory file path, so concurrent operations through JSON repository instances in one application process cannot oversell. It is not a cross-process lock and does not provide distributed transactions. Low-stock alerts are sent only on a downward threshold crossing and are awaited; without an outbox, a notification delivery failure can be reported after persistence, and delivery is not retried in this step.
 
-## Step 10 shipping workflow
+## Shipping workflow
 
 `ShippingWorkflowService` is an Application-layer coordinator. It translates raw request data into the existing validated Domain `Shipment` and value objects, checks the origin branch through `IBranchRepository`, obtains storage-agnostic configured rates through `IShippingRateProvider`, delegates all matching, fixed-price, and maximum-weight behavior to `ShippingPriceCalculator`, then saves through `IShipmentRepository`. `JsonShippingRateProvider` is the Infrastructure implementation that reads `shipping-rates.json` asynchronously.
 
@@ -249,7 +249,7 @@ flowchart LR
 
 The workflow does not define rates, formulas, dimensional surcharges, or a universal service limit. `shipping-rates.json` supplies one fixed charge and maximum weight for each applicable type/service/zone. The current Domain model requires positive dimensions for every shipment, including a letter, and no additional type-specific dimensions are invented. Persistence I/O errors propagate unchanged; missing origin branches and shipment retrieval use explicit Application exceptions. The MVC flow presents a label preview; carrier integration and rendered carrier labels are not implemented.
 
-## Step 11 money orders and identity verification
+## Money orders and identity verification
 
 `MoneyOrderWorkflowService` coordinates persistence and configured policy while `MoneyOrder` owns its amount, fee, sender, recipient, context identity, and verification-association invariants. `IMoneyOrderPolicy` provides `HighValueThreshold`; the application requires a supplied configuration value and does not hard-code a production threshold. An amount strictly greater than the threshold must have a successful `IdentityVerificationRecord` with the same `MoneyOrderContextId` before the repository save occurs.
 
@@ -271,7 +271,7 @@ flowchart LR
 
 The raw identity-document number is transient request input only. Application converts it to `MaskedIdentityDocumentReference`; Domain and JSON persistence retain document type, verification outcome, transaction context, and only the masked representation. No external identity-provider call, audit filter, authentication, counter transaction, or MVC feature exists in this step. The policy threshold must be supplied by a future composition/configuration step, and currency/fee calculation policy remain intentionally unresolved.
 
-## Step 12 mixed counter transactions
+## Mixed counter transactions
 
 `CounterTransaction` is a Domain aggregate for branch/counter/clerk identity, immutable basket lines, subtotal, tax, payment method, and state. It allows `Open → Paid`, `Open → Voided`, and `Paid → Refunded`; manager authorization and reason input are validated at the Application boundary before the Domain transition. `CounterTransactionWorkflowService` validates branch, counter, clerk, existing money orders, stock, and configured tax policy. `ICounterTransactionRepository` is implemented by `JsonCounterTransactionRepository` in `counter-transactions.json`.
 
@@ -303,7 +303,7 @@ stateDiagram-v2
 
 Multi-file JSON persistence is not atomic. The service uses an in-process branch lock to serialize its own mixed-basket workflows and the existing per-file inventory mutation lock to prevent overselling. Checkout removes stock before saving the transaction and compensates it if save fails; if a process ends between writes or a compensation write fails, reconciliation is required. Refund persists its status before restoring inventory and explicitly reports a restoration failure; voiding an open basket restores no stock because checkout only removes stock when it marks a transaction paid. These guarantees do not coordinate multiple application processes sharing JSON files, nor do they provide database-grade atomicity.
 
-## Step 13 reports and simulated notifications
+## Reports and simulated notifications
 
 `BranchReportService` has four focused branch-scoped queries: paid daily sales split by retail/service plus tax, inventory at/below a caller-supplied threshold, shipment count grouped by destination zone/service level, and money-order verification outcome counts. The repository contracts add focused branch filters; no generic specification framework is introduced. Report reads are sequenced deliberately: each JSON repository uses its own same-process file lock, while `Task.WhenAll` would add little benefit and create a potentially inconsistent cross-file snapshot.
 
@@ -331,7 +331,7 @@ flowchart LR
 
 Notifications are observer-style calls through the existing Application abstraction, not an external provider. Each is sent after the relevant persistence succeeds; a delivery failure is observable to the caller but is not a distributed transaction and does not undo the stock/order/transaction state. Reports intentionally omit money-order sender, recipient, document type, and masked reference.
 
-## Step 14 MVC request flow
+## MVC request flow
 
 ```mermaid
 flowchart LR
@@ -346,7 +346,7 @@ flowchart LR
 
 Controllers convert HTTP/view-model input into Application requests and return Views, redirects after successful POSTs, or relevant HTTP status results. They do not contain pricing, stock, verification, or persistence rules. Authentication/authorization is explicitly outside this step, despite the login UI placeholder.
 
-## Step 15 authentication and authorization flow
+## Authentication and authorization flow
 
 ```mermaid
 flowchart TD
@@ -365,7 +365,7 @@ flowchart TD
 
 Cookies are validated against the persisted staff record on every authenticated request. The application service remains the final authority for manager assignment, active staff status, transaction status transitions, and reversal reasons; endpoint policies reduce the HTTP attack surface but do not replace Domain/Application invariants.
 
-## Step 16 middleware pipeline
+## Middleware pipeline
 
 ```mermaid
 flowchart TD
@@ -387,7 +387,7 @@ flowchart TD
 
 Correlation runs first so every later log/error response has an ID. Timing surrounds the exception boundary so failures are measured. Headers are registered before short-circuiting controls. Routing precedes endpoint-metadata middleware; CORS handles approved preflight requests before API-key checks. API-key and IP checks occur before cookie processing because the integration endpoint is partner-authenticated rather than user-authenticated. `/health` is mapped after the pipeline but bypasses maintenance by path so infrastructure can still observe the service.
 
-## Step 17 MVC filters and audit boundary
+## MVC filters and audit boundary
 
 `IAuditStore` lives in Application because it describes an operational requirement without choosing a persistence mechanism. `JsonAuditStore` lives in Infrastructure and writes `audit-records.json` through the existing asynchronous, path-keyed JSON lock. The store exposes only `AppendAsync` and `ReadAsync`; it has no mutation or deletion operation. An `AuditRecord` contains UTC occurrence time, nullable authenticated staff ID/role/branch, controller/action, allow-listed route values, status code, duration, correlation ID, and outcome. It deliberately does not have a request-body, model, summary, or exception-detail field.
 
@@ -418,7 +418,7 @@ flowchart TD
 
 The JSON implementation is append-only at the application API: it serializes same-process appends and writes a complete replacement document. It is not tamper-proof, WORM storage, a cross-process lock, or a durable ledger. File permissions, retention, integrity controls, off-host replication, and a ledger-capable audit service are required for those properties.
 
-## Step 18 test architecture
+## Test architecture
 
 Tests follow the production dependency direction. Domain tests exercise entity/value-object invariants without I/O. Application tests use deterministic in-memory repository/notification collaborators to cover workflows, cancellation, and failure propagation. Infrastructure tests use a unique OS-temporary directory per test and clean only that owned directory. Web integration tests start the actual composition root through `WebApplicationFactory`, set synthetic in-memory configuration, and use cookie/antiforgery interactions through `HttpClient`; no test uses a real credential, external service, or arbitrary delay.
 
@@ -434,7 +434,7 @@ flowchart LR
 
 The security integration suite tests the full HTTP pipeline rather than individual middleware in isolation: headers/correlation IDs, API-key failure, IP deny, fixed-window rate limiting, authentication redirect, and unauthorized Clerk reversal requests. TestServer does not provide a realistic remote IP for manager reversal calls; those requests are expected to be denied by the existing IP gate, while the integration endpoint independently verifies the configured-blocked-IP behavior.
 
-## Step 19 concurrency and advanced C# review
+## Concurrency and asynchronous behavior
 
 The codebase uses advanced C# features to support concrete concerns, not as a checklist. Immutable records and validated value objects carry business data safely; pattern matching selects status/rate behavior; generic `JsonFileStore<TDocument>` accepts `Func`/`Action` delegates so a document mutation remains inside its file lock; custom endpoint metadata selects MVC validation behavior; and `INotificationSender` is an awaited observer abstraction. All persistence/workflow calls are asynchronous and take a `CancellationToken`; cancellation tests keep it distinct from malformed-data and I/O failures.
 
@@ -456,7 +456,7 @@ flowchart TD
 
 No benchmark framework or representative load profile exists in the repository, so the review records no fabricated throughput/latency values. It identifies reduced sequential waiting as a design improvement only. `ValueTask` and an in-memory cache are intentionally absent: the JSON shipping-rate source has no measured hot-read profile, and cache invalidation would change configuration freshness semantics. The notification adapter is synchronous local logging rather than an external lookup; therefore no timeout is appropriate today. A future external provider must combine a bounded timeout with the request cancellation token and surface cancellation separately from provider failure.
 
-## Step 20 delivery architecture decisions
+## Architecture decisions and rationale
 
 ### SOLID mapping
 
@@ -490,7 +490,7 @@ Deployment configuration belongs outside source control: data directory, local/d
 
 ### Architecture decision records
 
-These ADRs document existing decisions at Step 20; they do not claim unrecorded historical deliberation.
+The ADRs below record key architectural decisions and their rationale.
 
 1. [ADR 0001 — layered project dependencies](docs/adr/0001-layered-project-dependencies.md)
 2. [ADR 0002 — JSON persistence and same-process locking](docs/adr/0002-json-persistence-and-same-process-locking.md)

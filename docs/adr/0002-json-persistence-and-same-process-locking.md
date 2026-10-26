@@ -1,6 +1,6 @@
 # ADR 0002: Use JSON persistence with same-process locking
 
-Status: Accepted — documented at Step 20.
+Status: Accepted.
 
 ## Context
 

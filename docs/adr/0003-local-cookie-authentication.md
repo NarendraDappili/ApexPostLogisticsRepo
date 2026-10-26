@@ -1,6 +1,6 @@
 # ADR 0003: Use local cookie authentication with persisted staff revalidation
 
-Status: Accepted — documented at Step 20.
+Status: Accepted.
 
 ## Context
 

@@ -1,6 +1,6 @@
 # ADR 0004: Order security middleware before MVC endpoints
 
-Status: Accepted — documented at Step 20.
+Status: Accepted.
 
 ## Context
 

@@ -1,6 +1,6 @@
 # ADR 0001: Preserve inward project dependencies
 
-Status: Accepted — documented at Step 20.
+Status: Accepted.
 
 ## Context
 
