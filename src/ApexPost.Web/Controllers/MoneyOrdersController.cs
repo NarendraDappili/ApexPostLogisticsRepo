@@ -11,13 +11,21 @@ namespace ApexPost.Web.Controllers;
 public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders) : Controller
 {
     [HttpGet]
-    public IActionResult Create() => View(new MoneyOrderFormViewModel());
+    public IActionResult Create() => View(new MoneyOrderFormViewModel
+    {
+        BranchCode = User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value ?? string.Empty
+    });
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(MoneyOrderFormViewModel input, CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(input.DocumentNumber) && string.IsNullOrWhiteSpace(input.DocumentType)) ModelState.AddModelError(nameof(input.DocumentType), "Document type is required when a document reference is provided.");
-        if (!ModelState.IsValid) return View(input);
+        if (!ModelState.IsValid)
+        {
+            input.DocumentNumber = string.Empty;
+            ModelState.Remove(nameof(input.DocumentNumber));
+            return View(input);
+        }
         if (!string.Equals(User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value, input.BranchCode, StringComparison.OrdinalIgnoreCase)) return Forbid();
         try
         {
@@ -25,7 +33,7 @@ public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders)
                 ? null
                 : new IdentityVerificationRequest(input.TransactionContextId, input.DocumentType!, input.DocumentNumber, input.VerificationOutcome);
             var result = await moneyOrders.CreateAsync(new MoneyOrderCreationRequest(input.MoneyOrderId, input.BranchCode, input.Amount, input.Sender, input.Recipient, input.Fee, input.TransactionContextId, verification), cancellationToken);
-            TempData["Notice"] = $"Money order {result.MoneyOrder.Id.Value} was created. Total: {result.Total.Amount:0.00}.";
+            TempData["Notice"] = $"Money order {result.MoneyOrder.Id.Value} was created. Total: {result.Total.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}.";
             return RedirectToAction(nameof(Create));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }

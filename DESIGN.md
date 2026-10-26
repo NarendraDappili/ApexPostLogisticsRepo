@@ -26,10 +26,13 @@ flowchart RL
     Application --> Domain
     DomainTests[ApexPost.Domain.Tests] --> Domain
     ApplicationTests[ApexPost.Application.Tests] --> Application
+    InfrastructureTests[ApexPost.Infrastructure.Tests] --> Infrastructure
     WebIntegrationTests[ApexPost.Web.IntegrationTests] --> Web
 ```
 
 `ApexPost.Domain` deliberately has no solution-project references. This keeps business rules independent of HTTP, MVC, JSON, and persistence details. The dependency direction is inward: Application depends on Domain, Infrastructure adapts Application and Domain, and Web uses Application and Infrastructure at the outer edge.
+
+The test projects reference only the production layer they verify: Domain tests reference Domain, Application tests reference Application, Infrastructure tests reference Infrastructure, and Web integration tests reference Web. Transitive references follow the production graph rather than introducing direct test-to-unrelated-layer coupling.
 
 ## Composition root and dependency injection
 
@@ -303,6 +306,64 @@ stateDiagram-v2
 
 Multi-file JSON persistence is not atomic. The service uses an in-process branch lock to serialize its own mixed-basket workflows and the existing per-file inventory mutation lock to prevent overselling. Checkout removes stock before saving the transaction and compensates it if save fails; if a process ends between writes or a compensation write fails, reconciliation is required. Refund persists its status before restoring inventory and explicitly reports a restoration failure; voiding an open basket restores no stock because checkout only removes stock when it marks a transaction paid. These guarantees do not coordinate multiple application processes sharing JSON files, nor do they provide database-grade atomicity.
 
+Compensating inventory writes use `CancellationToken.None` after a mutation has started or a refund status has been persisted. This is intentional: request cancellation must not interrupt the immediate rollback/restoration path. It does not make compensation durable or atomic, and failures continue to surface for reconciliation.
+
+```mermaid
+flowchart LR
+    Checkout[Checkout request token] --> Remove[Remove stock]
+    Remove --> Save[Save transaction]
+    Save -->|Success| Complete[Paid transaction]
+    Save -->|Failure or cancellation| Rollback[Restore removed stock with non-cancelable token]
+    Rollback -->|Success| Propagate[Propagate original failure]
+    Rollback -->|Failure| Reconcile[Surface compensation failure for reconciliation]
+    Refund[Persist refund status] --> Restore[Restore stock with non-cancelable token]
+    Restore -->|Failure| Reconcile
+```
+
+## Security and request pipeline
+
+The application does not configure forwarded headers. The IP allowlist therefore evaluates the direct connection address and is not a reliable client-IP control behind an unconfigured reverse proxy.
+
+```mermaid
+flowchart LR
+    Request[HTTP request] --> Correlation[Correlation ID]
+    Correlation --> Timing[Structured request timing]
+    Timing --> Errors[Problem Details exception boundary]
+    Errors --> Headers[Security response headers]
+    Headers --> Https[HTTPS redirection and HSTS]
+    Https --> Routing[Endpoint routing]
+    Routing --> Maintenance[Maintenance mode; health bypass]
+    Maintenance --> Cors[Configured CORS]
+    Cors --> ApiKey[Integration API-key metadata gate]
+    ApiKey --> Limiter[Login or shared integration rate limit]
+    Limiter --> Ip[Direct-connection IP allowlist]
+    Ip --> Cookie[Cookie authentication]
+    Cookie --> Authorization[Role and branch authorization]
+    Authorization --> Endpoint[MVC or integration endpoint]
+```
+
+The exception boundary returns generic Problem Details for unexpected failures; client-abort cancellation is recorded internally as 499 without writing a response body. API-key validation is before rate limiting; IP allowlisting is after it. CORS does not authorize requests.
+
+## JSON write and concurrency flow
+
+```mermaid
+flowchart LR
+    Operation[Repository read or update] --> Lock[Path-keyed in-process semaphore]
+    Lock --> Read[Read existing JSON or create empty document if missing]
+    Read --> Parse{Valid non-empty JSON?}
+    Parse -->|No| Error[Propagate JSON/I/O error; preserve source]
+    Parse -->|Yes| Mutate[Apply update]
+    Mutate --> Temp[Create sibling temporary file]
+    Temp --> Serialize[Async serialize and flush]
+    Serialize --> Cancel{Cancellation requested before replace?}
+    Cancel -->|Yes| Cleanup[Clean temporary file; propagate cancellation]
+    Cancel -->|No| Replace[Replace target file]
+    Replace --> Cleanup
+    Cleanup --> Unlock[Release in-process semaphore]
+```
+
+The path lock is process-local. Temporary replacement avoids exposing a partially serialized target file during normal single-process writes, but does not guarantee cross-process coordination, multi-file atomicity, or database durability. Malformed and empty documents fail explicitly rather than being replaced with empty collections.
+
 ## Step 13 reports and simulated notifications
 
 `BranchReportService` has four focused branch-scoped queries: paid daily sales split by retail/service plus tax, inventory at/below a caller-supplied threshold, shipment count grouped by destination zone/service level, and money-order verification outcome counts. The repository contracts add focused branch filters; no generic specification framework is introduced. Report reads are sequenced deliberately: each JSON repository uses its own same-process file lock, while `Task.WhenAll` would add little benefit and create a potentially inconsistent cross-file snapshot.
@@ -346,6 +407,38 @@ flowchart LR
 
 Controllers convert HTTP/view-model input into Application requests and return Views, redirects after successful POSTs, or relevant HTTP status results. They do not contain pricing, stock, verification, or persistence rules. Authentication/authorization is explicitly outside this step, despite the login UI placeholder.
 
+## Step 24 user workflow and validation
+
+```mermaid
+flowchart LR
+    Staff[Staff signs in] --> Claims[Staff ID, role, assigned branch claims]
+    Claims --> RoleNav[Role-aware navigation]
+    RoleNav --> Branch[Branch dashboard, catalogue and stock]
+    RoleNav --> Clerk[Counter Clerk workflows]
+    RoleNav --> Reports[Manager, Auditor or Administrator reports]
+    Clerk --> Basket[Mixed basket form]
+    Basket --> Checkout[CounterTransactionsController]
+    Checkout --> TxService[CounterTransactionWorkflowService]
+    TxService --> TxRules[Branch, counter, active clerk, stock, money-order and tax checks]
+    TxRules --> TxJson[Transaction and inventory JSON repositories]
+    TxJson --> Receipt[Redirect to fresh basket with success notice]
+    Clerk --> Shipping[Shipment form]
+    Shipping --> ShipService[ShippingWorkflowService and configured rate check]
+    ShipService --> Label[Redirect to shipment label preview]
+    Clerk --> MoneyOrder[Money-order and simulated verification form]
+    MoneyOrder --> MoService[MoneyOrderWorkflowService]
+    MoService --> MoJson[Money-order JSON repository]
+    MoJson --> MoNotice[Redirect to fresh form with success notice]
+    Reports --> ReportService[BranchReportService]
+    ReportService --> ReportJson[Branch-scoped JSON repository reads]
+```
+
+Branch screens use the authenticated branch claim when no branch query is supplied. If a caller supplies a branch explicitly, `SameBranchOnly` rejects a different branch; write controllers also compare submitted branch codes to the authenticated claim. Checkout derives clerk identity from the authenticated StaffId claim, not from client-supplied view-model data. Successful POST workflows use Post/Redirect/Get; validation and eligibility errors redisplay the form with safe messages. A successful shipment redirects to its label preview.
+
+Razor form labels are associated with inputs through MVC tag helpers, field-level validation is placed beside applicable controls, and form-level failures use an alert summary. Success notices and report/catalogue empty states use status semantics. Navigation is limited by the authenticated role for usability, while server-side endpoint and Application authorization remains authoritative. Tables include captions and scoped headers; numeric fields declare ranges and decimal/integer input hints. Focus indicators are visible in the site stylesheet. These are targeted accessibility measures, not a WCAG conformance claim.
+
+The counter basket does not bind a clerk ID: the controller uses the authenticated staff claim. Monetary inputs and displayed amounts use decimal values with two fractional digits; the assignment has not specified a currency code. Error states distinguish invalid or ineligible input from success; unexpected failures remain handled by the global exception middleware.
+
 ## Step 15 authentication and authorization flow
 
 ```mermaid
@@ -377,15 +470,15 @@ flowchart TD
     HTTPS --> Routing[Endpoint routing]
     Routing --> Maintenance[Maintenance mode; /health bypass]
     Maintenance --> CORS[Approved partner CORS policy]
-    CORS --> Limits[Login/partner rate limits]
-    Limits --> ApiKey[Integration API-key metadata check]
-    ApiKey --> IP[Integration/admin IP allowlist metadata check]
+    CORS --> ApiKey[Integration API-key metadata check]
+    ApiKey --> Limits[Login/partner rate limits]
+    Limits --> IP[Integration/admin IP allowlist metadata check]
     IP --> Cookie[Cookie authentication]
     Cookie --> Authz[Role and branch authorization]
     Authz --> Endpoint[MVC, integration, or health endpoint]
 ```
 
-Correlation runs first so every later log/error response has an ID. Timing surrounds the exception boundary so failures are measured. Headers are registered before short-circuiting controls. Routing precedes endpoint-metadata middleware; CORS handles approved preflight requests before API-key checks. API-key and IP checks occur before cookie processing because the integration endpoint is partner-authenticated rather than user-authenticated. `/health` is mapped after the pipeline but bypasses maintenance by path so infrastructure can still observe the service.
+Correlation runs first so every later log/error response has an ID. Timing surrounds the exception boundary so failures are measured. Headers are registered before short-circuiting controls. Routing precedes endpoint-metadata middleware; CORS handles approved preflight requests before API-key checks. API-key validation precedes integration rate limiting so failed credentials do not consume the shared quota; the IP allowlist follows the limiter. These checks run before cookie processing because the integration endpoint is partner-authenticated rather than user-authenticated. `/health` is mapped after the pipeline but bypasses maintenance by path so infrastructure can still observe the service.
 
 ## Step 17 MVC filters and audit boundary
 
@@ -498,6 +591,7 @@ These ADRs document existing decisions at Step 20; they do not claim unrecorded 
 4. [ADR 0004 — ordered security middleware](docs/adr/0004-order-security-middleware-before-endpoints.md)
 5. [ADR 0005 — MVC action audit with JSON store](docs/adr/0005-mvc-action-audit-with-json-store.md)
 6. [ADR 0006 — parallelize only independent checkout reads](docs/adr/0006-parallelize-only-independent-checkout-reads.md)
+7. [ADR 0007 — complete inventory compensation after request cancellation](docs/adr/0007-complete-compensation-after-cancellation.md)
 
 ```mermaid
 flowchart TD
@@ -512,9 +606,31 @@ flowchart TD
     Money --> Receipt
 ```
 
+## Step 22 architecture and quality review
+
+The integration rate limiter uses one shared partition rather than keying on `X-Partner-Id`. That caller-controlled header is not a trusted partner identity and would allow arbitrary partition creation. API-key validation runs before integration rate limiting so invalid credentials cannot consume the shared quota. A constant partition gives bounded limiter state and enforces the configured aggregate request budget without changing application business rules. If independent partner quotas are later required, introduce a verified partner identity after authentication and make its partition lifecycle bounded.
+
+```mermaid
+flowchart LR
+    Request[Integration HTTP request] --> Routing[Endpoint routing]
+    Routing --> Cors[Configured partner CORS]
+    Cors --> ApiKey[API-key metadata validation]
+    ApiKey --> Limit[Shared bounded integration rate limiter]
+    Limit --> Ip[IP allowlist metadata validation]
+    Ip --> Controller[IntegrationController]
+    Controller --> Workflow[Application workflow or repository contract]
+    Workflow --> Domain[Domain entities and invariants]
+    Workflow --> Contract[Application repository interface]
+    Contract --> Adapter[Infrastructure JSON repository]
+    Adapter --> Store[Async JSON file store]
+    Store --> File[(Configured JSON file)]
+```
+
+The regression test sends 61 valid-key requests with different partner-header values against a 60-request limit and confirms the last request is rate-limited by the shared partition. This does not provide cross-process rate limiting; the built-in limiter state is process-local.
+
 ## Test structure
 
-Each test project references only the layer it tests: Domain Tests references Domain, Application Tests references Application, and Web Integration Tests references Web. The projects use xUnit; Web Integration Tests uses `Microsoft.AspNetCore.Mvc.Testing` to exercise MVC routes and form validation through a test host.
+Each test project references only the layer it tests: Domain Tests references Domain, Application Tests references Application, Infrastructure Tests references Infrastructure, and Web Integration Tests references Web. The projects use xUnit; Web Integration Tests uses `Microsoft.AspNetCore.Mvc.Testing` to exercise the full application pipeline through a test host.
 
 ## Future architectural work
 

@@ -6,11 +6,57 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using ApexPost.Web.Middleware;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ApexPost.Web.IntegrationTests;
 
 public sealed class SecurityPipelineTests
 {
+    [Fact]
+    public async Task Problem_details_does_not_expose_unexpected_exception_details()
+    {
+        var logger = new CapturingLogger<ProblemDetailsExceptionMiddleware>();
+        var context = new DefaultHttpContext();
+        context.Items[CorrelationIdMiddleware.ItemName] = "safe-correlation-1";
+        await using var responseBody = new MemoryStream();
+        context.Response.Body = responseBody;
+        var middleware = new ProblemDetailsExceptionMiddleware(
+            _ => throw new InvalidOperationException("synthetic-sensitive-detail"),
+            logger);
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status500InternalServerError, context.Response.StatusCode);
+        responseBody.Position = 0;
+        var body = await new StreamReader(responseBody).ReadToEndAsync();
+        Assert.DoesNotContain("synthetic-sensitive-detail", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("stackTrace", body, StringComparison.OrdinalIgnoreCase);
+        var logs = string.Join(Environment.NewLine, logger.Messages);
+        Assert.Contains("safe-correlation-1", logs, StringComparison.Ordinal);
+        Assert.Contains(nameof(InvalidOperationException), logs, StringComparison.Ordinal);
+        Assert.DoesNotContain("synthetic-sensitive-detail", logs, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Aborted_request_cancellation_is_not_reported_as_server_error()
+    {
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        var context = new DefaultHttpContext();
+        context.RequestAborted = cancellation.Token;
+        await using var responseBody = new MemoryStream();
+        context.Response.Body = responseBody;
+        var middleware = new ProblemDetailsExceptionMiddleware(
+            _ => Task.FromCanceled(cancellation.Token),
+            NullLogger<ProblemDetailsExceptionMiddleware>.Instance);
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(499, context.Response.StatusCode);
+        Assert.Equal(0, responseBody.Length);
+    }
+
     [Fact]
     public async Task Health_response_has_security_headers_and_reuses_valid_correlation_id()
     {
@@ -71,6 +117,39 @@ public sealed class SecurityPipelineTests
     }
 
     [Fact]
+    public async Task Integration_rate_limit_requires_api_key_and_is_shared_across_untrusted_partner_ids()
+    {
+        await using var factory = new SecurityWebApplicationFactory(integrationPermitLimit: 60);
+        Assert.Equal(60, factory.Services.GetRequiredService<IConfiguration>().GetValue<int>("ApexPost:RateLimiting:IntegrationPermitLimit"));
+        using var client = factory.CreateClient();
+
+        for (var attempt = 1; attempt <= 60; attempt++)
+        {
+            using var invalidRequest = new HttpRequestMessage(HttpMethod.Get, "/integration/parcel-status?shipmentId=SHP-1");
+            invalidRequest.Headers.Add("X-Partner-Id", $"invalid-partner-{attempt}");
+            invalidRequest.Headers.Add("X-Api-Key", "invalid-key");
+            using var invalidResponse = await client.SendAsync(invalidRequest);
+            Assert.Equal(System.Net.HttpStatusCode.Unauthorized, invalidResponse.StatusCode);
+        }
+
+        for (var attempt = 1; attempt <= 60; attempt++)
+        {
+            using var permittedRequest = new HttpRequestMessage(HttpMethod.Get, "/integration/parcel-status?shipmentId=SHP-1");
+            permittedRequest.Headers.Add("X-Partner-Id", $"partner-{attempt}");
+            permittedRequest.Headers.Add("X-Api-Key", "test-integration-key");
+            using var permittedResponse = await client.SendAsync(permittedRequest);
+            Assert.NotEqual((System.Net.HttpStatusCode)429, permittedResponse.StatusCode);
+        }
+
+        using var rejectedRequest = new HttpRequestMessage(HttpMethod.Get, "/integration/parcel-status?shipmentId=SHP-1");
+        rejectedRequest.Headers.Add("X-Partner-Id", "partner-61");
+        rejectedRequest.Headers.Add("X-Api-Key", "test-integration-key");
+        using var rejectedResponse = await client.SendAsync(rejectedRequest);
+
+        Assert.Equal((System.Net.HttpStatusCode)429, rejectedResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task Login_rate_limit_returns_429()
     {
         await using var factory = new SecurityWebApplicationFactory();
@@ -106,6 +185,22 @@ public sealed class SecurityPipelineTests
         var deniedResponse = await client.SendAsync(denied);
         Assert.False(deniedResponse.Headers.Contains("Access-Control-Allow-Origin"));
     }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var message = formatter(state, exception);
+            if (exception is not null) message = $"{message}{Environment.NewLine}{exception}";
+            Messages.Add(message);
+        }
+    }
 }
 
 public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Program>
@@ -115,12 +210,14 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
     private readonly bool _maintenance;
     private readonly string? _apiKey;
     private readonly string _allowedIp;
+    private readonly int _integrationPermitLimit;
 
-    public SecurityWebApplicationFactory(bool maintenance = false, string? apiKey = "test-integration-key", string allowedIp = "127.0.0.1")
+    public SecurityWebApplicationFactory(bool maintenance = false, string? apiKey = "test-integration-key", string allowedIp = "127.0.0.1", int integrationPermitLimit = 60)
     {
         _maintenance = maintenance;
         _apiKey = apiKey;
         _allowedIp = allowedIp;
+        _integrationPermitLimit = integrationPermitLimit;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -132,7 +229,8 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
             ["ApexPost:Maintenance:RetryAfterSeconds"] = "120",
             ["ApexPost:Security:Integration:ApiKey"] = _apiKey,
             ["ApexPost:Security:Integration:AllowedIps:0"] = _allowedIp,
-            ["ApexPost:Security:PartnerTrackingWidgetOrigin"] = PartnerOrigin
+            ["ApexPost:Security:PartnerTrackingWidgetOrigin"] = PartnerOrigin,
+            ["ApexPost:RateLimiting:IntegrationPermitLimit"] = _integrationPermitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture)
         }));
         builder.ConfigureLogging(logging => logging.ClearProviders());
         builder.ConfigureTestServices(services =>

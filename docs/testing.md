@@ -11,7 +11,7 @@ The solution contains four xUnit test projects:
 
 `ApexPost.Web.IntegrationTests` references the approved `Microsoft.AspNetCore.Mvc.Testing` package for actual ASP.NET Core test hosting. Domain tests cover value objects/entities; Application tests cover workflows/pricing; Infrastructure tests cover JSON/seed behavior; and Web tests cover MVC, authentication, filters, and middleware. Test data, credentials, correlation IDs, and filesystem locations are synthetic/test-owned.
 
-## Planned coverage
+## Coverage delivered by roadmap steps
 
 Step 7 adds `ApexPost.Infrastructure.Tests`, which references Infrastructure and uses a unique directory below the OS temporary directory for every test. It cleans up only that test-owned directory. Coverage includes round trips for all seven repositories, identity-based update/upsert behavior, missing files, empty/malformed JSON, cancellation, sensitive-data-safe serialization, and concurrent same-process writes.
 
@@ -49,7 +49,13 @@ Concurrency tests verify that concurrent same-process inventory removals and che
 
 The checkout validation fan-out uses `Task.WhenAll` only for branch/counter/clerk/duplicate-ID reads, which target independent aggregates. Tests retain serialized assertions for stock and transaction mutations; no test assumes parallel writes. No benchmark is recorded because the repository has no supported benchmark harness or representative load data. Cache and `ValueTask` tests are intentionally absent because neither optimization is implemented: there is no measured repeated-read hot path that justifies cache invalidation complexity, and existing async operations are genuinely I/O-bound `Task` operations rather than commonly synchronous completions.
 
-Later steps should add focused unit tests for domain invariants and application use cases, plus web integration tests for relevant HTTP behavior. Tests should verify the assignment rules described in [business-rules.md](business-rules.md) and security-sensitive behavior described in [security.md](security.md) as those features are implemented.
+The roadmap coverage above is implemented and retained as a record of the delivered test scope. Additional tests should be added when future features or defects warrant them; all new tests should continue to verify the assignment rules in [business-rules.md](business-rules.md) and security constraints in [security.md](security.md).
+
+## Step 22 architecture regression coverage
+
+Integration rate limiting uses a shared bounded partition and does not trust `X-Partner-Id`. A WebApplicationFactory regression test sends 61 valid-key requests with distinct partner-header values against the configured 60-request limit and verifies the final request receives `429` instead of opening a new limiter partition. API-key failures occur before this limit and do not consume its quota. This is an aggregate per-process integration limit, not a per-partner quota or a distributed limit.
+
+The Step 22 full solution run completed with 128 passed, 0 failed, and 0 skipped across Domain (39), Application (55), Infrastructure (17), and Web integration (17).
 
 ## Step 20 delivery verification
 
@@ -62,6 +68,39 @@ dotnet test ApexPost.slnx --no-build --verbosity normal
 ```
 
 The most recent Step 20 validation is 127 passed, 0 failed, 0 skipped. Required web integration coverage includes security headers, API-key `401`, blocked-IP `403`, rate-limit `429`, unauthenticated redirect, Clerk void `403`, and correlation-ID response. Seed tests verify the documented 5 branches, 20 staff, 30 products, 10 zones/60 rates, and 40 historical snapshots; 150 inventory records follow from five branches times 30 products. There is no browser screenshot, Postman collection, benchmark harness, external provider, or cross-process JSON test to present as a delivery artifact.
+
+## Step 23 security and reliability regressions
+
+Application tests cancel transaction persistence after stock has been removed and verify the compensation completes despite request cancellation. Infrastructure tests force JSON replacement to fail by making the target path a directory, then verify the existing target remains and the sibling temporary file is removed. Web tests verify unexpected exception details are excluded from Problem Details and application logs, correlation ID and exception type are retained, request-abort cancellation is recorded as internal status 499 without attempting a response body, and synthetic passwords, document numbers, and API keys are absent from request logs and audit records.
+
+Existing integration coverage continues to exercise wrong-branch access, inactive-staff cookie rejection, Clerk denial of void, API-key configuration/missing/invalid cases, blocked-IP behavior, rate limits, maintenance mode, CORS, correlation IDs, headers, and safe audit fields. These tests use synthetic values and temporary test-owned data directories. No penetration test, proxy deployment test, cross-process JSON test, or production certification is claimed.
+
+The required validation commands are:
+
+```powershell
+dotnet restore ApexPost.slnx
+dotnet build ApexPost.slnx --no-restore
+dotnet test ApexPost.slnx --no-build --verbosity normal
+git diff --check
+```
+
+Step 23 full solution validation completed with 132 passed, 0 failed, and 0 skipped: Domain (39), Application (56), Infrastructure (19), and Web integration (18).
+
+## Step 24 MVC workflow and delivery coverage
+
+Web integration tests seed test-owned branch, counter, product, inventory, shipping-rate, and synthetic staff records in temporary data directories. Coverage verifies branch claim defaults and role-aware navigation, explicit wrong-branch denial for managers, Clerk denial of both reversal endpoints, successful checkout redirect/confirmation with stock reduction, antiforgery rejection without inventory mutation, configured shipping weight-limit feedback, high-value money-order verification feedback, and empty states across all reports for a branch with no activity. Shipping-volume and money-order reports are branch aggregates, not filtered by the selected sales day. The test host is not a persistent demo seed mechanism.
+
+MVC GET routes are exercised through WebApplicationFactory, along with login validation, protected-route redirects, cookie invalidation, and branch restrictions. Tests assert important view content and effects, but they do not execute a real browser, screen reader, keyboard-only audit, axe scan, or WCAG conformance test. Manual accessibility compliance is therefore unverified. No authenticated reversal UI, transaction history/lookup screen, or supported developer seed CLI exists; tests do not fabricate those flows.
+
+The reproducible test-host demo command is:
+
+```powershell
+dotnet test tests/ApexPost.Web.IntegrationTests/ApexPost.Web.IntegrationTests.csproj --no-build --filter "FullyQualifiedName~AuthenticationTests"
+```
+
+This exercises synthetic checkout, shipping eligibility, money-order verification, and empty report states. It does not establish that a fresh developer can run the same flows interactively: the production app currently has no supported command to populate its persistent data directory, and no real/demo passwords are committed.
+
+Step 24 full solution validation completed with 140 passed, 0 failed, and 0 skipped: Domain (39), Application (56), Infrastructure (18), and Web integration (27). The solution build completed with 0 warnings and 0 errors.
 
 ## Commands
 

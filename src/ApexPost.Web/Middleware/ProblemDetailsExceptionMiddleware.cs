@@ -10,10 +10,15 @@ public sealed class ProblemDetailsExceptionMiddleware(RequestDelegate next, ILog
         {
             await next(context).ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested && !context.Response.HasStarted)
+        {
+            context.Response.StatusCode = 499;
+            logger.LogInformation("Request was aborted by the client {CorrelationId}", CorrelationIdMiddleware.Get(context));
+        }
         catch (Exception exception) when (!context.Response.HasStarted)
         {
             var correlationId = CorrelationIdMiddleware.Get(context);
-            logger.LogError(exception, "Unhandled request failure {CorrelationId}", correlationId);
+            logger.LogError("Unhandled request failure {CorrelationId} ({ExceptionType})", correlationId, exception.GetType().Name);
             context.Response.Clear();
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
             var problem = new ProblemDetails

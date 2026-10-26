@@ -76,6 +76,22 @@ public sealed class JsonRepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Failed_replacement_preserves_existing_target_and_removes_temporary_file()
+    {
+        Directory.CreateDirectory(_directory);
+        var targetPath = Path.Combine(_directory, "products.json");
+        Directory.CreateDirectory(targetPath);
+        var repository = new JsonProductRepository(Options);
+
+        var failure = await Record.ExceptionAsync(() => repository.SaveAsync(new Product(new("p-1"), "Envelope", new(10m))));
+
+        Assert.NotNull(failure);
+        Assert.True(failure is IOException or UnauthorizedAccessException);
+        Assert.True(Directory.Exists(targetPath));
+        Assert.Empty(Directory.EnumerateFiles(_directory, ".products.json.*.tmp"));
+    }
+
+    [Fact]
     public async Task Cancellation_is_propagated_before_file_access()
     {
         using var cancellation = new CancellationTokenSource();

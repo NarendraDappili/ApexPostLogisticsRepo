@@ -2,7 +2,7 @@
 @{ ViewData["Title"] = "Login"; }
 <h1>Login</h1>
 <form asp-action="Login" method="post">
-    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+    <div asp-validation-summary="ModelOnly" class="validation-summary text-danger" role="alert"></div>
     <div class="mb-3"><label asp-for="StaffId" class="form-label"></label><input asp-for="StaffId" class="form-control" autocomplete="username" /><span asp-validation-for="StaffId" class="text-danger"></span></div>
     <div class="mb-3"><label asp-for="Password" class="form-label"></label><input asp-for="Password" class="form-control" autocomplete="current-password" /><span asp-validation-for="Password" class="text-danger"></span></div>
     <button class="btn btn-primary" type="submit">Sign in</button>
