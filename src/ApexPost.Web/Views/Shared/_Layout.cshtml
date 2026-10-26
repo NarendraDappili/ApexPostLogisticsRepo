@@ -23,16 +23,25 @@
                         <li class="nav-item">
                             <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Index">Home</a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
-                        </li>
-                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="Branch" asp-action="Dashboard">Branch</a></li>
-                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="Catalogue" asp-action="Index">Catalogue</a></li>
-                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="CounterTransactions" asp-action="New">Counter basket</a></li>
-                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="Shipping" asp-action="Create">Shipping</a></li>
-                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="MoneyOrders" asp-action="Create">Money orders</a></li>
-                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="Reports" asp-action="Index">Reports</a></li>
-                        <li class="nav-item"><a class="nav-link text-dark" asp-controller="Account" asp-action="Login">Login</a></li>
+                        @if (User.Identity?.IsAuthenticated == true)
+                        {
+                            <li class="nav-item"><a class="nav-link text-dark" asp-controller="Branch" asp-action="Dashboard">Branch dashboard</a></li>
+                            <li class="nav-item"><a class="nav-link text-dark" asp-controller="Catalogue" asp-action="Index">Catalogue and stock</a></li>
+                            @if (User.IsInRole("CounterClerk"))
+                            {
+                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="CounterTransactions" asp-action="New">Counter basket</a></li>
+                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="Shipping" asp-action="Create">Shipping</a></li>
+                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="MoneyOrders" asp-action="Create">Money orders</a></li>
+                            }
+                            @if (User.IsInRole("BranchManager") || User.IsInRole("Auditor") || User.IsInRole("Administrator"))
+                            {
+                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="Reports" asp-action="Index">Reports</a></li>
+                            }
+                        }
+                        else
+                        {
+                            <li class="nav-item"><a class="nav-link text-dark" asp-controller="Account" asp-action="Login">Login</a></li>
+                        }
                     </ul>
                     @if (User.Identity?.IsAuthenticated == true)
                     {
@@ -45,7 +54,7 @@
         </nav>
     </header>
     <div class="container">
-        <main role="main" class="pb-3">
+        <main id="main-content" class="pb-3" tabindex="-1">
             @RenderBody()
         </main>
     </div>

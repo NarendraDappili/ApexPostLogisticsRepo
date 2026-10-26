@@ -2,9 +2,23 @@
 @using ApexPost.Domain.Enums
 @{ ViewData["Title"] = "Create shipment"; }
 <h1>Create shipment</h1>
-<form asp-action="Create" method="post"><div asp-validation-summary="ModelOnly" class="text-danger"></div>
-<div class="row"><div class="col-md-4"><label asp-for="ShipmentId"></label><input asp-for="ShipmentId" class="form-control" /></div><div class="col-md-4"><label asp-for="OriginBranchCode"></label><input asp-for="OriginBranchCode" class="form-control" /></div><div class="col-md-4"><label asp-for="DestinationZoneCode"></label><input asp-for="DestinationZoneCode" class="form-control" /></div></div>
-<div class="row mt-3"><div class="col-md-3"><label asp-for="ShipmentType"></label><select asp-for="ShipmentType" asp-items="Html.GetEnumSelectList<ShipmentType>()" class="form-select"></select></div><div class="col-md-3"><label asp-for="ServiceLevel"></label><select asp-for="ServiceLevel" asp-items="Html.GetEnumSelectList<ShippingServiceLevel>()" class="form-select"></select></div><div class="col-md-3"><label asp-for="WeightKilograms"></label><input asp-for="WeightKilograms" class="form-control" /></div></div>
-<div class="row mt-3"><div class="col-md-3"><label asp-for="LengthCentimetres"></label><input asp-for="LengthCentimetres" class="form-control" /></div><div class="col-md-3"><label asp-for="WidthCentimetres"></label><input asp-for="WidthCentimetres" class="form-control" /></div><div class="col-md-3"><label asp-for="HeightCentimetres"></label><input asp-for="HeightCentimetres" class="form-control" /></div></div>
-<button class="btn btn-primary mt-3">Create label preview</button></form>
+<p>All measurements must be positive. The selected service and destination determine eligibility and the configured charge.</p>
+<form asp-action="Create" method="post">
+<div asp-validation-summary="ModelOnly" class="validation-summary text-danger" role="alert"></div>
+<div class="row g-3">
+ <div class="col-md-4"><label asp-for="ShipmentId" class="form-label"></label><input asp-for="ShipmentId" class="form-control" /><span asp-validation-for="ShipmentId" class="field-validation"></span></div>
+ <div class="col-md-4"><label asp-for="OriginBranchCode" class="form-label"></label><input asp-for="OriginBranchCode" class="form-control" readonly /><span asp-validation-for="OriginBranchCode" class="field-validation"></span></div>
+ <div class="col-md-4"><label asp-for="DestinationZoneCode" class="form-label"></label><input asp-for="DestinationZoneCode" class="form-control" /><span asp-validation-for="DestinationZoneCode" class="field-validation"></span></div>
+</div>
+<div class="row g-3 mt-1">
+ <div class="col-md-3"><label asp-for="ShipmentType" class="form-label"></label><select asp-for="ShipmentType" asp-items="Html.GetEnumSelectList<ShipmentType>()" class="form-select"></select><span asp-validation-for="ShipmentType" class="field-validation"></span></div>
+ <div class="col-md-3"><label asp-for="ServiceLevel" class="form-label"></label><select asp-for="ServiceLevel" asp-items="Html.GetEnumSelectList<ShippingServiceLevel>()" class="form-select"></select><span asp-validation-for="ServiceLevel" class="field-validation"></span></div>
+ <div class="col-md-3"><label asp-for="WeightKilograms" class="form-label"></label><input asp-for="WeightKilograms" type="number" min="0.001" step="0.001" inputmode="decimal" class="form-control" /><span asp-validation-for="WeightKilograms" class="field-validation"></span></div>
+</div>
+<fieldset class="border p-3 mt-3"><legend class="float-none w-auto px-2">Parcel dimensions in centimetres</legend><div class="row g-3">
+ <div class="col-md-3"><label asp-for="LengthCentimetres" class="form-label"></label><input asp-for="LengthCentimetres" type="number" min="0.001" step="0.001" inputmode="decimal" class="form-control" /><span asp-validation-for="LengthCentimetres" class="field-validation"></span></div>
+ <div class="col-md-3"><label asp-for="WidthCentimetres" class="form-label"></label><input asp-for="WidthCentimetres" type="number" min="0.001" step="0.001" inputmode="decimal" class="form-control" /><span asp-validation-for="WidthCentimetres" class="field-validation"></span></div>
+ <div class="col-md-3"><label asp-for="HeightCentimetres" class="form-label"></label><input asp-for="HeightCentimetres" type="number" min="0.001" step="0.001" inputmode="decimal" class="form-control" /><span asp-validation-for="HeightCentimetres" class="field-validation"></span></div>
+</div></fieldset>
+<button class="btn btn-primary mt-3" type="submit">Create label preview</button></form>
 @section Scripts { <partial name="_ValidationScriptsPartial" /> }

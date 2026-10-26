@@ -13,6 +13,9 @@ public sealed class ReportsController(BranchReportService reports, IConfiguratio
     [HttpGet]
     public async Task<IActionResult> Index(string? branchCode, DateOnly? day, CancellationToken cancellationToken)
     {
+        branchCode = string.IsNullOrWhiteSpace(branchCode)
+            ? User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value
+            : branchCode;
         if (string.IsNullOrWhiteSpace(branchCode)) return View(null);
         try
         {

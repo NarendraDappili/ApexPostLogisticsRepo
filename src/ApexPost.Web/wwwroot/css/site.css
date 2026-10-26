@@ -12,6 +12,25 @@ html {
   box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
 }
 
+:focus-visible {
+  outline: 3px solid #1456a0;
+  outline-offset: 2px;
+}
+
+.field-validation,
+.validation-summary-errors {
+  color: #842029;
+}
+
+.field-validation:not(:empty) {
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.validation-summary:not(:empty) {
+  margin-bottom: 1rem;
+}
+
 html {
   position: relative;
   min-height: 100%;

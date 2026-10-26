@@ -14,8 +14,11 @@ public sealed class CatalogueController(IProductRepository products, IInventoryR
     public async Task<IActionResult> Index(string? branchCode, CancellationToken cancellationToken)
     {
         var catalogue = await products.GetAllAsync(cancellationToken);
+        branchCode = string.IsNullOrWhiteSpace(branchCode)
+            ? User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value
+            : branchCode;
         if (string.IsNullOrWhiteSpace(branchCode))
-            return View(new CatalogueViewModel(string.Empty, catalogue.Select(product => new CatalogueItemViewModel(product.Id.Value, product.Name, product.UnitPrice.Amount, null)).ToArray(), "Enter a branch code to include stock."));
+            return View(new CatalogueViewModel(string.Empty, catalogue.Select(product => new CatalogueItemViewModel(product.Id.Value, product.Name, product.UnitPrice.Amount, null)).ToArray(), "Your account has no assigned branch; stock is unavailable."));
         try
         {
             var stock = await inventory.FindByBranchAsync(new BranchCode(branchCode), cancellationToken);

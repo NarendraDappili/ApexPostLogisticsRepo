@@ -10,7 +10,7 @@
 | High-value money orders need verified same-context identity | `MoneyOrderWorkflowService` and checkout compare configured threshold, outcome, and transaction context. |
 | Shipment service weight limit | `ShippingPriceCalculator` rejects a rate-limit exceedance before persistence. |
 | Void/refund require assigned active Branch Manager and reason | MVC policy narrows HTTP access; Application workflow is the final rule authority. |
-| Closed branches cannot transact | Shipping and checkout reject closed branches. |
+| Closed branches cannot transact | Shipping, money-order creation, and checkout reject closed branches. |
 
 Money uses `decimal`. The repository does not invent a currency, production rounding policy, fee schedule, document-type policy, or dimensional surcharge; those require explicit future policy decisions.
 

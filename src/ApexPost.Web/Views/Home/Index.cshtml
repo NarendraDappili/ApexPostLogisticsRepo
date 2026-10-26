@@ -4,7 +4,14 @@
 
 <div class="text-center">
     <h1 class="display-5">ApexPost Logistics</h1>
-    <p>Local MVC screens for the postal counter workflow.</p>
-    <p><a class="btn btn-primary" asp-controller="Account" asp-action="Login">Open login screen</a></p>
-    <p class="text-muted">Sign in with a locally configured demo account to access protected workflows.</p>
+    <p>Postal, shipping and retail-counter workflows for your assigned branch.</p>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <p><a class="btn btn-primary" asp-controller="Branch" asp-action="Dashboard">Open your branch dashboard</a></p>
+    }
+    else
+    {
+        <p><a class="btn btn-primary" asp-controller="Account" asp-action="Login">Sign in</a></p>
+        <p class="text-muted">A locally configured staff account is required to access counter workflows.</p>
+    }
 </div>

@@ -11,7 +11,10 @@ namespace ApexPost.Web.Controllers;
 public sealed class ShippingController(ShippingWorkflowService shipping) : Controller
 {
     [HttpGet]
-    public IActionResult Create() => View(new ShipmentFormViewModel());
+    public IActionResult Create() => View(new ShipmentFormViewModel
+    {
+        OriginBranchCode = User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value ?? string.Empty
+    });
 
     [HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> Create(ShipmentFormViewModel input, CancellationToken cancellationToken)

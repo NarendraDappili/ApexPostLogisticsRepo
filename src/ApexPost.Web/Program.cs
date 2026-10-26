@@ -46,7 +46,7 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(1, loginPermitLimit), Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
     options.AddPolicy("partner-integration", context => RateLimitPartition.GetFixedWindowLimiter(
-        (context.Request.Headers["X-Partner-Id"].FirstOrDefault() ?? "unknown")[..Math.Min(128, (context.Request.Headers["X-Partner-Id"].FirstOrDefault() ?? "unknown").Length)], _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(1, integrationPermitLimit), Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+        "partner-integration", _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(1, integrationPermitLimit), Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
 });
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
@@ -111,8 +111,8 @@ app.UseHttpsRedirection();
 app.UseRouting();
 app.UseMiddleware<MaintenanceModeMiddleware>();
 app.UseCors();
-app.UseRateLimiter();
 app.UseMiddleware<IntegrationApiKeyMiddleware>();
+app.UseRateLimiter();
 app.UseMiddleware<IpAllowlistMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
