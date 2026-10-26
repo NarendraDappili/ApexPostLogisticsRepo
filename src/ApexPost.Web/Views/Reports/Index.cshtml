@@ -1,11 +1,18 @@
 @model ApexPost.Web.Models.ReportsViewModel
 @{ ViewData["Title"] = "Branch reports"; }
 <h1>Branch reports</h1>
-<form method="get" class="row g-2 mb-3"><div class="col-md-3"><label for="branchCode">Branch code</label><input id="branchCode" name="branchCode" value="@Model?.BranchCode" class="form-control" required /></div><div class="col-md-3"><label for="day">Day</label><input id="day" name="day" type="date" value="@Model?.Day.ToString("yyyy-MM-dd")" class="form-control" /></div><div class="col-md-2 align-self-end"><button class="btn btn-primary">Run reports</button></div></form>
-@if (Model is null) { <p class="text-muted">Choose a branch to view its branch-scoped reports.</p> }
+<form method="get" class="row g-2 mb-3"><div class="col-md-3"><label for="branchCode" class="form-label">Branch code</label><input id="branchCode" name="branchCode" value="@Model?.BranchCode" class="form-control" required autocomplete="off" /></div><div class="col-md-3"><label for="day" class="form-label">Sales day (UTC)</label><input id="day" name="day" type="date" value="@Model?.Day.ToString("yyyy-MM-dd")" class="form-control" /></div><div class="col-md-2 align-self-end"><button class="btn btn-primary" type="submit">Run reports</button></div></form>
+@if (Model is null) { <p class="text-muted" role="status">Your account has no assigned branch.</p> }
 else {
-<h2>Daily sales: @Model.Day</h2><dl class="row"><dt class="col-sm-3">Retail</dt><dd class="col-sm-9">@Model.DailySales.RetailSales.Amount.ToString("0.00")</dd><dt class="col-sm-3">Services</dt><dd class="col-sm-9">@Model.DailySales.ServiceSales.Amount.ToString("0.00")</dd><dt class="col-sm-3">Tax</dt><dd class="col-sm-9">@Model.DailySales.Tax.Amount.ToString("0.00")</dd><dt class="col-sm-3">Paid transactions</dt><dd class="col-sm-9">@Model.DailySales.PaidTransactionCount</dd></dl>
-<h2>Low stock (threshold: @Model.LowStock.Threshold)</h2><ul>@foreach (var item in Model.LowStock.Items) { <li>@item.ProductId.Value: @item.Quantity</li> }</ul>
-<h2>Shipping volume</h2><ul>@foreach (var item in Model.Shipping.Items) { <li>@item.DestinationZoneCode.Value / @item.ServiceLevel: @item.Count</li> }</ul>
+<p>Branch: <strong>@Model.BranchCode</strong></p>
+<h2>Daily sales: @Model.Day.ToString("yyyy-MM-dd")</h2><dl class="row"><dt class="col-sm-3">Retail</dt><dd class="col-sm-9">@Model.DailySales.RetailSales.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Services</dt><dd class="col-sm-9">@Model.DailySales.ServiceSales.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Tax</dt><dd class="col-sm-9">@Model.DailySales.Tax.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Paid transactions</dt><dd class="col-sm-9">@Model.DailySales.PaidTransactionCount</dd></dl>
+@if (Model.DailySales.PaidTransactionCount == 0) { <p role="status">No paid transactions were recorded for this branch on this day.</p> }
+<h2>Low stock (threshold: @Model.LowStock.Threshold)</h2>
+@if (Model.LowStock.Items.Count == 0) { <p role="status">No products are at or below the low-stock threshold.</p> }
+else { <ul>@foreach (var item in Model.LowStock.Items) { <li>@item.ProductId.Value: @item.Quantity units</li> }</ul> }
+<h2>Shipping volume</h2>
+@if (Model.Shipping.Items.Count == 0) { <p role="status">No shipments are recorded for this branch.</p> }
+else { <ul>@foreach (var item in Model.Shipping.Items) { <li>@item.DestinationZoneCode.Value / @item.ServiceLevel: @item.Count</li> }</ul> }
 <h2>Money orders and verification</h2><dl class="row"><dt class="col-sm-3">Orders</dt><dd class="col-sm-9">@Model.MoneyOrders.TotalCount</dd><dt class="col-sm-3">Verified</dt><dd class="col-sm-9">@Model.MoneyOrders.VerifiedCount</dd><dt class="col-sm-3">Failed</dt><dd class="col-sm-9">@Model.MoneyOrders.FailedCount</dd><dt class="col-sm-3">Pending</dt><dd class="col-sm-9">@Model.MoneyOrders.PendingCount</dd></dl>
+@if (Model.MoneyOrders.TotalCount == 0) { <p role="status">No money orders are recorded for this branch.</p> }
 }

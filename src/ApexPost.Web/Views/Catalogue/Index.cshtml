@@ -1,6 +1,27 @@
 @model ApexPost.Web.Models.CatalogueViewModel
 @{ ViewData["Title"] = "Product catalogue"; }
 <h1>Product catalogue and branch stock</h1>
-<form method="get" class="row g-2 mb-3"><div class="col-sm-4"><label for="branchCode" class="form-label">Branch code (optional)</label><input id="branchCode" name="branchCode" value="@Model.BranchCode" class="form-control" /></div><div class="col-sm-2 align-self-end"><button class="btn btn-primary">Load</button></div></form>
-@if (Model.Message is not null) { <p class="text-muted">@Model.Message</p> }
-<table class="table"><thead><tr><th>Product</th><th>Name</th><th>Unit price</th><th>Stock</th></tr></thead><tbody>@foreach (var item in Model.Products) { <tr><td>@item.ProductId</td><td>@item.Name</td><td>@item.UnitPrice.ToString("0.00")</td><td>@(item.StockQuantity?.ToString() ?? "—")</td></tr> }</tbody></table>
+<form method="get" class="row g-2 mb-3">
+    <div class="col-sm-4"><label for="branchCode" class="form-label">Branch code</label><input id="branchCode" name="branchCode" value="@Model.BranchCode" class="form-control" autocomplete="off" /></div>
+    <div class="col-sm-2 align-self-end"><button class="btn btn-primary" type="submit">Load stock</button></div>
+</form>
+@if (Model.Message is not null) { <p class="text-muted" role="status">@Model.Message</p> }
+@if (Model.Products.Count == 0)
+{
+    <p role="status">No catalogue products are available.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped">
+            <caption>Products, unit prices and stock for @(!string.IsNullOrWhiteSpace(Model.BranchCode) ? Model.BranchCode : "the selected view")</caption>
+            <thead><tr><th scope="col">Product ID</th><th scope="col">Name</th><th scope="col">Unit price</th><th scope="col">Stock quantity</th></tr></thead>
+            <tbody>
+            @foreach (var item in Model.Products)
+            {
+                <tr><th scope="row">@item.ProductId</th><td>@item.Name</td><td>@item.UnitPrice.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td><td>@(item.StockQuantity?.ToString() ?? "Not loaded")</td></tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

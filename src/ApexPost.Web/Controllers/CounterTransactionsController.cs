@@ -12,7 +12,10 @@ namespace ApexPost.Web.Controllers;
 public sealed class CounterTransactionsController(CounterTransactionWorkflowService transactions) : Controller
 {
     [Authorize(Roles = "CounterClerk"), HttpGet]
-    public IActionResult New() => View(new CounterBasketViewModel { ClerkId = User.FindFirst(ApexPostClaimTypes.StaffId)?.Value ?? string.Empty, BranchCode = User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value ?? string.Empty });
+    public IActionResult New() => View(new CounterBasketViewModel
+    {
+        BranchCode = User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value ?? string.Empty
+    });
 
     [Authorize(Roles = "CounterClerk"), HttpPost, ValidateAntiForgeryToken]
     public async Task<IActionResult> New(CounterBasketViewModel input, CancellationToken cancellationToken)

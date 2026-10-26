@@ -18,7 +18,7 @@ dotnet test ApexPost.slnx --no-build --verbosity normal
 dotnet run --project src/ApexPost.Web
 ```
 
-The most recently verified suite contains 132 passing tests, with 0 failures and 0 skipped tests. The web host prints its assigned URL; use HTTPS outside local development.
+The most recently verified suite contains 140 passing tests, with 0 failures and 0 skipped tests. The web host prints its assigned URL; use HTTPS outside local development.
 
 ## Configuration and local secrets
 
@@ -69,8 +69,21 @@ Request-abort cancellation is now distinguished from unexpected server failures 
 
 The seeder writes `apexpost-demo-seed.json` last. A matching manifest makes a later seed call a no-op; an unmarked non-empty directory is rejected without modification. There is no automatic reset/reseed command. To reset a local demo, stop the app and remove only the explicitly chosen local data directory after confirming it contains no data or keys to retain; then invoke the seeder from a trusted local utility or test harness. Do not point it at production data.
 
+## Demonstration walkthrough and current setup gap
+
+The application does **not** invoke `DemoDataSeeder` at startup and the repository currently provides no supported seed CLI or command. Consequently, a fresh checkout cannot yet be prepared for a fully interactive demo using only the documented `dotnet run` command. Do not create or expose a public seed endpoint to work around this. The integration-test host seeds isolated temporary JSON data itself and provides a reproducible test-host demonstration:
+
+```powershell
+dotnet test tests/ApexPost.Web.IntegrationTests/ApexPost.Web.IntegrationTests.csproj --no-build --filter "FullyQualifiedName~AuthenticationTests"
+```
+
+That suite uses test-only credentials and temporary data, and exercises authenticated branch screens, a mixed retail checkout, shipping weight-limit feedback, high-value money-order verification feedback, and empty states for a branch without activity. It is not a persistent local demo dataset or a manual browser walkthrough.
+
+When a trusted local utility has seeded an empty `ApexPost:DataDirectory`, configure a local password for the seeded clerk `STF-CLERK-01-A` using user secrets, then run the web project. Sign in, open **Catalogue and stock**, and note product `PRD-001`; create a basket using counter `C-01` and that product; create a shipment with a configured zone and weight within the selected rate; create a money order above the configured threshold with a document type and a successful simulated verification outcome; then sign in as the assigned branch manager to view **Reports**. Use only synthetic identity document input. The current repository does not include a trusted seeding utility, so the interactive sequence is conditional and has not been represented as verified or immediately runnable.
+
 ## Known limitations and gaps
 
+- There is no supported persistent demo seeding command or verified manual browser walkthrough. `DemoDataSeeder` is covered by tests but is not wired into a developer CLI or web startup.
 - JSON writes are coordinated only within one process. Multi-file workflows are not database transactions; a crash or failed compensation can require reconciliation.
 - JSON audit append is application-level append-only, not tamper-proof, WORM, cross-process safe, or durable-ledger storage. The MVC audit filter logs append failures but deliberately does not fail an otherwise completed business action.
 - Notifications are local logging, not external delivery. No external identity verification, payment processing, MFA, account lockout, password rotation, or production session revocation is implemented.

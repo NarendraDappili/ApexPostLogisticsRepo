@@ -86,6 +86,22 @@ git diff --check
 
 Step 23 full solution validation completed with 132 passed, 0 failed, and 0 skipped: Domain (39), Application (56), Infrastructure (19), and Web integration (18).
 
+## Step 24 MVC workflow and delivery coverage
+
+Web integration tests seed test-owned branch, counter, product, inventory, shipping-rate, and synthetic staff records in temporary data directories. Coverage verifies branch claim defaults and role-aware navigation, explicit wrong-branch denial for managers, Clerk denial of both reversal endpoints, successful checkout redirect/confirmation with stock reduction, antiforgery rejection without inventory mutation, configured shipping weight-limit feedback, high-value money-order verification feedback, and empty states across all reports for a branch with no activity. Shipping-volume and money-order reports are branch aggregates, not filtered by the selected sales day. The test host is not a persistent demo seed mechanism.
+
+MVC GET routes are exercised through WebApplicationFactory, along with login validation, protected-route redirects, cookie invalidation, and branch restrictions. Tests assert important view content and effects, but they do not execute a real browser, screen reader, keyboard-only audit, axe scan, or WCAG conformance test. Manual accessibility compliance is therefore unverified. No authenticated reversal UI, transaction history/lookup screen, or supported developer seed CLI exists; tests do not fabricate those flows.
+
+The reproducible test-host demo command is:
+
+```powershell
+dotnet test tests/ApexPost.Web.IntegrationTests/ApexPost.Web.IntegrationTests.csproj --no-build --filter "FullyQualifiedName~AuthenticationTests"
+```
+
+This exercises synthetic checkout, shipping eligibility, money-order verification, and empty report states. It does not establish that a fresh developer can run the same flows interactively: the production app currently has no supported command to populate its persistent data directory, and no real/demo passwords are committed.
+
+Step 24 full solution validation completed with 140 passed, 0 failed, and 0 skipped: Domain (39), Application (56), Infrastructure (18), and Web integration (27). The solution build completed with 0 warnings and 0 errors.
+
 ## Commands
 
 From the solution root:

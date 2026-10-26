@@ -20,7 +20,6 @@ public sealed class CounterBasketViewModel
     [Required, StringLength(48)] public string TransactionId { get; set; } = string.Empty;
     [Required, StringLength(48)] public string BranchCode { get; set; } = string.Empty;
     [Required, StringLength(48)] public string CounterCode { get; set; } = string.Empty;
-    [Required, StringLength(80)] public string ClerkId { get; set; } = string.Empty;
     public PaymentMethod PaymentMethod { get; set; }
     [StringLength(48)] public string? ProductId { get; set; }
     [Range(1, 10000)] public int? RetailQuantity { get; set; }

@@ -407,6 +407,38 @@ flowchart LR
 
 Controllers convert HTTP/view-model input into Application requests and return Views, redirects after successful POSTs, or relevant HTTP status results. They do not contain pricing, stock, verification, or persistence rules. Authentication/authorization is explicitly outside this step, despite the login UI placeholder.
 
+## Step 24 user workflow and validation
+
+```mermaid
+flowchart LR
+    Staff[Staff signs in] --> Claims[Staff ID, role, assigned branch claims]
+    Claims --> RoleNav[Role-aware navigation]
+    RoleNav --> Branch[Branch dashboard, catalogue and stock]
+    RoleNav --> Clerk[Counter Clerk workflows]
+    RoleNav --> Reports[Manager, Auditor or Administrator reports]
+    Clerk --> Basket[Mixed basket form]
+    Basket --> Checkout[CounterTransactionsController]
+    Checkout --> TxService[CounterTransactionWorkflowService]
+    TxService --> TxRules[Branch, counter, active clerk, stock, money-order and tax checks]
+    TxRules --> TxJson[Transaction and inventory JSON repositories]
+    TxJson --> Receipt[Redirect to fresh basket with success notice]
+    Clerk --> Shipping[Shipment form]
+    Shipping --> ShipService[ShippingWorkflowService and configured rate check]
+    ShipService --> Label[Redirect to shipment label preview]
+    Clerk --> MoneyOrder[Money-order and simulated verification form]
+    MoneyOrder --> MoService[MoneyOrderWorkflowService]
+    MoService --> MoJson[Money-order JSON repository]
+    MoJson --> MoNotice[Redirect to fresh form with success notice]
+    Reports --> ReportService[BranchReportService]
+    ReportService --> ReportJson[Branch-scoped JSON repository reads]
+```
+
+Branch screens use the authenticated branch claim when no branch query is supplied. If a caller supplies a branch explicitly, `SameBranchOnly` rejects a different branch; write controllers also compare submitted branch codes to the authenticated claim. Checkout derives clerk identity from the authenticated StaffId claim, not from client-supplied view-model data. Successful POST workflows use Post/Redirect/Get; validation and eligibility errors redisplay the form with safe messages. A successful shipment redirects to its label preview.
+
+Razor form labels are associated with inputs through MVC tag helpers, field-level validation is placed beside applicable controls, and form-level failures use an alert summary. Success notices and report/catalogue empty states use status semantics. Navigation is limited by the authenticated role for usability, while server-side endpoint and Application authorization remains authoritative. Tables include captions and scoped headers; numeric fields declare ranges and decimal/integer input hints. Focus indicators are visible in the site stylesheet. These are targeted accessibility measures, not a WCAG conformance claim.
+
+The counter basket does not bind a clerk ID: the controller uses the authenticated staff claim. Monetary inputs and displayed amounts use decimal values with two fractional digits; the assignment has not specified a currency code. Error states distinguish invalid or ineligible input from success; unexpected failures remain handled by the global exception middleware.
+
 ## Step 15 authentication and authorization flow
 
 ```mermaid
