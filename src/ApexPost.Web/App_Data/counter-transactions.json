@@ -1,0 +1,254 @@
+[
+  {
+    "id": "TX-WEB-001",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-25T15:01:58.3765697+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  },
+  {
+    "id": "TX-WEB-21E07F0090824549A48BB4D3EF73D72E",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-25T15:05:47.5056174+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  },
+  {
+    "id": "TX-WEB-A6EBE52C8CBE42B29D8080CEBC407EEB",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-25T15:06:16.6041462+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  },
+  {
+    "id": "TX-WEB-D17D9335505B4DF1B4E8D43757A6C877",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-25T15:06:45.4476991+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  },
+  {
+    "id": "TX-WEB-6673398C8B154F7EAF2FAE04DED18D6E",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-25T15:08:18.2633436+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  },
+  {
+    "id": "TX-WEB-9283FF4CDC354B5BAE94BED3A09E0114",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-25T15:09:04.932284+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  },
+  {
+    "id": "TX-WEB-E73808EEF09247B8BA31E1B559F4EC86",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-25T15:18:52.3422098+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  },
+  {
+    "id": "TX-WEB-7BC8EBA9062A4B47959DE2C11C91A81F",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-25T15:19:31.4113954+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  },
+  {
+    "id": "TX-WEB-0E4EC4461D2449FEAB343FA2A9422D85",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-25T15:24:16.3017822+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  },
+  {
+    "id": "TX-WEB-2955D8B6B7194CAD8830EA9EE46AEA93",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-25T15:24:48.4014272+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  },
+  {
+    "id": "TX-WEB-8592ED7932F24124AF09612CA03D4490",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-26T12:49:20.853548+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  },
+  {
+    "id": "TX-WEB-1070BE699B9E4409953D8D7A0D19DADC",
+    "branchCode": "BR-NORTH",
+    "counterCode": "C-01",
+    "clerkId": "STF-CLERK-01",
+    "lines": [
+      {
+        "productId": "PRD-001",
+        "description": "Demo Retail Envelope",
+        "quantity": 2,
+        "unitPrice": 10
+      }
+    ],
+    "subtotal": 20,
+    "tax": 0.00,
+    "paymentMethod": 0,
+    "occurredAtUtc": "2026-10-26T12:50:36.3623971+00:00",
+    "status": 1,
+    "statusReason": null,
+    "authorizedBy": null
+  }
+]

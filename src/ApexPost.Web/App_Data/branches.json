@@ -1,0 +1,12 @@
+[
+  {
+    "code": "BR-NORTH",
+    "name": "Demo North Branch",
+    "isOpen": true
+  },
+  {
+    "code": "BR-EMPTY",
+    "name": "Empty Report Branch",
+    "isOpen": true
+  }
+]
