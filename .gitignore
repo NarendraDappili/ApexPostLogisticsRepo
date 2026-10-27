@@ -64,6 +64,8 @@ project.fragment.lock.json
 artifacts/
 # Keep ASP.NET Core Data Protection keys private; other App_Data files are tracked.
 src/ApexPost.Web/App_Data/data-protection-keys/
+/.github/
+/docs/WeekLabs/
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
