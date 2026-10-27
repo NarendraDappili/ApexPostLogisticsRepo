@@ -409,7 +409,7 @@ flowchart LR
 
 Controllers convert HTTP/view-model input into Application requests and return Views, redirects after successful POSTs, or relevant HTTP status results. They do not contain pricing, stock, verification, or persistence rules. Authentication/authorization is explicitly outside this step, despite the login UI placeholder.
 
-## Step 24 user workflow and validation
+## User workflow and validation
 
 ```mermaid
 flowchart LR
@@ -594,6 +594,7 @@ The ADRs below record key architectural decisions and their rationale.
 5. [ADR 0005 — MVC action audit with JSON store](docs/adr/0005-mvc-action-audit-with-json-store.md)
 6. [ADR 0006 — parallelize only independent checkout reads](docs/adr/0006-parallelize-only-independent-checkout-reads.md)
 7. [ADR 0007 — complete inventory compensation after request cancellation](docs/adr/0007-complete-compensation-after-cancellation.md)
+8. [ADR 0008 — build ApexPost as a greenfield solution](docs/adr/0008-greenfield-solution-instead-of-week-one-refactor.md)
 
 ```mermaid
 flowchart TD
@@ -608,7 +609,7 @@ flowchart TD
     Money --> Receipt
 ```
 
-## Step 22 architecture and quality review
+## Integration rate-limiter hardening
 
 The integration rate limiter uses one shared partition rather than keying on `X-Partner-Id`. That caller-controlled header is not a trusted partner identity and would allow arbitrary partition creation. API-key validation runs before integration rate limiting so invalid credentials cannot consume the shared quota. A constant partition gives bounded limiter state and enforces the configured aggregate request budget without changing application business rules. If independent partner quotas are later required, introduce a verified partner identity after authentication and make its partition lifecycle bounded.
 
