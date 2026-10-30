@@ -27,6 +27,12 @@ public sealed record StockAdjustment
         OccurredAtUtc = (occurredAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
     }
 
+    // Used only when a stored history row is materialized; the stored time is already UTC.
+    private StockAdjustment(BranchCode branchCode, ProductId productId, int delta, string reason, StaffId changedBy, DateTimeOffset occurredAtUtc)
+        : this(branchCode, productId, delta, reason, changedBy, (DateTimeOffset?)occurredAtUtc)
+    {
+    }
+
     public BranchCode BranchCode { get; }
 
     public ProductId ProductId { get; }

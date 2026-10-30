@@ -21,6 +21,13 @@ public class PersistenceReadyDomainTests
         Assert.ThrowsAny<ArgumentException>(() => new Sku(raw));
 
     [Fact]
+    public void Parcel_weight_is_limited_to_the_counter_acceptance_limit()
+    {
+        Assert.Equal(30m, new ParcelWeight(ParcelWeight.MaximumKilograms).Kilograms);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ParcelWeight(30.001m));
+    }
+
+    [Fact]
     public void Product_defaults_its_sku_and_category_and_can_be_recategorized()
     {
         var product = new Product(new ProductId("prd-001"), "Envelope", new Money(1m));

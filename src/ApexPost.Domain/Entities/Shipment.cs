@@ -43,6 +43,19 @@ public sealed class Shipment : IEquatable<Shipment>
         TransactionId = transactionId;
     }
 
+    // Used only when a stored shipment is materialized; the dimensions are loaded afterwards as an owned value.
+    private Shipment(ShipmentId id, BranchCode originBranchCode, ZoneCode destinationZoneCode, ParcelWeight weight, ShipmentType shipmentType, ShippingServiceLevel serviceLevel, CounterTransactionId? transactionId)
+    {
+        Id = id;
+        OriginBranchCode = originBranchCode;
+        DestinationZoneCode = destinationZoneCode;
+        Weight = weight;
+        Dimensions = null!;
+        ShipmentType = shipmentType;
+        ServiceLevel = serviceLevel;
+        TransactionId = transactionId;
+    }
+
     public ShipmentId Id { get; }
 
     public BranchCode OriginBranchCode { get; }

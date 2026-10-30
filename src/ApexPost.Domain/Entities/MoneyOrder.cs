@@ -17,6 +17,7 @@ public sealed class MoneyOrder : IEquatable<MoneyOrder>
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(branchCode);
         ArgumentNullException.ThrowIfNull(amount);
+        if (amount.Amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount), "A money order amount must be greater than zero.");
         ArgumentException.ThrowIfNullOrWhiteSpace(sender);
         ArgumentException.ThrowIfNullOrWhiteSpace(recipient);
         ArgumentNullException.ThrowIfNull(fee);
