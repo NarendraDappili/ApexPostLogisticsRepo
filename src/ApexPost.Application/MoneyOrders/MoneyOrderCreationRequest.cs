@@ -1,20 +1,20 @@
-using ApexPost.Domain.Enums;
+using ApexPost.Application.Validation;
 
 namespace ApexPost.Application.MoneyOrders;
 
-/// <summary>Raw input for a money order. The document number is used only to create a masked reference.</summary>
+/// <summary>Raw input for a money order. The fee is calculated by policy and never supplied by the clerk.</summary>
 public sealed record MoneyOrderCreationRequest(
-    string MoneyOrderId,
-    string BranchCode,
+    [property: NotBlank(48)] string MoneyOrderId,
+    [property: NotBlank(48)] string BranchCode,
     decimal Amount,
-    string Sender,
-    string Recipient,
-    decimal Fee,
-    string TransactionContextId,
-    IdentityVerificationRequest? IdentityVerification);
+    [property: NotBlank(160)] string Sender,
+    [property: NotBlank(160)] string Recipient,
+    [property: NotBlank(48)] string TransactionContextId);
 
+/// <summary>
+/// Identity document presented for verification. The outcome is decided by <see cref="IIdentityVerifier"/>,
+/// and the document number is used only to create a masked reference.
+/// </summary>
 public sealed record IdentityVerificationRequest(
-    string ContextId,
-    string DocumentType,
-    string DocumentNumber,
-    IdentityVerificationOutcome Outcome);
+    [property: NotBlank(80)] string DocumentType,
+    [property: NotBlank(128)] string DocumentNumber);

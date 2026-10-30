@@ -30,6 +30,17 @@ public sealed class ShippingWorkflowServiceTests
     }
 
     [Fact]
+    public async Task Create_links_the_shipment_to_the_transaction_that_will_bill_it()
+    {
+        var shipments = new InMemoryShipmentRepository();
+        var service = CreateService(shipments, [Rate(ShipmentType.Parcel, ShippingServiceLevel.Express, "ZONE-A", 17m, 5m)]);
+
+        await service.CreateAsync(Request("SHIP-1", ShipmentType.Parcel, ShippingServiceLevel.Express, "ZONE-A", 1m) with { TransactionId = "tx-9" });
+
+        Assert.Equal("TX-9", (await shipments.FindByIdAsync(new("SHIP-1")))!.TransactionId?.Value);
+    }
+
+    [Fact]
     public async Task Create_rejects_weight_above_the_configured_service_limit_without_persisting()
     {
         var shipments = new InMemoryShipmentRepository();
@@ -100,10 +111,10 @@ public sealed class ShippingWorkflowServiceTests
 
     private sealed class InMemoryRateProvider(IReadOnlyCollection<ShippingRate> rates) : IShippingRateProvider
     {
-        public Task<IReadOnlyCollection<ShippingRate>> GetRatesAsync(CancellationToken cancellationToken = default)
+        public ValueTask<IReadOnlyCollection<ShippingRate>> GetRatesAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(rates);
+            return ValueTask.FromResult(rates);
         }
     }
 
@@ -116,6 +127,7 @@ public sealed class ShippingWorkflowServiceTests
             _branches.TryGetValue(code.Value, out var branch);
             return Task.FromResult(branch);
         }
+        public Task<IReadOnlyCollection<Branch>> GetAllAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<Branch>>(_branches.Values.ToArray());
         public Task SaveAsync(Branch branch, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 

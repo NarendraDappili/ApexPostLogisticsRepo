@@ -10,5 +10,7 @@ public interface ICounterRepository
         CounterCode counterCode,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyCollection<Counter>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default);
+
     Task SaveAsync(Counter counter, CancellationToken cancellationToken = default);
 }

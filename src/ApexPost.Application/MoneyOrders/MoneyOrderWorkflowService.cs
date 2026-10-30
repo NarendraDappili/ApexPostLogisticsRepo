@@ -1,37 +1,47 @@
+using ApexPost.Application.Events;
 using ApexPost.Application.Repositories;
-using ApexPost.Application.Notifications;
+using ApexPost.Application.Validation;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
 
 namespace ApexPost.Application.MoneyOrders;
 
-/// <summary>Creates money orders and applies configured identity-verification policy.</summary>
+/// <summary>
+/// Issues money orders with a policy-calculated fee and records identity verification as a separate step.
+/// A high-value order can be issued while verification is pending, but checkout refuses to complete it
+/// until a successful verification has been recorded in the same transaction context.
+/// </summary>
 public sealed class MoneyOrderWorkflowService
 {
     private readonly IBranchRepository _branches;
     private readonly IMoneyOrderRepository _moneyOrders;
     private readonly IMoneyOrderPolicy _policy;
-    private readonly INotificationSender? _notifications;
+    private readonly IIdentityVerifier _identityVerifier;
+    private readonly IEventPublisher? _events;
 
-    public MoneyOrderWorkflowService(IBranchRepository branches, IMoneyOrderRepository moneyOrders, IMoneyOrderPolicy policy, INotificationSender? notifications = null)
+    public MoneyOrderWorkflowService(IBranchRepository branches, IMoneyOrderRepository moneyOrders, IMoneyOrderPolicy policy, IIdentityVerifier identityVerifier, IEventPublisher? events = null)
     {
         ArgumentNullException.ThrowIfNull(branches);
         ArgumentNullException.ThrowIfNull(moneyOrders);
         ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(identityVerifier);
         _branches = branches;
         _moneyOrders = moneyOrders;
         _policy = policy;
-        _notifications = notifications;
+        _identityVerifier = identityVerifier;
+        _events = events;
     }
+
+    public IReadOnlyCollection<string> SupportedDocumentTypes => _identityVerifier.SupportedDocumentTypes;
 
     public async Task<MoneyOrderCreationResult> CreateAsync(MoneyOrderCreationRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
+        if (request.Amount <= 0) throw new ArgumentOutOfRangeException(nameof(request.Amount), "Money-order amount must be positive.");
+        RequestValidator.Validate(request);
         var amount = new Money(request.Amount);
-        if (amount.Amount <= 0) throw new ArgumentOutOfRangeException(nameof(request.Amount), "Money-order amount must be positive.");
-        var fee = new Money(request.Fee);
         var id = new MoneyOrderId(request.MoneyOrderId);
         var branchCode = new BranchCode(request.BranchCode);
         var contextId = new MoneyOrderContextId(request.TransactionContextId);
@@ -44,34 +54,50 @@ public sealed class MoneyOrderWorkflowService
             throw new InvalidOperationException("A money order with this identifier already exists.");
         }
 
-        var moneyOrder = new MoneyOrder(id, branchCode, amount, request.Sender, request.Recipient, fee, contextId);
-        if (request.IdentityVerification is not null)
-        {
-            moneyOrder.RecordIdentityVerification(ToVerificationRecord(request.IdentityVerification));
-        }
-
-        var requiresVerification = amount.Amount > _policy.HighValueThreshold.Amount;
-        if (requiresVerification && moneyOrder.IdentityVerificationOutcome != IdentityVerificationOutcome.Verified)
-        {
-            throw new IdentityVerificationRequiredException("A high-value money order requires successful verification in the same transaction context.");
-        }
-
+        var moneyOrder = new MoneyOrder(id, branchCode, amount, request.Sender, request.Recipient, _policy.CalculateFee(amount), contextId);
+        var requiresVerification = RequiresVerification(moneyOrder);
         await _moneyOrders.SaveAsync(moneyOrder, cancellationToken).ConfigureAwait(false);
-        if (requiresVerification && _notifications is not null)
+        if (_events is not null)
         {
-            await _notifications.SendAsync(new NotificationMessage("compliance-alerts@example.test", "ApexPost high-value money order", $"Money order {moneyOrder.Id.Value} at {moneyOrder.BranchCode.Value} was verified."), cancellationToken).ConfigureAwait(false);
+            await _events.PublishAsync(new MoneyOrderIssued(moneyOrder, requiresVerification), cancellationToken).ConfigureAwait(false);
         }
+
         return new MoneyOrderCreationResult(moneyOrder, moneyOrder.Total, requiresVerification);
     }
 
-    private static IdentityVerificationRecord ToVerificationRecord(IdentityVerificationRequest verification)
+    public async Task<MoneyOrder> GetAsync(MoneyOrderId moneyOrderId, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(verification);
-        if (!Enum.IsDefined(verification.Outcome)) throw new ArgumentOutOfRangeException(nameof(verification.Outcome));
-        return new IdentityVerificationRecord(
-            new MoneyOrderContextId(verification.ContextId),
-            verification.DocumentType,
-            MaskedIdentityDocumentReference.FromDocumentNumber(verification.DocumentNumber),
-            verification.Outcome);
+        ArgumentNullException.ThrowIfNull(moneyOrderId);
+        return await _moneyOrders.FindByIdAsync(moneyOrderId, cancellationToken).ConfigureAwait(false)
+            ?? throw new MoneyOrderNotFoundException("The money order was not found.");
+    }
+
+    public bool RequiresVerification(MoneyOrder moneyOrder)
+    {
+        ArgumentNullException.ThrowIfNull(moneyOrder);
+        return moneyOrder.Amount.Amount > _policy.HighValueThreshold.Amount;
+    }
+
+    /// <summary>Asks the identity verifier for an outcome and records it, masked, against the order's transaction context.</summary>
+    public async Task<MoneyOrder> VerifyIdentityAsync(MoneyOrderId moneyOrderId, BranchCode branchCode, IdentityVerificationRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(branchCode);
+        ArgumentNullException.ThrowIfNull(request);
+        RequestValidator.Validate(request);
+        var moneyOrder = await GetAsync(moneyOrderId, cancellationToken).ConfigureAwait(false);
+        if (moneyOrder.BranchCode != branchCode) throw new InvalidOperationException("The money order belongs to another branch.");
+        if (moneyOrder.IdentityVerificationOutcome == IdentityVerificationOutcome.Verified)
+        {
+            throw new InvalidOperationException("Identity has already been verified for this money order.");
+        }
+
+        var outcome = await _identityVerifier.VerifyAsync(request.DocumentType.Trim(), request.DocumentNumber.Trim(), cancellationToken).ConfigureAwait(false);
+        moneyOrder.RecordIdentityVerification(new IdentityVerificationRecord(
+            moneyOrder.TransactionContextId,
+            request.DocumentType,
+            MaskedIdentityDocumentReference.FromDocumentNumber(request.DocumentNumber),
+            outcome));
+        await _moneyOrders.SaveAsync(moneyOrder, cancellationToken).ConfigureAwait(false);
+        return moneyOrder;
     }
 }

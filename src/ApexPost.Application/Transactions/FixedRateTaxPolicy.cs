@@ -14,6 +14,6 @@ public sealed class FixedRateTaxPolicy : ITaxPolicy
     public Money Calculate(Money subtotal)
     {
         ArgumentNullException.ThrowIfNull(subtotal);
-        return new Money(decimal.Round(subtotal.Amount * _rate, 2, MidpointRounding.AwayFromZero));
+        return new Money(subtotal.Amount * _rate).RoundedToCents;
     }
 }

@@ -1,0 +1,35 @@
+@model ApexPost.Web.Models.MoneyOrderVerificationViewModel
+@using ApexPost.Domain.Enums
+@inject ApexPost.Application.MoneyOrders.MoneyOrderWorkflowService MoneyOrders
+@{ ViewData["Title"] = "Identity verification"; }
+<h1>Identity verification</h1>
+@if (TempData["Notice"] is string notice) { <div class="alert alert-info" role="status" aria-live="polite">@notice</div> }
+<p class="text-muted">Record the identity document the customer presents. The verification service decides the outcome; only the document type and a masked reference (last four characters) are stored.</p>
+<dl class="row">
+    <dt class="col-sm-3">Money order</dt><dd class="col-sm-9">@Model.MoneyOrderId</dd>
+    @if (Model.Summary is { } summary)
+    {
+        <dt class="col-sm-3">Transaction ID</dt><dd class="col-sm-9">@summary.TransactionId</dd>
+        <dt class="col-sm-3">Amount / fee / total</dt><dd class="col-sm-9">@summary.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) / @summary.Fee.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) / @summary.Total.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd>
+        <dt class="col-sm-3">Verification required</dt><dd class="col-sm-9">@(summary.RequiresVerification ? "Yes (above the high-value threshold)" : "No")</dd>
+        <dt class="col-sm-3">Verification status</dt><dd class="col-sm-9">@summary.Outcome@(summary.MaskedDocumentReference is null ? "" : $" ({summary.MaskedDocumentReference})")</dd>
+    }
+</dl>
+@if (Model.Summary?.Outcome == IdentityVerificationOutcome.Verified)
+{
+    <p role="status">Identity is verified. Add <strong>@Model.MoneyOrderId</strong> to the basket for transaction <strong>@Model.Summary.TransactionId</strong>.</p>
+    <a class="btn btn-primary" asp-controller="CounterTransactions" asp-action="New">Open counter basket</a>
+}
+else
+{
+    <form asp-action="Verify" method="post" autocomplete="off">
+        <div asp-validation-summary="ModelOnly" class="validation-summary text-danger" role="alert"></div>
+        <input type="hidden" asp-for="MoneyOrderId" />
+        <div class="row g-3">
+            <div class="col-md-4"><label asp-for="DocumentType" class="form-label"></label><select asp-for="DocumentType" asp-items="@(new SelectList(MoneyOrders.SupportedDocumentTypes))" class="form-select"><option value="">Select a document type</option></select><span asp-validation-for="DocumentType" class="field-validation"></span></div>
+            <div class="col-md-4"><label asp-for="DocumentNumber" class="form-label"></label><input asp-for="DocumentNumber" type="password" class="form-control" autocomplete="new-password" aria-describedby="document-number-help" /><span asp-validation-for="DocumentNumber" class="field-validation"></span><small id="document-number-help" class="form-text">Used only to verify and mask; it is never stored or shown again.</small></div>
+        </div>
+        <button class="btn btn-primary mt-3" type="submit">Verify identity</button>
+    </form>
+}
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

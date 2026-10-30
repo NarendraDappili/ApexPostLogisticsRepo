@@ -1,4 +1,5 @@
 using ApexPost.Application.Repositories;
+using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
 
@@ -25,10 +26,10 @@ public sealed class BranchReportService
         ArgumentNullException.ThrowIfNull(branchCode);
         var transactions = await _transactions.FindByBranchAsync(branchCode, cancellationToken).ConfigureAwait(false);
         var matching = transactions.Where(transaction => transaction.Status == CounterTransactionStatus.Paid && DateOnly.FromDateTime(transaction.OccurredAtUtc.UtcDateTime) == day).ToArray();
-        var retail = matching.SelectMany(transaction => transaction.Lines).Where(line => line.IsRetail).Sum(line => line.Total.Amount);
-        var services = matching.SelectMany(transaction => transaction.Lines).Where(line => !line.IsRetail).Sum(line => line.Total.Amount);
-        var tax = matching.Sum(transaction => transaction.Tax.Amount);
-        return new DailyBranchSalesReport(branchCode, day, new(retail), new(services), new(tax), matching.Length);
+        var retail = matching.Select(transaction => transaction.RetailTotal).Total;
+        var services = matching.Select(transaction => transaction.ServiceTotal).Total;
+        var tax = matching.Select(transaction => transaction.Tax).Total;
+        return new DailyBranchSalesReport(branchCode, day, retail, services, tax, matching.Length);
     }
 
     public async Task<LowStockReport> GetLowStockAsync(BranchCode branchCode, int threshold, CancellationToken cancellationToken = default)

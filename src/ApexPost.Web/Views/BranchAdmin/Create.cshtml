@@ -1,0 +1,10 @@
+@model ApexPost.Web.Models.BranchFormViewModel
+@{ ViewData["Title"] = "Add branch"; }
+<h1>Add branch</h1>
+<p class="text-muted">Counter terminals are created as C-01, C-02 and so on. Stock for the new branch is added separately.</p>
+<form asp-action="Create" method="post">
+    <partial name="_BranchFields" model="Model" />
+    <button class="btn btn-primary mt-3" type="submit">Add branch</button>
+    <a class="btn btn-secondary mt-3" asp-action="Index">Cancel</a>
+</form>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

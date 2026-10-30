@@ -7,16 +7,17 @@
 | Stock never becomes negative | `BranchInventoryItem` and atomic `IInventoryRepository.UpdateAsync`; checkout and inventory tests cover underflow/concurrency. |
 | Inactive staff cannot transact | `StaffMember.CanProcessTransactionsAt`, checkout workflow, cookie validator, and authentication tests. |
 | Clerks use their assigned branch | Checkout validates the clerk/branch; MVC authorization and `SameBranchOnly` restrict HTTP access. |
-| High-value money orders need verified same-context identity | `MoneyOrderWorkflowService` and checkout compare configured threshold, outcome, and transaction context. |
+| High-value money orders need verified same-context identity | Orders are issued as Pending; a separate verification step records the verifier's outcome; checkout refuses a high-value order unless it is Verified for the same transaction. |
+| Prices, fees and verification results come from the server | Basket requests carry identifiers only; retail, shipment and money-order fee prices are resolved by the server (ADR 0009). |
 | Shipment service weight limit | `ShippingPriceCalculator` rejects a rate-limit exceedance before persistence. |
 | Void/refund require assigned active Branch Manager and reason | MVC policy narrows HTTP access; Application workflow is the final rule authority. |
 | Closed branches cannot transact | Shipping, money-order creation, and checkout reject closed branches. |
 
-Money uses `decimal`. The repository does not invent a currency, production rounding policy, fee schedule, document-type policy, or dimensional surcharge; those require explicit future policy decisions.
+Money uses `decimal` and is rounded to cents away from zero (`Money.RoundedToCents`). The money-order fee is a configured flat fee plus a percentage. The repository does not invent a currency or dimensional surcharge.
 
 ## Synthetic seed data
 
-`DemoDataSeeder` creates five open branches, ten counters, twenty active staff members across all four roles, thirty products, 150 inventory records, ten zones/60 rates, and forty historical transaction snapshots. It is deterministic and contains no password, API key, full identity-document number, or real personal data.
+`DemoDataSeeder` creates five open branches, ten counters, twenty active staff members across all four roles, thirty products, 150 inventory records, ten zones/60 rates, and forty historical counter transactions with their shipments and money orders, dated over the four days before seeding. In Development it runs automatically on an empty data folder and stores PBKDF2 hashes of the demo password; it contains no API key, full identity-document number, or real personal data.
 
 Historical transaction snapshots are seed artifacts, not a replacement for runtime `CounterTransaction` persistence. Runtime transactions use `counter-transactions.json`; reports query persisted runtime aggregates.
 

@@ -1,7 +1,7 @@
 @model ApexPost.Web.Models.ReportsViewModel
 @{ ViewData["Title"] = "Branch reports"; }
 <h1>Branch reports</h1>
-<form method="get" class="row g-2 mb-3"><div class="col-md-3"><label for="branchCode" class="form-label">Branch code</label><input id="branchCode" name="branchCode" value="@Model?.BranchCode" class="form-control" required autocomplete="off" /></div><div class="col-md-3"><label for="day" class="form-label">Sales day (UTC)</label><input id="day" name="day" type="date" value="@Model?.Day.ToString("yyyy-MM-dd")" class="form-control" /></div><div class="col-md-2 align-self-end"><button class="btn btn-primary" type="submit">Run reports</button></div></form>
+<form method="get" class="row g-2 mb-3"><div class="col-md-3"><label for="branchCode" class="form-label">Branch</label><select id="branchCode" name="branchCode" class="form-select" required asp-items="await Lookup.ViewableBranchesAsync(User, Model?.BranchCode, Context.RequestAborted)"></select></div><div class="col-md-3"><label for="day" class="form-label">Sales day (UTC)</label><input id="day" name="day" type="date" value="@Model?.Day.ToString("yyyy-MM-dd")" class="form-control" /></div><div class="col-md-2 align-self-end"><button class="btn btn-primary" type="submit">Run reports</button></div></form>
 @if (Model is null) { <p class="text-muted" role="status">Your account has no assigned branch.</p> }
 else {
 <p>Branch: <strong>@Model.BranchCode</strong></p>

@@ -1,0 +1,14 @@
+@model ApexPost.Web.Models.StaffFormViewModel
+@using ApexPost.Domain.Enums
+@{ var isEdit = ViewData["IsEdit"] is true; }
+<div asp-validation-summary="ModelOnly" class="validation-summary text-danger" role="alert"></div>
+<div class="row g-3">
+    <div class="col-md-4"><label asp-for="StaffId" class="form-label"></label>@if (isEdit) { <input asp-for="StaffId" class="form-control" readonly /> } else { <input asp-for="StaffId" class="form-control" /> }<span asp-validation-for="StaffId" class="field-validation"></span></div>
+    <div class="col-md-4"><label asp-for="Name" class="form-label"></label><input asp-for="Name" class="form-control" /><span asp-validation-for="Name" class="field-validation"></span></div>
+    <div class="col-md-4"><label asp-for="Email" class="form-label"></label><input asp-for="Email" class="form-control" autocomplete="off" /><span asp-validation-for="Email" class="field-validation"></span></div>
+</div>
+<div class="row g-3 mt-1">
+    <div class="col-md-4"><label asp-for="Role" class="form-label"></label><select asp-for="Role" asp-items="Html.GetEnumSelectList<StaffRole>()" class="form-select"></select><span asp-validation-for="Role" class="field-validation"></span></div>
+    <div class="col-md-4"><label asp-for="BranchCode" class="form-label"></label><select asp-for="BranchCode" asp-items="await Lookup.AllBranchesAsync(Context.RequestAborted)" class="form-select"><option value="">Select a branch</option></select><span asp-validation-for="BranchCode" class="field-validation"></span></div>
+    <div class="col-md-4"><label asp-for="Password" class="form-label">@(isEdit ? "New password (leave blank to keep)" : "Initial password")</label><input asp-for="Password" class="form-control" autocomplete="new-password" /><span asp-validation-for="Password" class="field-validation"></span></div>
+</div>

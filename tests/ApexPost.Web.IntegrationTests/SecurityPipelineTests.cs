@@ -222,9 +222,12 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Program.cs reads these before Build(), which only UseSetting reaches.
+        builder.UseSetting("ApexPost:DataDirectory", _dataDirectory);
+        builder.UseSetting("ApexPost:RateLimiting:IntegrationPermitLimit", _integrationPermitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["ApexPost:DataDirectory"] = _dataDirectory,
+            ["ApexPost:DemoSeed:Enabled"] = "false",
             ["ApexPost:Maintenance:Enabled"] = _maintenance.ToString(),
             ["ApexPost:Maintenance:RetryAfterSeconds"] = "120",
             ["ApexPost:Security:Integration:ApiKey"] = _apiKey,

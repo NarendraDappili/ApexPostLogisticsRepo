@@ -46,4 +46,18 @@ public class BranchAndCounterTests
         counter.Close();
         Assert.False(counter.IsOpen);
     }
+
+    [Fact]
+    public void Branch_details_are_trimmed_and_an_invalid_update_changes_nothing()
+    {
+        var branch = new Branch(new BranchCode("br-001"), "Central", " North ", " Mon-Fri 09:00-17:00 ");
+        Assert.Equal("North", branch.Region);
+        Assert.Equal("Mon-Fri 09:00-17:00", branch.OpeningHours);
+
+        Assert.ThrowsAny<ArgumentException>(() => branch.UpdateDetails("Renamed", " ", "Sat 09:00-12:00"));
+        Assert.Equal("Central", branch.Name);
+
+        branch.UpdateDetails("Renamed", "South", "Sat 09:00-12:00");
+        Assert.Equal(("Renamed", "South", "Sat 09:00-12:00"), (branch.Name, branch.Region, branch.OpeningHours));
+    }
 }

@@ -27,7 +27,20 @@ public sealed class JsonShippingRateProviderTests : IAsyncLifetime
         Assert.Empty(await new JsonShippingRateProvider(Options).GetRatesAsync());
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new JsonShippingRateProvider(Options).GetRatesAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new JsonShippingRateProvider(Options).GetRatesAsync(cancellation.Token).AsTask());
+    }
+
+    [Fact]
+    public async Task Provider_serves_later_calls_from_its_cache_synchronously()
+    {
+        await new DemoDataSeeder(Options).SeedAsync();
+        var provider = new JsonShippingRateProvider(Options);
+        var first = await provider.GetRatesAsync();
+
+        var cached = provider.GetRatesAsync();
+
+        Assert.True(cached.IsCompletedSuccessfully);
+        Assert.Same(first, await cached);
     }
 
     public Task InitializeAsync() => Task.CompletedTask;

@@ -23,6 +23,23 @@ public sealed class JsonAuditStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Appends_add_one_json_line_without_rewriting_earlier_lines()
+    {
+        var store = new JsonAuditStore(new JsonRepositoryOptions { DataDirectory = _directory });
+        await store.AppendAsync(CreateRecord(1));
+        var path = Path.Combine(_directory, JsonAuditStore.FileName);
+        var before = await File.ReadAllBytesAsync(path);
+
+        await store.AppendAsync(CreateRecord(2));
+
+        var after = await File.ReadAllBytesAsync(path);
+        Assert.Equal(before, after.Take(before.Length));
+        var lines = (await File.ReadAllLinesAsync(path)).Where(line => line.Length > 0).ToArray();
+        Assert.Equal(2, lines.Length);
+        Assert.All(lines, line => Assert.Equal(JsonValueKind.Object, JsonDocument.Parse(line).RootElement.ValueKind));
+    }
+
+    [Fact]
     public async Task Cancellation_is_distinct_from_a_malformed_audit_file_failure()
     {
         var store = new JsonAuditStore(new JsonRepositoryOptions { DataDirectory = _directory });
@@ -33,8 +50,8 @@ public sealed class JsonAuditStoreTests : IAsyncLifetime
         Assert.Empty(await store.ReadAsync());
 
         Directory.CreateDirectory(_directory);
-        await File.WriteAllTextAsync(Path.Combine(_directory, "audit-records.json"), "not-json");
-        await Assert.ThrowsAsync<JsonException>(() => store.AppendAsync(CreateRecord(2)));
+        await File.WriteAllTextAsync(Path.Combine(_directory, JsonAuditStore.FileName), "not-json\n");
+        await Assert.ThrowsAnyAsync<JsonException>(() => store.ReadAsync());
     }
 
     private static AuditRecord CreateRecord(int index) => new(

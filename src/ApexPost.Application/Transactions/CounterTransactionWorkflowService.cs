@@ -1,8 +1,9 @@
 using System.Collections.Concurrent;
+using ApexPost.Application.Events;
+using ApexPost.Application.Inventory;
 using ApexPost.Application.MoneyOrders;
 using ApexPost.Application.Pricing;
 using ApexPost.Application.Repositories;
-using ApexPost.Application.Notifications;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
@@ -17,25 +18,29 @@ public sealed class CounterTransactionWorkflowService
     private readonly ICounterRepository _counters;
     private readonly IStaffMemberRepository _staff;
     private readonly IProductRepository _products;
-    private readonly IInventoryRepository _inventory;
+    private readonly InventoryService _inventory;
+    private readonly IShipmentRepository _shipments;
+    private readonly IShippingRateProvider _rates;
     private readonly IMoneyOrderRepository _moneyOrders;
     private readonly ICounterTransactionRepository _transactions;
     private readonly IMoneyOrderPolicy _moneyOrderPolicy;
     private readonly ITaxPolicy _taxPolicy;
-    private readonly INotificationSender? _notifications;
+    private readonly IEventPublisher? _events;
 
-    public CounterTransactionWorkflowService(IBranchRepository branches, ICounterRepository counters, IStaffMemberRepository staff, IProductRepository products, IInventoryRepository inventory, IMoneyOrderRepository moneyOrders, ICounterTransactionRepository transactions, IMoneyOrderPolicy moneyOrderPolicy, ITaxPolicy taxPolicy, INotificationSender? notifications = null)
+    public CounterTransactionWorkflowService(IBranchRepository branches, ICounterRepository counters, IStaffMemberRepository staff, IProductRepository products, InventoryService inventory, IShipmentRepository shipments, IShippingRateProvider rates, IMoneyOrderRepository moneyOrders, ICounterTransactionRepository transactions, IMoneyOrderPolicy moneyOrderPolicy, ITaxPolicy taxPolicy, IEventPublisher? events = null)
     {
         _branches = branches ?? throw new ArgumentNullException(nameof(branches));
         _counters = counters ?? throw new ArgumentNullException(nameof(counters));
         _staff = staff ?? throw new ArgumentNullException(nameof(staff));
         _products = products ?? throw new ArgumentNullException(nameof(products));
         _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
+        _shipments = shipments ?? throw new ArgumentNullException(nameof(shipments));
+        _rates = rates ?? throw new ArgumentNullException(nameof(rates));
         _moneyOrders = moneyOrders ?? throw new ArgumentNullException(nameof(moneyOrders));
         _transactions = transactions ?? throw new ArgumentNullException(nameof(transactions));
         _moneyOrderPolicy = moneyOrderPolicy ?? throw new ArgumentNullException(nameof(moneyOrderPolicy));
         _taxPolicy = taxPolicy ?? throw new ArgumentNullException(nameof(taxPolicy));
-        _notifications = notifications;
+        _events = events;
     }
 
     public async Task<CounterTransaction> CheckoutAsync(CounterCheckoutRequest request, CancellationToken cancellationToken = default)
@@ -47,40 +52,39 @@ public sealed class CounterTransactionWorkflowService
         var counterCode = new CounterCode(request.CounterCode);
         var clerkId = new StaffId(request.ClerkId);
         if (!Enum.IsDefined(request.PaymentMethod)) throw new ArgumentOutOfRangeException(nameof(request.PaymentMethod));
-        if (request.RetailLines is null || request.ServiceLines is null || request.MoneyOrderIds is null) throw new ArgumentException("Transaction line collections are required.");
+        if (request.RetailLines is null || request.ShipmentIds is null || request.MoneyOrderIds is null) throw new ArgumentException("Transaction line collections are required.");
 
         var gate = BranchLocks.GetOrAdd(branchCode.Value, static _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        CounterTransaction transaction;
+        var movements = new List<StockMovement>();
         try
         {
             await ValidatePointOfSaleAsync(id, branchCode, counterCode, clerkId, cancellationToken).ConfigureAwait(false);
             var retailLines = await CreateRetailLinesAsync(request.RetailLines, cancellationToken).ConfigureAwait(false);
-            var serviceLines = CreateServiceLines(request.ServiceLines);
+            var shipmentLines = await CreateShipmentLinesAsync(request.ShipmentIds, id, branchCode, cancellationToken).ConfigureAwait(false);
             var moneyOrderLines = await CreateMoneyOrderLinesAsync(request.MoneyOrderIds, id, branchCode, cancellationToken).ConfigureAwait(false);
-            var lines = retailLines.Concat(serviceLines).Concat(moneyOrderLines).ToArray();
+            var lines = retailLines.Concat(shipmentLines).Concat(moneyOrderLines).ToArray();
             if (lines.Length == 0) throw new InvalidOperationException("A transaction requires at least one line.");
-            var subtotal = new Money(lines.Sum(line => line.Total.Amount));
-            var transaction = new CounterTransaction(id, branchCode, counterCode, clerkId, lines, subtotal, _taxPolicy.Calculate(subtotal), request.PaymentMethod);
+            var subtotal = lines.Select(line => line.Total).Total;
+            transaction = new CounterTransaction(id, branchCode, counterCode, clerkId, lines, subtotal, _taxPolicy.Calculate(subtotal), request.PaymentMethod);
             transaction.MarkPaid();
 
-            var removed = new List<CounterTransactionLine>();
             try
             {
                 foreach (var line in retailLines)
                 {
-                    await RemoveStockAsync(branchCode, line.ProductId!, line.Quantity, cancellationToken).ConfigureAwait(false);
-                    removed.Add(line);
+                    movements.Add(await _inventory.RemoveStockForSaleAsync(branchCode, line.ProductId!, line.Quantity, cancellationToken).ConfigureAwait(false));
                 }
                 await _transactions.SaveAsync(transaction, cancellationToken).ConfigureAwait(false);
-                return transaction;
             }
             catch (Exception failure)
             {
                 var compensationFailures = new List<Exception>();
                 // Once inventory has changed, rollback must outlive request cancellation.
-                foreach (var line in removed.AsEnumerable().Reverse())
+                foreach (var movement in movements.AsEnumerable().Reverse())
                 {
-                    try { await AddStockAsync(branchCode, line.ProductId!, line.Quantity, CancellationToken.None).ConfigureAwait(false); }
+                    try { await _inventory.AddStockAsync(branchCode, movement.ProductId, movement.Before - movement.After, CancellationToken.None).ConfigureAwait(false); }
                     catch (Exception compensationFailure) { compensationFailures.Add(compensationFailure); }
                 }
                 if (compensationFailures.Count > 0) throw new AggregateException("Checkout failed and inventory compensation was incomplete.", [failure, .. compensationFailures]);
@@ -88,6 +92,18 @@ public sealed class CounterTransactionWorkflowService
             }
         }
         finally { gate.Release(); }
+
+        // The sale is persisted: raise its events outside the branch gate and without the request token,
+        // so a client disconnect cannot drop a low-stock alert for stock that has already left the shelf.
+        foreach (var movement in movements)
+        {
+            await _inventory.RaiseLowStockAlertAsync(movement, CancellationToken.None).ConfigureAwait(false);
+        }
+        if (_events is not null)
+        {
+            await _events.PublishAsync(new TransactionCompleted(transaction), CancellationToken.None).ConfigureAwait(false);
+        }
+        return transaction;
     }
 
     public async Task<CounterTransaction> VoidAsync(CounterTransactionId transactionId, ManagerTransactionActionRequest action, CancellationToken cancellationToken = default) =>
@@ -109,16 +125,18 @@ public sealed class CounterTransactionWorkflowService
                 ?? throw new InvalidOperationException("The manager was not found.");
             if (!manager.IsActive || manager.Role != StaffRole.BranchManager || manager.AssignedBranchCode != transaction.BranchCode)
                 throw new InvalidOperationException("A Branch Manager assigned to the transaction branch must authorize this action.");
+            // Only a paid sale has taken stock off the shelf, so only a paid sale gives it back.
+            var stockWasTaken = transaction.Status == CounterTransactionStatus.Paid;
             if (refund) transaction.Refund(manager.Id, action.Reason); else transaction.Void(manager.Id, action.Reason);
             await _transactions.SaveAsync(transaction, cancellationToken).ConfigureAwait(false);
-            if (refund)
+            if (stockWasTaken)
             {
                 try
                 {
-                    // The refund status is persisted; finish stock restoration even if the client disconnects.
+                    // The new status is persisted; finish stock restoration even if the client disconnects.
                     foreach (var line in transaction.Lines.Where(line => line.IsRetail))
                     {
-                        await AddStockAsync(transaction.BranchCode, line.ProductId!, line.Quantity, CancellationToken.None).ConfigureAwait(false);
+                        await _inventory.AddStockAsync(transaction.BranchCode, line.ProductId!, line.Quantity, CancellationToken.None).ConfigureAwait(false);
                     }
                 }
                 catch (Exception failure)
@@ -127,9 +145,10 @@ public sealed class CounterTransactionWorkflowService
                     throw new InvalidOperationException("Transaction status was persisted but inventory restoration failed; reconciliation is required.", failure);
                 }
             }
-            if (_notifications is not null)
+            if (_events is not null)
             {
-                await _notifications.SendAsync(new NotificationMessage("operations-alerts@example.test", $"ApexPost transaction {transaction.Status}", $"Transaction {transaction.Id.Value} at {transaction.BranchCode.Value} was {transaction.Status.ToString().ToLowerInvariant()}."), cancellationToken).ConfigureAwait(false);
+                ApexPostEvent reversal = refund ? new TransactionRefunded(transaction) : new TransactionVoided(transaction);
+                await _events.PublishAsync(reversal, cancellationToken).ConfigureAwait(false);
             }
             return transaction;
         }
@@ -162,23 +181,33 @@ public sealed class CounterTransactionWorkflowService
         {
             ArgumentNullException.ThrowIfNull(request);
             var productId = new ProductId(request.ProductId);
-            var product = await _products.FindByIdAsync(productId, cancellationToken).ConfigureAwait(false) ?? throw new InvalidOperationException("A retail product was not found.");
+            var product = await _products.FindByIdAsync(productId, cancellationToken).ConfigureAwait(false) ?? throw new InvalidOperationException($"Retail product {productId.Value} was not found.");
             var total = RetailPriceCalculator.Calculate(product, request.Quantity);
             lines.Add(new CounterTransactionLine(product.Id, product.Name, request.Quantity, new Money(total.Amount / request.Quantity)));
         }
         return lines;
     }
 
-    private static IReadOnlyCollection<CounterTransactionLine> CreateServiceLines(IEnumerable<ServiceBasketLineRequest> requests) => requests.Select(request =>
+    private async Task<IReadOnlyCollection<CounterTransactionLine>> CreateShipmentLinesAsync(IEnumerable<string> ids, CounterTransactionId transactionId, BranchCode branchCode, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        return new CounterTransactionLine(null, request.Description, request.Quantity, new Money(request.UnitPrice));
-    }).ToArray();
+        var lines = new List<CounterTransactionLine>();
+        IReadOnlyCollection<ShippingRate>? rates = null;
+        foreach (var rawId in ids.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var shipment = await _shipments.FindByIdAsync(new ShipmentId(rawId), cancellationToken).ConfigureAwait(false) ?? throw new InvalidOperationException("A shipment was not found.");
+            // The shipment is bound to one transaction ID at creation, so it can never be billed twice.
+            if (shipment.OriginBranchCode != branchCode || shipment.TransactionId != transactionId) throw new InvalidOperationException("Shipment must belong to this branch and transaction.");
+            rates ??= await _rates.GetRatesAsync(cancellationToken).ConfigureAwait(false);
+            var price = ShippingPriceCalculator.Calculate(new ShippingPricingRequest(shipment, shipment.ShipmentType, shipment.ServiceLevel), rates);
+            lines.Add(new CounterTransactionLine(null, $"{shipment.ServiceLevel} {shipment.ShipmentType.ToString().ToLowerInvariant()} {shipment.Id.Value} to {shipment.DestinationZoneCode.Value}", 1, price));
+        }
+        return lines;
+    }
 
     private async Task<IReadOnlyCollection<CounterTransactionLine>> CreateMoneyOrderLinesAsync(IEnumerable<string> ids, CounterTransactionId transactionId, BranchCode branchCode, CancellationToken cancellationToken)
     {
         var lines = new List<CounterTransactionLine>();
-        foreach (var rawId in ids)
+        foreach (var rawId in ids.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var order = await _moneyOrders.FindByIdAsync(new MoneyOrderId(rawId), cancellationToken).ConfigureAwait(false) ?? throw new InvalidOperationException("A money order was not found.");
             if (order.BranchCode != branchCode || order.TransactionContextId.Value != transactionId.Value) throw new InvalidOperationException("Money order must belong to this branch and transaction context.");
@@ -187,9 +216,4 @@ public sealed class CounterTransactionWorkflowService
         }
         return lines;
     }
-
-    private async Task RemoveStockAsync(BranchCode branch, ProductId product, int quantity, CancellationToken token) =>
-        await _inventory.UpdateAsync(branch, product, item => { item.RemoveStock(quantity); return 0; }, token).ConfigureAwait(false);
-    private async Task AddStockAsync(BranchCode branch, ProductId product, int quantity, CancellationToken token) =>
-        await _inventory.UpdateAsync(branch, product, item => { item.AddStock(quantity); return 0; }, token).ConfigureAwait(false);
 }

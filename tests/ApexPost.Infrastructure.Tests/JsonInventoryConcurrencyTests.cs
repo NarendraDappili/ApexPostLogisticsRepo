@@ -38,7 +38,7 @@ public sealed class JsonInventoryConcurrencyTests : IAsyncLifetime
     }
 
     private static InventoryService CreateService(JsonInventoryRepository repository) =>
-        new(repository, new InventoryServiceOptions { LowStockThreshold = 2, LowStockRecipient = "inventory-alerts@example.test" });
+        new(repository, new InventoryServiceOptions { LowStockThreshold = 2 });
 
     public Task InitializeAsync() => Task.CompletedTask;
 
