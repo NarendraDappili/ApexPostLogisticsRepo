@@ -211,7 +211,7 @@ public sealed class CounterTransactionWorkflowService
         {
             var order = await _moneyOrders.FindByIdAsync(new MoneyOrderId(rawId), cancellationToken).ConfigureAwait(false) ?? throw new InvalidOperationException("A money order was not found.");
             if (order.BranchCode != branchCode || order.TransactionContextId.Value != transactionId.Value) throw new InvalidOperationException("Money order must belong to this branch and transaction context.");
-            if (order.Amount.Amount > _moneyOrderPolicy.HighValueThreshold.Amount && order.IdentityVerificationOutcome != IdentityVerificationOutcome.Verified) throw new IdentityVerificationRequiredException("A high-value money order requires successful same-transaction verification.");
+            if (!order.IsClearedForPayment(_moneyOrderPolicy.HighValueThreshold)) throw new IdentityVerificationRequiredException("A high-value money order requires successful same-transaction verification.");
             lines.Add(new CounterTransactionLine(null, $"Money order {order.Id.Value}", 1, order.Total));
         }
         return lines;
