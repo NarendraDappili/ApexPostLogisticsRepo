@@ -1,3 +1,4 @@
+using ApexPost.Application.Abstractions;
 using ApexPost.Application.Inventory;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.ValueObjects;
@@ -11,34 +12,61 @@ public sealed class JsonInventoryConcurrencyTests : IAsyncLifetime
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "ApexPost.Infrastructure.Tests", Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public async Task Atomic_json_inventory_updates_prevent_same_process_overselling()
+    public async Task Concurrent_json_stock_commits_never_lose_an_update_or_oversell()
     {
         var options = new JsonRepositoryOptions { DataDirectory = _directory };
-        var repository = new JsonInventoryRepository(options);
-        await repository.SaveAsync(new BranchInventoryItem(new("BR-A"), new("P-1"), 10));
-        var serviceA = CreateService(repository);
-        var serviceB = CreateService(repository);
-        var removals = Enumerable.Range(0, 20).Select(async index =>
+        await new JsonInventoryRepository(options).SaveAsync(new BranchInventoryItem(new("BR-A"), new("P-1"), 10));
+
+        // Each removal runs like a separate request: its own unit of work and repository.
+        var removals = Enumerable.Range(0, 20).Select(async _ =>
         {
+            var unitOfWork = new JsonUnitOfWork();
+            var service = new InventoryService(new JsonInventoryRepository(options, unitOfWork), unitOfWork, new InventoryServiceOptions { LowStockThreshold = 2 });
             try
             {
-                await (index % 2 == 0 ? serviceA : serviceB).RemoveStockAsync(new("BR-A"), new("P-1"), 1);
-                return true;
+                await service.RemoveStockAsync(new("BR-A"), new("P-1"), 1);
+                return "sold";
+            }
+            catch (ConcurrencyConflictException)
+            {
+                return "conflict";
             }
             catch (InvalidOperationException)
             {
-                return false;
+                return "out of stock";
             }
         });
 
         var results = await Task.WhenAll(removals);
+        var stored = (await new JsonInventoryRepository(options).FindAsync(new("BR-A"), new("P-1")))!.Quantity;
 
-        Assert.Equal(10, results.Count(result => result));
-        Assert.Equal(0, (await repository.FindAsync(new("BR-A"), new("P-1")))!.Quantity);
+        // Every successful sale is reflected exactly once; a stale read is rejected instead of overwriting.
+        Assert.Equal(10 - results.Count(result => result == "sold"), stored);
+        Assert.InRange(stored, 0, 10);
     }
 
-    private static InventoryService CreateService(JsonInventoryRepository repository) =>
-        new(repository, new InventoryServiceOptions { LowStockThreshold = 2 });
+    [Fact]
+    public async Task A_stale_stock_read_is_rejected_at_commit()
+    {
+        var options = new JsonRepositoryOptions { DataDirectory = _directory };
+        await new JsonInventoryRepository(options).SaveAsync(new BranchInventoryItem(new("BR-A"), new("P-1"), 1));
+        var firstUnitOfWork = new JsonUnitOfWork();
+        var secondUnitOfWork = new JsonUnitOfWork();
+        var first = new JsonInventoryRepository(options, firstUnitOfWork);
+        var second = new JsonInventoryRepository(options, secondUnitOfWork);
+
+        // Two clerks read the last unit before either sale is committed.
+        var firstRead = (await first.FindAsync(new("BR-A"), new("P-1")))!;
+        var secondRead = (await second.FindAsync(new("BR-A"), new("P-1")))!;
+        firstRead.RemoveStock(1);
+        secondRead.RemoveStock(1);
+        first.Update(firstRead);
+        second.Update(secondRead);
+
+        await firstUnitOfWork.SaveChangesAsync();
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(() => secondUnitOfWork.SaveChangesAsync());
+        Assert.Equal(0, (await new JsonInventoryRepository(options).FindAsync(new("BR-A"), new("P-1")))!.Quantity);
+    }
 
     public Task InitializeAsync() => Task.CompletedTask;
 

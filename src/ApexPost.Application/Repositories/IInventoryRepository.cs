@@ -3,6 +3,10 @@ using ApexPost.Domain.ValueObjects;
 
 namespace ApexPost.Application.Repositories;
 
+/// <summary>
+/// Branch stock. Concurrent sales of the same item are detected when the unit of work commits
+/// (optimistic concurrency), so a stale quantity can never be written back.
+/// </summary>
 public interface IInventoryRepository
 {
     Task<BranchInventoryItem?> FindAsync(
@@ -10,16 +14,7 @@ public interface IInventoryRepository
         ProductId productId,
         CancellationToken cancellationToken = default);
 
-    Task SaveAsync(BranchInventoryItem inventoryItem, CancellationToken cancellationToken = default);
     Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Runs a mutation against one inventory item as one repository operation.
-    /// Implementations must not expose an intervening read/write window.
-    /// </summary>
-    Task<TResult> UpdateAsync<TResult>(
-        BranchCode branchCode,
-        ProductId productId,
-        Func<BranchInventoryItem, TResult> update,
-        CancellationToken cancellationToken = default);
+    void Update(BranchInventoryItem inventoryItem);
 }

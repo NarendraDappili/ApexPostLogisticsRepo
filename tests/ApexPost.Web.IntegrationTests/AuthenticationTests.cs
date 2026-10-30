@@ -6,6 +6,8 @@ using ApexPost.Application.Repositories;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
+using ApexPost.Infrastructure.Persistence;
+using ApexPost.Infrastructure.Repositories;
 using ApexPost.Infrastructure.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -601,35 +603,38 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         var branches = scope.ServiceProvider.GetRequiredService<IBranchRepository>();
         var counters = scope.ServiceProvider.GetRequiredService<ICounterRepository>();
         var staff = scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>();
-        var products = scope.ServiceProvider.GetRequiredService<IProductRepository>();
-        var inventory = scope.ServiceProvider.GetRequiredService<IInventoryRepository>();
         var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
-        await branches.SaveAsync(new Branch(new BranchCode("BR-NORTH"), "Demo North Branch"));
-        await counters.SaveAsync(new Counter(new CounterCode("C-01"), new BranchCode("BR-NORTH")));
-        await staff.SaveAsync(WithPassword(new StaffMember(new StaffId("STF-CLERK-01"), "Test Clerk", StaffRole.CounterClerk, new BranchCode("BR-NORTH")), hasher));
+        branches.Add(new Branch(new BranchCode("BR-NORTH"), "Demo North Branch"));
+        counters.Add(new Counter(new CounterCode("C-01"), new BranchCode("BR-NORTH")));
+        staff.Add(WithPassword(new StaffMember(new StaffId("STF-CLERK-01"), "Test Clerk", StaffRole.CounterClerk, new BranchCode("BR-NORTH")), hasher));
         var inactive = WithPassword(new StaffMember(new StaffId("STF-INACTIVE-01"), "Inactive Clerk", StaffRole.CounterClerk, new BranchCode("BR-NORTH")), hasher);
         inactive.Deactivate();
-        await staff.SaveAsync(inactive);
-        await staff.SaveAsync(WithPassword(new StaffMember(new StaffId("STF-MANAGER-01"), "Test Manager", StaffRole.BranchManager, new BranchCode("BR-NORTH")), hasher));
-        await staff.SaveAsync(WithPassword(new StaffMember(new StaffId("STF-ADMIN-01"), "Test Administrator", StaffRole.Administrator, new BranchCode("BR-NORTH"), "admin@example.test"), hasher));
-        await products.SaveAsync(new Product(new ProductId("PRD-001"), "Demo Retail Envelope", new Money(10m)));
-        await inventory.SaveAsync(new BranchInventoryItem(new BranchCode("BR-NORTH"), new ProductId("PRD-001"), 100));
+        staff.Add(inactive);
+        staff.Add(WithPassword(new StaffMember(new StaffId("STF-MANAGER-01"), "Test Manager", StaffRole.BranchManager, new BranchCode("BR-NORTH")), hasher));
+        staff.Add(WithPassword(new StaffMember(new StaffId("STF-ADMIN-01"), "Test Administrator", StaffRole.Administrator, new BranchCode("BR-NORTH"), "admin@example.test"), hasher));
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+        // No use case creates catalogue or stock rows, so test data for them is written straight to the store.
+        var store = scope.ServiceProvider.GetRequiredService<JsonRepositoryOptions>();
+        await new JsonProductRepository(store).SaveAsync(new Product(new ProductId("PRD-001"), "Demo Retail Envelope", new Money(10m)));
+        await new JsonInventoryRepository(store).SaveAsync(new BranchInventoryItem(new BranchCode("BR-NORTH"), new ProductId("PRD-001"), 100));
     }
 
     public async Task SeedSouthBranchAsync()
     {
         using var scope = Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<IBranchRepository>()
-            .SaveAsync(new Branch(new BranchCode("BR-SOUTH"), "Demo South Branch"));
+        scope.ServiceProvider.GetRequiredService<IBranchRepository>()
+            .Add(new Branch(new BranchCode("BR-SOUTH"), "Demo South Branch"));
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
     }
 
     public async Task SeedEmptyReportBranchAsync()
     {
         using var scope = Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<IBranchRepository>()
-            .SaveAsync(new Branch(new BranchCode("BR-EMPTY"), "Empty Report Branch"));
-        await scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>()
-            .SaveAsync(WithPassword(new StaffMember(new StaffId("STF-EMPTY-MANAGER"), "Empty Report Manager", StaffRole.BranchManager, new BranchCode("BR-EMPTY")), scope.ServiceProvider.GetRequiredService<IPasswordHasher>()));
+        scope.ServiceProvider.GetRequiredService<IBranchRepository>()
+            .Add(new Branch(new BranchCode("BR-EMPTY"), "Empty Report Branch"));
+        scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>()
+            .Add(WithPassword(new StaffMember(new StaffId("STF-EMPTY-MANAGER"), "Empty Report Manager", StaffRole.BranchManager, new BranchCode("BR-EMPTY")), scope.ServiceProvider.GetRequiredService<IPasswordHasher>()));
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
     }
 
     public async Task<int> GetNorthBranchStockAsync()
@@ -654,7 +659,8 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         var staff = scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>();
         var clerk = await staff.FindByIdAsync(new StaffId("STF-CLERK-01")) ?? throw new InvalidOperationException("Test clerk was not seeded.");
         clerk.Deactivate();
-        await staff.SaveAsync(clerk);
+        staff.Update(clerk);
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
     }
 
     public async Task<IReadOnlyList<AuditRecord>> GetAuditRecordsAsync()

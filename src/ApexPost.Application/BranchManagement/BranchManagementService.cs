@@ -1,3 +1,4 @@
+using ApexPost.Application.Abstractions;
 using ApexPost.Application.Repositories;
 using ApexPost.Application.Validation;
 using ApexPost.Domain.Entities;
@@ -11,7 +12,7 @@ public sealed record BranchDetailsRequest(
     [property: NotBlank(80)] string Region,
     [property: NotBlank(120)] string OpeningHours);
 
-public sealed class BranchNotFoundException(string message) : InvalidOperationException(message);
+public sealed class BranchNotFoundException(string message) : NotFoundException(message);
 
 /// <summary>Adds, updates, closes and reopens branches. A new branch is created with its counter terminals.</summary>
 public sealed class BranchManagementService
@@ -19,11 +20,13 @@ public sealed class BranchManagementService
     public const int MaximumCounterCount = 20;
     private readonly IBranchRepository _branches;
     private readonly ICounterRepository _counters;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public BranchManagementService(IBranchRepository branches, ICounterRepository counters)
+    public BranchManagementService(IBranchRepository branches, ICounterRepository counters, IUnitOfWork unitOfWork)
     {
         _branches = branches ?? throw new ArgumentNullException(nameof(branches));
         _counters = counters ?? throw new ArgumentNullException(nameof(counters));
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
     public async Task<IReadOnlyCollection<Branch>> GetAllAsync(CancellationToken cancellationToken = default) =>
@@ -52,11 +55,14 @@ public sealed class BranchManagementService
         }
 
         var branch = new Branch(code, request.Name, request.Region, request.OpeningHours);
-        await _branches.SaveAsync(branch, cancellationToken).ConfigureAwait(false);
+        _branches.Add(branch);
         for (var number = 1; number <= counterCount; number++)
         {
-            await _counters.SaveAsync(new Counter(new CounterCode($"C-{number:00}"), code), cancellationToken).ConfigureAwait(false);
+            _counters.Add(new Counter(new CounterCode($"C-{number:00}"), code));
         }
+
+        // The branch and its counters are committed together, so a branch never exists without counters.
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return branch;
     }
@@ -67,7 +73,8 @@ public sealed class BranchManagementService
         RequestValidator.Validate(request);
         var branch = await GetAsync(new BranchCode(request.BranchCode), cancellationToken).ConfigureAwait(false);
         branch.UpdateDetails(request.Name, request.Region, request.OpeningHours);
-        await _branches.SaveAsync(branch, cancellationToken).ConfigureAwait(false);
+        _branches.Update(branch);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return branch;
     }
 
@@ -75,7 +82,8 @@ public sealed class BranchManagementService
     {
         var branch = await GetAsync(branchCode, cancellationToken).ConfigureAwait(false);
         if (open) branch.Open(); else branch.Close();
-        await _branches.SaveAsync(branch, cancellationToken).ConfigureAwait(false);
+        _branches.Update(branch);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return branch;
     }
 }

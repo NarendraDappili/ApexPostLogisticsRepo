@@ -1,3 +1,4 @@
+using ApexPost.Application.Abstractions;
 using ApexPost.Application.Events;
 using ApexPost.Application.Repositories;
 using ApexPost.Application.Validation;
@@ -18,14 +19,17 @@ public sealed class MoneyOrderWorkflowService
     private readonly IMoneyOrderRepository _moneyOrders;
     private readonly IMoneyOrderPolicy _policy;
     private readonly IIdentityVerifier _identityVerifier;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly IEventPublisher? _events;
 
-    public MoneyOrderWorkflowService(IBranchRepository branches, IMoneyOrderRepository moneyOrders, IMoneyOrderPolicy policy, IIdentityVerifier identityVerifier, IEventPublisher? events = null)
+    public MoneyOrderWorkflowService(IBranchRepository branches, IMoneyOrderRepository moneyOrders, IMoneyOrderPolicy policy, IIdentityVerifier identityVerifier, IUnitOfWork unitOfWork, IEventPublisher? events = null)
     {
         ArgumentNullException.ThrowIfNull(branches);
         ArgumentNullException.ThrowIfNull(moneyOrders);
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(identityVerifier);
+        ArgumentNullException.ThrowIfNull(unitOfWork);
+        _unitOfWork = unitOfWork;
         _branches = branches;
         _moneyOrders = moneyOrders;
         _policy = policy;
@@ -56,10 +60,12 @@ public sealed class MoneyOrderWorkflowService
 
         var moneyOrder = new MoneyOrder(id, branchCode, amount, request.Sender, request.Recipient, _policy.CalculateFee(amount), contextId);
         var requiresVerification = RequiresVerification(moneyOrder);
-        await _moneyOrders.SaveAsync(moneyOrder, cancellationToken).ConfigureAwait(false);
+        _moneyOrders.Add(moneyOrder);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         if (_events is not null)
         {
-            await _events.PublishAsync(new MoneyOrderIssued(moneyOrder, requiresVerification), cancellationToken).ConfigureAwait(false);
+            // The order is committed, so its event must not be lost if the client disconnects now.
+            await _events.PublishAsync(new MoneyOrderIssued(moneyOrder, requiresVerification), CancellationToken.None).ConfigureAwait(false);
         }
 
         return new MoneyOrderCreationResult(moneyOrder, moneyOrder.Total, requiresVerification);
@@ -97,7 +103,8 @@ public sealed class MoneyOrderWorkflowService
             request.DocumentType,
             MaskedIdentityDocumentReference.FromDocumentNumber(request.DocumentNumber),
             outcome));
-        await _moneyOrders.SaveAsync(moneyOrder, cancellationToken).ConfigureAwait(false);
+        _moneyOrders.Update(moneyOrder);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return moneyOrder;
     }
 }

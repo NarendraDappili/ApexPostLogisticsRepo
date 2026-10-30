@@ -9,5 +9,7 @@ public interface IStaffMemberRepository
 
     Task<IReadOnlyCollection<StaffMember>> GetAllAsync(CancellationToken cancellationToken = default);
 
-    Task SaveAsync(StaffMember staffMember, CancellationToken cancellationToken = default);
+    void Add(StaffMember staffMember);
+
+    void Update(StaffMember staffMember);
 }

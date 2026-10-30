@@ -33,7 +33,7 @@ public sealed class MoneyOrderWorkflowServiceTests
     {
         var orders = new InMemoryMoneyOrderRepository();
         var policy = new MoneyOrderPolicy(new Money(1000m), MoneyOrderPolicy.FlatPlusPercentageFee(new Money(2.50m), 0.01m));
-        var service = new MoneyOrderWorkflowService(new InMemoryBranchRepository(new Branch(new("BR-A"), "Branch A")), orders, policy, new StubIdentityVerifier());
+        var service = new MoneyOrderWorkflowService(new InMemoryBranchRepository(new Branch(new("BR-A"), "Branch A")), orders, policy, new StubIdentityVerifier(), new SpyUnitOfWork());
 
         var result = await service.CreateAsync(Request(123.45m));
 
@@ -106,7 +106,7 @@ public sealed class MoneyOrderWorkflowServiceTests
         await cancellation.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CreateService(new InMemoryMoneyOrderRepository(), 100m).CreateAsync(Request(10m), cancellation.Token));
 
-        var service = CreateService(new InMemoryMoneyOrderRepository { SaveException = new IOException("Cannot write") }, 100m);
+        var service = CreateService(new InMemoryMoneyOrderRepository(), 100m, unitOfWork: new SpyUnitOfWork { FailWith = new IOException("Cannot write") });
         await Assert.ThrowsAsync<IOException>(() => service.CreateAsync(Request(10m)));
     }
 
@@ -123,9 +123,9 @@ public sealed class MoneyOrderWorkflowServiceTests
         Assert.Contains("MO-2", notifications.Messages[0].Body, StringComparison.Ordinal);
     }
 
-    private static MoneyOrderWorkflowService CreateService(InMemoryMoneyOrderRepository orders, decimal threshold, INotificationSender? notifications = null, IIdentityVerifier? verifier = null) =>
+    private static MoneyOrderWorkflowService CreateService(InMemoryMoneyOrderRepository orders, decimal threshold, INotificationSender? notifications = null, IIdentityVerifier? verifier = null, SpyUnitOfWork? unitOfWork = null) =>
         new(new InMemoryBranchRepository(new Branch(new("BR-A"), "Branch A"), new Branch(new("BR-B"), "Branch B")), orders,
-            new MoneyOrderPolicy(new Money(threshold), _ => new Money(2m)), verifier ?? new StubIdentityVerifier(),
+            new MoneyOrderPolicy(new Money(threshold), _ => new Money(2m)), verifier ?? new StubIdentityVerifier(), unitOfWork ?? new SpyUnitOfWork(),
             notifications is null ? null : new EventPublisher([new NotificationEventObserver(notifications, new NotificationRecipients())]));
 
     private static MoneyOrderCreationRequest Request(decimal amount) =>
@@ -148,13 +148,13 @@ public sealed class MoneyOrderWorkflowServiceTests
             return Task.FromResult(branch);
         }
         public Task<IReadOnlyCollection<Branch>> GetAllAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<Branch>>(_branches.Values.ToArray());
-        public Task SaveAsync(Branch branch, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void Add(Branch branch) => _branches[branch.Code.Value] = branch;
+        public void Update(Branch branch) => _branches[branch.Code.Value] = branch;
     }
 
     private sealed class InMemoryMoneyOrderRepository : IMoneyOrderRepository
     {
         private readonly Dictionary<string, MoneyOrder> _orders = [];
-        public Exception? SaveException { get; init; }
         public Task<MoneyOrder?> FindByIdAsync(MoneyOrderId id, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -163,13 +163,8 @@ public sealed class MoneyOrderWorkflowServiceTests
         }
         public Task<IReadOnlyCollection<MoneyOrder>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyCollection<MoneyOrder>>(_orders.Values.Where(order => order.BranchCode == branchCode).ToArray());
-        public Task SaveAsync(MoneyOrder moneyOrder, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (SaveException is not null) throw SaveException;
-            _orders[moneyOrder.Id.Value] = moneyOrder;
-            return Task.CompletedTask;
-        }
+        public void Add(MoneyOrder moneyOrder) => _orders[moneyOrder.Id.Value] = moneyOrder;
+        public void Update(MoneyOrder moneyOrder) => _orders[moneyOrder.Id.Value] = moneyOrder;
     }
 
     private sealed class RecordingNotificationSender : INotificationSender

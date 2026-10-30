@@ -6,12 +6,14 @@ using ApexPost.Infrastructure.Persistence;
 
 namespace ApexPost.Infrastructure.Repositories;
 
-public sealed class JsonCounterTransactionRepository(JsonRepositoryOptions options) : ICounterTransactionRepository
+public sealed class JsonCounterTransactionRepository(JsonRepositoryOptions options, JsonUnitOfWork? unitOfWork = null) : ICounterTransactionRepository
 {
     private readonly JsonFileStore<List<CounterTransactionDto>> _store = new(options, "counter-transactions.json");
     public async Task<CounterTransaction?> FindByIdAsync(CounterTransactionId id, CancellationToken cancellationToken = default) =>
         (await _store.ReadAsync(static () => [], cancellationToken).ConfigureAwait(false)).FirstOrDefault(item => item.Id == id.Value)?.ToEntity();
     public Task SaveAsync(CounterTransaction transaction, CancellationToken cancellationToken = default) => JsonRepositorySave.SaveAsync(_store, transaction, static item => item.Id, CounterTransactionDto.From, cancellationToken);
+    public void Add(CounterTransaction transaction) => JsonRepositorySave.Stage(unitOfWork, token => SaveAsync(transaction, token));
+    public void Update(CounterTransaction transaction) => JsonRepositorySave.Stage(unitOfWork, token => SaveAsync(transaction, token));
     public async Task<IReadOnlyCollection<CounterTransaction>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
         (await _store.ReadAsync(static () => [], cancellationToken).ConfigureAwait(false)).Where(item => item.BranchCode == branchCode.Value).Select(item => item.ToEntity()).ToArray();
 }
