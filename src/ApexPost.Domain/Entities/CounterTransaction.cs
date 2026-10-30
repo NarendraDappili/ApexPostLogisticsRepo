@@ -18,17 +18,28 @@ public sealed class CounterTransaction : IEquatable<CounterTransaction>
         if (!Enum.IsDefined(paymentMethod)) throw new ArgumentOutOfRangeException(nameof(paymentMethod));
 
         Id = id; BranchCode = branchCode; CounterCode = counterCode; ClerkId = clerkId;
-        Lines = lines.ToArray(); Subtotal = subtotal; Tax = tax;
+        _lines = [.. lines]; Subtotal = subtotal; Tax = tax;
         Payment = new Payment(paymentMethod, Total);
         Status = CounterTransactionStatus.Open;
         OccurredAtUtc = (occurredAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
     }
 
+    // Used only when a stored transaction is materialized: lines and payment are loaded afterwards
+    // as owned rows, and the persisted status is restored through the private setters.
+    private CounterTransaction(CounterTransactionId id, BranchCode branchCode, CounterCode counterCode, StaffId clerkId, Money subtotal, Money tax, DateTimeOffset occurredAtUtc)
+    {
+        Id = id; BranchCode = branchCode; CounterCode = counterCode; ClerkId = clerkId;
+        Subtotal = subtotal; Tax = tax; OccurredAtUtc = occurredAtUtc;
+        Payment = null!;
+    }
+
+    private readonly List<CounterTransactionLine> _lines = [];
+
     public CounterTransactionId Id { get; }
     public BranchCode BranchCode { get; }
     public CounterCode CounterCode { get; }
     public StaffId ClerkId { get; }
-    public IReadOnlyList<CounterTransactionLine> Lines { get; }
+    public IReadOnlyList<CounterTransactionLine> Lines => _lines;
     public Money Subtotal { get; }
     public Money Tax { get; }
     public Money Total => new(checked(Subtotal.Amount + Tax.Amount));

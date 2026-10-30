@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using ApexPost.Application.Reports;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
+using ApexPost.Domain.ValueObjects;
 
 namespace ApexPost.Web.Models;
 
@@ -57,7 +58,7 @@ public sealed class ShipmentFormViewModel
     [Required, StringLength(48)] public string DestinationZoneCode { get; set; } = string.Empty;
     public ShipmentType ShipmentType { get; set; }
     public ShippingServiceLevel ServiceLevel { get; set; }
-    [Range(typeof(decimal), "0.001", "100000")] public decimal WeightKilograms { get; set; }
+    [Range(0.001, ParcelWeight.MaximumKilograms)] public decimal WeightKilograms { get; set; }
     [Range(typeof(decimal), "0.001", "100000")] public decimal LengthCentimetres { get; set; }
     [Range(typeof(decimal), "0.001", "100000")] public decimal WidthCentimetres { get; set; }
     [Range(typeof(decimal), "0.001", "100000")] public decimal HeightCentimetres { get; set; }
