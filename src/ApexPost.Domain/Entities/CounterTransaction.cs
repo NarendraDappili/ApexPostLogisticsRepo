@@ -18,7 +18,8 @@ public sealed class CounterTransaction : IEquatable<CounterTransaction>
         if (!Enum.IsDefined(paymentMethod)) throw new ArgumentOutOfRangeException(nameof(paymentMethod));
 
         Id = id; BranchCode = branchCode; CounterCode = counterCode; ClerkId = clerkId;
-        Lines = lines.ToArray(); Subtotal = subtotal; Tax = tax; PaymentMethod = paymentMethod;
+        Lines = lines.ToArray(); Subtotal = subtotal; Tax = tax;
+        Payment = new Payment(paymentMethod, Total);
         Status = CounterTransactionStatus.Open;
         OccurredAtUtc = (occurredAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
     }
@@ -31,7 +32,10 @@ public sealed class CounterTransaction : IEquatable<CounterTransaction>
     public Money Subtotal { get; }
     public Money Tax { get; }
     public Money Total => new(checked(Subtotal.Amount + Tax.Amount));
-    public PaymentMethod PaymentMethod { get; }
+    /// <summary>The settlement of the whole basket: one payment for the full total.</summary>
+    public Payment Payment { get; }
+
+    public PaymentMethod PaymentMethod => Payment.Method;
     public DateTimeOffset OccurredAtUtc { get; }
     public CounterTransactionStatus Status { get; private set; }
     public string? StatusReason { get; private set; }

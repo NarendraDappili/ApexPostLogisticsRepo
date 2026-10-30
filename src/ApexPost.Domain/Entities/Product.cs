@@ -4,7 +4,9 @@ namespace ApexPost.Domain.Entities;
 
 public sealed class Product : IEquatable<Product>
 {
-    public Product(ProductId id, string name, Money unitPrice)
+    /// <param name="sku">The shelf SKU; when omitted the product identifier doubles as the SKU.</param>
+    /// <param name="categoryCode">The owning category; when omitted the product is filed under <see cref="ProductCategory.GeneralCode"/>.</param>
+    public Product(ProductId id, string name, Money unitPrice, Sku? sku = null, string? categoryCode = null)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -13,13 +15,21 @@ public sealed class Product : IEquatable<Product>
         Id = id;
         Name = name.Trim();
         UnitPrice = unitPrice;
+        Sku = sku ?? new Sku(id.Value);
+        CategoryCode = ProductCategory.NormalizeCode(categoryCode ?? ProductCategory.GeneralCode);
     }
 
     public ProductId Id { get; }
 
+    public Sku Sku { get; }
+
     public string Name { get; }
 
+    public string CategoryCode { get; private set; }
+
     public Money UnitPrice { get; private set; }
+
+    public void MoveToCategory(string categoryCode) => CategoryCode = ProductCategory.NormalizeCode(categoryCode);
 
     public void ChangeUnitPrice(Money unitPrice)
     {

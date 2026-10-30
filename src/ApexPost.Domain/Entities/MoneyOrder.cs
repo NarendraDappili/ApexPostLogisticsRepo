@@ -52,6 +52,17 @@ public sealed class MoneyOrder : IEquatable<MoneyOrder>
 
     public IdentityVerificationRecord? IdentityVerification { get; private set; }
 
+    /// <summary>A money order above the high-value threshold needs a verified customer identity before it can be paid.</summary>
+    public bool RequiresVerification(Money highValueThreshold)
+    {
+        ArgumentNullException.ThrowIfNull(highValueThreshold);
+        return Amount.Amount > highValueThreshold.Amount;
+    }
+
+    /// <summary>True when the order can be added to a basket: it is low value or its identity check passed.</summary>
+    public bool IsClearedForPayment(Money highValueThreshold) =>
+        !RequiresVerification(highValueThreshold) || IdentityVerificationOutcome == IdentityVerificationOutcome.Verified;
+
     public void RecordIdentityVerification(IdentityVerificationRecord verification)
     {
         ArgumentNullException.ThrowIfNull(verification);

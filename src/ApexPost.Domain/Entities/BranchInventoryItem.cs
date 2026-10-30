@@ -43,6 +43,17 @@ public sealed class BranchInventoryItem : IEquatable<BranchInventoryItem>
         Quantity -= quantity;
     }
 
+    /// <summary>
+    /// Applies a manual correction and returns its history entry. The quantity rules of
+    /// <see cref="AddStock"/> and <see cref="RemoveStock"/> still apply, so stock can never go negative.
+    /// </summary>
+    public StockAdjustment Adjust(int delta, string reason, StaffId changedBy, DateTimeOffset? occurredAtUtc = null)
+    {
+        var adjustment = new StockAdjustment(BranchCode, ProductId, delta, reason, changedBy, occurredAtUtc);
+        if (delta > 0) AddStock(delta); else RemoveStock(-delta);
+        return adjustment;
+    }
+
     public bool Equals(BranchInventoryItem? other) =>
         other is not null && BranchCode == other.BranchCode && ProductId == other.ProductId;
 

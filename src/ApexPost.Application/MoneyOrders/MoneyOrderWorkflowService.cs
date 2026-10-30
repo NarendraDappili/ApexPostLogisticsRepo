@@ -75,7 +75,7 @@ public sealed class MoneyOrderWorkflowService
     public bool RequiresVerification(MoneyOrder moneyOrder)
     {
         ArgumentNullException.ThrowIfNull(moneyOrder);
-        return moneyOrder.Amount.Amount > _policy.HighValueThreshold.Amount;
+        return moneyOrder.RequiresVerification(_policy.HighValueThreshold);
     }
 
     /// <summary>Asks the identity verifier for an outcome and records it, masked, against the order's transaction context.</summary>
