@@ -2,4 +2,9 @@
 @{ ViewData["Title"] = "Shipping label preview"; }
 <h1>Shipping label preview</h1>
 <dl><dt>Shipment</dt><dd>@Model.Shipment.Id.Value</dd><dt>From</dt><dd>@Model.Shipment.OriginBranchCode.Value</dd><dt>Destination zone</dt><dd>@Model.Shipment.DestinationZoneCode.Value</dd><dt>Service</dt><dd>@Model.Shipment.ServiceLevel</dd><dt>Type</dt><dd>@Model.Shipment.ShipmentType</dd><dt>Weight</dt><dd>@Model.Shipment.Weight.Kilograms.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) kg</dd>@if (Model.Charge is not null) { <dt>Charge</dt><dd>@Model.Charge.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd> }</dl>
+@if (Model.Shipment.TransactionId is not null)
+{
+    <p role="status">Bill this shipment by adding <strong>@Model.Shipment.Id.Value</strong> to the basket for transaction <strong>@Model.Shipment.TransactionId.Value</strong>.</p>
+    <a class="btn btn-primary" asp-controller="CounterTransactions" asp-action="New">Open counter basket</a>
+}
 <a class="btn btn-secondary" asp-action="Create">New shipment</a>

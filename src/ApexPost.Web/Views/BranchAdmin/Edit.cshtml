@@ -1,0 +1,9 @@
+@model ApexPost.Web.Models.BranchFormViewModel
+@{ ViewData["Title"] = "Edit branch"; ViewData["IsEdit"] = true; }
+<h1>Edit branch</h1>
+<form asp-action="Edit" method="post">
+    <partial name="_BranchFields" model="Model" />
+    <button class="btn btn-primary mt-3" type="submit">Save changes</button>
+    <a class="btn btn-secondary mt-3" asp-action="Index">Cancel</a>
+</form>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

@@ -1,0 +1,10 @@
+@model ApexPost.Web.Models.StaffFormViewModel
+@{ ViewData["Title"] = "Edit staff member"; ViewData["IsEdit"] = true; }
+<h1>Edit staff member</h1>
+<p class="text-muted">Changing a role or home branch signs that person out at their next request, so their new permissions apply immediately.</p>
+<form asp-action="Edit" method="post">
+    <partial name="_StaffFields" model="Model" />
+    <button class="btn btn-primary mt-3" type="submit">Save changes</button>
+    <a class="btn btn-secondary mt-3" asp-action="Index">Cancel</a>
+</form>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

@@ -2,18 +2,19 @@
 @using ApexPost.Domain.Enums
 @{ ViewData["Title"] = "Create shipment"; }
 <h1>Create shipment</h1>
-<p>All measurements must be positive. The selected service and destination determine eligibility and the configured charge.</p>
+<p>All measurements must be positive. The selected service and destination determine eligibility and the configured charge. The shipment is billed by adding its ID to the counter basket with the same transaction ID.</p>
 <form asp-action="Create" method="post">
 <div asp-validation-summary="ModelOnly" class="validation-summary text-danger" role="alert"></div>
 <div class="row g-3">
  <div class="col-md-4"><label asp-for="ShipmentId" class="form-label"></label><input asp-for="ShipmentId" class="form-control" /><span asp-validation-for="ShipmentId" class="field-validation"></span></div>
  <div class="col-md-4"><label asp-for="OriginBranchCode" class="form-label"></label><input asp-for="OriginBranchCode" class="form-control" readonly /><span asp-validation-for="OriginBranchCode" class="field-validation"></span></div>
- <div class="col-md-4"><label asp-for="DestinationZoneCode" class="form-label"></label><input asp-for="DestinationZoneCode" class="form-control" /><span asp-validation-for="DestinationZoneCode" class="field-validation"></span></div>
+ <div class="col-md-4"><label asp-for="DestinationZoneCode" class="form-label"></label><select asp-for="DestinationZoneCode" asp-items="await Lookup.ZonesAsync(Context.RequestAborted)" class="form-select"><option value="">Select a zone</option></select><span asp-validation-for="DestinationZoneCode" class="field-validation"></span></div>
 </div>
 <div class="row g-3 mt-1">
  <div class="col-md-3"><label asp-for="ShipmentType" class="form-label"></label><select asp-for="ShipmentType" asp-items="Html.GetEnumSelectList<ShipmentType>()" class="form-select"></select><span asp-validation-for="ShipmentType" class="field-validation"></span></div>
  <div class="col-md-3"><label asp-for="ServiceLevel" class="form-label"></label><select asp-for="ServiceLevel" asp-items="Html.GetEnumSelectList<ShippingServiceLevel>()" class="form-select"></select><span asp-validation-for="ServiceLevel" class="field-validation"></span></div>
  <div class="col-md-3"><label asp-for="WeightKilograms" class="form-label"></label><input asp-for="WeightKilograms" type="number" min="0.001" step="0.001" inputmode="decimal" class="form-control" /><span asp-validation-for="WeightKilograms" class="field-validation"></span></div>
+ <div class="col-md-3"><label asp-for="TransactionId" class="form-label"></label><input asp-for="TransactionId" class="form-control" /><span asp-validation-for="TransactionId" class="field-validation"></span></div>
 </div>
 <fieldset class="border p-3 mt-3"><legend class="float-none w-auto px-2">Parcel dimensions in centimetres</legend><div class="row g-3">
  <div class="col-md-3"><label asp-for="LengthCentimetres" class="form-label"></label><input asp-for="LengthCentimetres" type="number" min="0.001" step="0.001" inputmode="decimal" class="form-control" /><span asp-validation-for="LengthCentimetres" class="field-validation"></span></div>

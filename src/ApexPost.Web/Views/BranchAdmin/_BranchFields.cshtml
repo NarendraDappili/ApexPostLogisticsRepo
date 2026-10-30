@@ -1,0 +1,15 @@
+@model ApexPost.Web.Models.BranchFormViewModel
+@{ var isEdit = ViewData["IsEdit"] is true; }
+<div asp-validation-summary="ModelOnly" class="validation-summary text-danger" role="alert"></div>
+<div class="row g-3">
+    <div class="col-md-3"><label asp-for="BranchCode" class="form-label"></label>@if (isEdit) { <input asp-for="BranchCode" class="form-control" readonly /> } else { <input asp-for="BranchCode" class="form-control" /> }<span asp-validation-for="BranchCode" class="field-validation"></span></div>
+    <div class="col-md-5"><label asp-for="Name" class="form-label"></label><input asp-for="Name" class="form-control" /><span asp-validation-for="Name" class="field-validation"></span></div>
+    <div class="col-md-4"><label asp-for="Region" class="form-label"></label><input asp-for="Region" class="form-control" /><span asp-validation-for="Region" class="field-validation"></span></div>
+</div>
+<div class="row g-3 mt-1">
+    <div class="col-md-6"><label asp-for="OpeningHours" class="form-label"></label><input asp-for="OpeningHours" class="form-control" placeholder="Mon-Fri 09:00-17:30" /><span asp-validation-for="OpeningHours" class="field-validation"></span></div>
+    @if (!isEdit)
+    {
+        <div class="col-md-3"><label asp-for="CounterCount" class="form-label"></label><input asp-for="CounterCount" type="number" min="1" max="20" step="1" class="form-control" /><span asp-validation-for="CounterCount" class="field-validation"></span></div>
+    }
+</div>

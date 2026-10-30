@@ -1,0 +1,9 @@
+@model ApexPost.Web.Models.StaffFormViewModel
+@{ ViewData["Title"] = "Add staff member"; }
+<h1>Add staff member</h1>
+<form asp-action="Create" method="post">
+    <partial name="_StaffFields" model="Model" />
+    <button class="btn btn-primary mt-3" type="submit">Add staff member</button>
+    <a class="btn btn-secondary mt-3" asp-action="Index">Cancel</a>
+</form>
+@section Scripts { <partial name="_ValidationScriptsPartial" /> }

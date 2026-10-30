@@ -1,0 +1,43 @@
+@model ApexPost.Web.Models.TransactionListViewModel
+@{ ViewData["Title"] = "Branch transactions"; }
+<h1>Branch transactions</h1>
+@if (TempData["Notice"] is string notice) { <div class="alert alert-success" role="status" aria-live="polite">@notice</div> }
+<p class="text-muted">The 50 most recent transactions at @Model.BranchCode. Voiding or refunding a paid sale returns its retail items to stock and requires a reason.</p>
+@if (Model.Transactions.Count == 0)
+{
+    <p role="status">No transactions are recorded for this branch.</p>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <caption>Recent transactions for @Model.BranchCode</caption>
+            <thead><tr><th scope="col">Transaction</th><th scope="col">When (UTC)</th><th scope="col">Counter</th><th scope="col">Clerk</th><th scope="col">Total</th><th scope="col">Status</th><th scope="col">Manager action</th></tr></thead>
+            <tbody>
+            @foreach (var item in Model.Transactions)
+            {
+                <tr>
+                    <th scope="row">@item.TransactionId</th>
+                    <td>@item.OccurredAtUtc.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)</td>
+                    <td>@item.CounterCode</td>
+                    <td>@item.ClerkId</td>
+                    <td>@item.Total.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td>
+                    <td>@item.Status@(item.StatusReason is null ? "" : $" ({item.StatusReason})")</td>
+                    <td>
+                        @if (item.CanVoid || item.CanRefund)
+                        {
+                            <form method="post" class="d-flex gap-2">
+                                <input type="hidden" name="TransactionId" value="@item.TransactionId" />
+                                <label class="visually-hidden" for="reason-@item.TransactionId">Reason for @item.TransactionId</label>
+                                <input id="reason-@item.TransactionId" name="Reason" class="form-control form-control-sm" required maxlength="500" placeholder="Reason" />
+                                @if (item.CanVoid) { <button class="btn btn-sm btn-outline-danger" type="submit" asp-action="Void">Void</button> }
+                                @if (item.CanRefund) { <button class="btn btn-sm btn-outline-secondary" type="submit" asp-action="Refund">Refund</button> }
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

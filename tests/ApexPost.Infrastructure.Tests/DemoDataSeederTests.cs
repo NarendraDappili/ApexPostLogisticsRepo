@@ -41,6 +41,17 @@ public sealed class DemoDataSeederTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Seed_treats_a_folder_holding_only_the_data_protection_key_ring_as_empty()
+    {
+        Directory.CreateDirectory(Path.Combine(_directory, "data-protection-keys"));
+
+        var result = await new DemoDataSeeder(Options).SeedAsync();
+
+        Assert.False(result.WasAlreadySeeded);
+        Assert.True(File.Exists(Path.Combine(_directory, "branches.json")));
+    }
+
+    [Fact]
     public async Task Seed_rejects_non_demo_data_without_modifying_it()
     {
         Directory.CreateDirectory(_directory);
@@ -61,7 +72,7 @@ public sealed class DemoDataSeederTests : IAsyncLifetime
         using var products = await OpenAsync("products.json");
         using var inventory = await OpenAsync("inventory.json");
         using var rates = await OpenAsync("shipping-rates.json");
-        using var transactions = await OpenAsync("historical-transactions.json");
+        using var transactions = await OpenAsync("counter-transactions.json");
 
         var branchCodes = branches.RootElement.EnumerateArray().Select(item => item.GetProperty("code").GetString()!).ToHashSet(StringComparer.Ordinal);
         var staffItems = staff.RootElement.EnumerateArray().ToArray();
@@ -100,16 +111,54 @@ public sealed class DemoDataSeederTests : IAsyncLifetime
         foreach (var item in transactionItems)
         {
             var branch = item.GetProperty("branchCode").GetString()!;
-            var staffId = item.GetProperty("staffId").GetString()!;
-            var productId = item.GetProperty("productId").GetString()!;
-            var quantity = item.GetProperty("quantity").GetInt32();
+            var staffId = item.GetProperty("clerkId").GetString()!;
+            var lines = item.GetProperty("lines").EnumerateArray().ToArray();
             Assert.Contains(branch, branchCodes);
             Assert.Equal(branch, staffBranches[staffId]);
-            Assert.Contains(productId, productIds);
-            Assert.True(quantity > 0);
-            Assert.Equal(item.GetProperty("unitPrice").GetDecimal() * quantity, item.GetProperty("total").GetDecimal());
-            Assert.Contains($"{branch}:{productId}", inventoryKeys);
+            Assert.Contains(lines, line => line.GetProperty("productId").ValueKind == JsonValueKind.String);
+            foreach (var line in lines.Where(line => line.GetProperty("productId").ValueKind == JsonValueKind.String))
+            {
+                var productId = line.GetProperty("productId").GetString()!;
+                Assert.Contains(productId, productIds);
+                Assert.Contains($"{branch}:{productId}", inventoryKeys);
+                Assert.True(line.GetProperty("quantity").GetInt32() > 0);
+            }
+            Assert.Equal(lines.Sum(line => line.GetProperty("unitPrice").GetDecimal() * line.GetProperty("quantity").GetInt32()), item.GetProperty("subtotal").GetDecimal());
         }
+    }
+
+    [Fact]
+    public async Task Seeded_history_is_readable_by_the_repositories_and_feeds_every_report()
+    {
+        await new DemoDataSeeder(Options).SeedAsync();
+        var branch = new BranchCode("BR-NORTH");
+        var transactions = await new ApexPost.Infrastructure.Repositories.JsonCounterTransactionRepository(Options).FindByBranchAsync(branch);
+        var shipments = await new ApexPost.Infrastructure.Repositories.JsonShipmentRepository(Options).FindByOriginBranchAsync(branch);
+        var moneyOrders = await new ApexPost.Infrastructure.Repositories.JsonMoneyOrderRepository(Options).FindByBranchAsync(branch);
+
+        Assert.Equal(8, transactions.Count);
+        Assert.Contains(transactions, transaction => transaction.Status == CounterTransactionStatus.Paid && transaction.OccurredAtUtc.UtcDateTime.Date == DateTime.UtcNow.Date);
+        Assert.Contains(transactions, transaction => transaction.Lines.Any(line => !line.IsRetail));
+        Assert.NotEmpty(shipments);
+        Assert.All(shipments, shipment => Assert.NotNull(shipment.TransactionId));
+        Assert.Contains(moneyOrders, order => order.IdentityVerificationOutcome == IdentityVerificationOutcome.Verified);
+        Assert.Contains(moneyOrders, order => order.IdentityVerificationOutcome == IdentityVerificationOutcome.Failed);
+        Assert.All(moneyOrders, order => Assert.True(order.IdentityVerification is null || order.IdentityVerification.MaskedDocumentReference.Value.StartsWith("****", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task Seed_with_a_demo_password_stores_only_verifiable_password_hashes()
+    {
+        var hasher = new ApexPost.Infrastructure.Security.Pbkdf2PasswordHasher(10_000);
+        await new DemoDataSeeder(Options, "demo-password-123", hasher).SeedAsync();
+
+        var staff = await new ApexPost.Infrastructure.Repositories.JsonStaffMemberRepository(Options).GetAllAsync();
+        var staffFile = await File.ReadAllTextAsync(Path.Combine(_directory, "staff-members.json"));
+
+        Assert.Equal(20, staff.Count);
+        Assert.All(staff, member => Assert.True(hasher.Verify("demo-password-123", member.PasswordHash)));
+        Assert.All(staff, member => Assert.False(string.IsNullOrWhiteSpace(member.Email)));
+        Assert.DoesNotContain("demo-password-123", staffFile, StringComparison.Ordinal);
     }
 
     private async Task<JsonDocument> OpenAsync(string fileName) => JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(_directory, fileName)));

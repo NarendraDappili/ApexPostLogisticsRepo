@@ -1,3 +1,4 @@
+using ApexPost.Application.Events;
 using ApexPost.Application.Inventory;
 using ApexPost.Application.Notifications;
 using ApexPost.Application.Repositories;
@@ -99,7 +100,8 @@ public sealed class InventoryServiceTests
     }
 
     private static InventoryService CreateService(InMemoryInventoryRepository repository, INotificationSender? notifications = null, int threshold = 2) =>
-        new(repository, new InventoryServiceOptions { LowStockThreshold = threshold, LowStockRecipient = "inventory-alerts@example.test" }, notifications);
+        new(repository, new InventoryServiceOptions { LowStockThreshold = threshold },
+            notifications is null ? null : new EventPublisher([new NotificationEventObserver(notifications, new NotificationRecipients { Inventory = "inventory-alerts@example.test" })]));
 
     private sealed class RecordingNotificationSender : INotificationSender
     {

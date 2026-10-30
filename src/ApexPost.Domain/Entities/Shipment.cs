@@ -22,7 +22,8 @@ public sealed class Shipment : IEquatable<Shipment>
         ParcelWeight weight,
         ParcelDimensions dimensions,
         ShipmentType shipmentType,
-        ShippingServiceLevel serviceLevel)
+        ShippingServiceLevel serviceLevel,
+        CounterTransactionId? transactionId = null)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(originBranchCode);
@@ -39,6 +40,7 @@ public sealed class Shipment : IEquatable<Shipment>
         Dimensions = dimensions;
         ShipmentType = shipmentType;
         ServiceLevel = serviceLevel;
+        TransactionId = transactionId;
     }
 
     public ShipmentId Id { get; }
@@ -52,6 +54,9 @@ public sealed class Shipment : IEquatable<Shipment>
     public ParcelDimensions Dimensions { get; }
     public ShipmentType ShipmentType { get; }
     public ShippingServiceLevel ServiceLevel { get; }
+
+    /// <summary>The counter transaction that bills this shipment; one shipment can be billed by one transaction only.</summary>
+    public CounterTransactionId? TransactionId { get; }
 
     public bool Equals(Shipment? other) => other is not null && Id == other.Id;
 

@@ -21,17 +21,38 @@ public sealed class CounterBasketViewModel
     [Required, StringLength(48)] public string BranchCode { get; set; } = string.Empty;
     [Required, StringLength(48)] public string CounterCode { get; set; } = string.Empty;
     public PaymentMethod PaymentMethod { get; set; }
-    [StringLength(48)] public string? ProductId { get; set; }
-    [Range(1, 10000)] public int? RetailQuantity { get; set; }
-    [StringLength(160)] public string? ServiceDescription { get; set; }
-    [Range(typeof(decimal), "0.01", "999999.99")] public decimal? ServiceUnitPrice { get; set; }
-    [Range(1, 10000)] public int ServiceQuantity { get; set; } = 1;
+    public List<RetailLineInput> RetailLines { get; set; } = [];
+    [StringLength(1000)] public string? ShipmentIds { get; set; }
     [StringLength(1000)] public string? MoneyOrderIds { get; set; }
+
+    public const int RetailRowCount = 5;
+
+    /// <summary>Pads the basket to a fixed number of retail rows so the form works without JavaScript.</summary>
+    public CounterBasketViewModel WithBlankRetailRows()
+    {
+        while (RetailLines.Count < RetailRowCount) RetailLines.Add(new RetailLineInput());
+        return this;
+    }
 }
+
+public sealed class RetailLineInput
+{
+    [StringLength(48)] public string? ProductId { get; set; }
+    [Range(1, 10000)] public int? Quantity { get; set; }
+}
+
+public sealed record TransactionSummaryViewModel(string TransactionId, DateTimeOffset OccurredAtUtc, string CounterCode, string ClerkId, decimal Total, CounterTransactionStatus Status, string? StatusReason)
+{
+    public bool CanVoid => Status is CounterTransactionStatus.Open or CounterTransactionStatus.Paid;
+    public bool CanRefund => Status == CounterTransactionStatus.Paid;
+}
+
+public sealed record TransactionListViewModel(string BranchCode, IReadOnlyCollection<TransactionSummaryViewModel> Transactions);
 
 public sealed class ShipmentFormViewModel
 {
     [Required, StringLength(48)] public string ShipmentId { get; set; } = string.Empty;
+    [Required, StringLength(48), Display(Name = "Transaction ID")] public string TransactionId { get; set; } = string.Empty;
     [Required, StringLength(48)] public string OriginBranchCode { get; set; } = string.Empty;
     [Required, StringLength(48)] public string DestinationZoneCode { get; set; } = string.Empty;
     public ShipmentType ShipmentType { get; set; }
@@ -51,11 +72,39 @@ public sealed class MoneyOrderFormViewModel
     [Range(typeof(decimal), "0.01", "999999999.99")] public decimal Amount { get; set; }
     [Required, StringLength(160)] public string Sender { get; set; } = string.Empty;
     [Required, StringLength(160)] public string Recipient { get; set; } = string.Empty;
-    [Range(typeof(decimal), "0", "999999.99")] public decimal Fee { get; set; }
-    [Required, StringLength(48)] public string TransactionContextId { get; set; } = string.Empty;
-    [StringLength(80)] public string? DocumentType { get; set; }
-    [StringLength(128)] public string? DocumentNumber { get; set; }
-    public IdentityVerificationOutcome VerificationOutcome { get; set; } = IdentityVerificationOutcome.Pending;
+    [Required, StringLength(48), Display(Name = "Transaction ID")] public string TransactionContextId { get; set; } = string.Empty;
+}
+
+/// <summary>Identity document input for the separate verification step. The outcome is decided on the server.</summary>
+public sealed class MoneyOrderVerificationViewModel
+{
+    [Required, StringLength(48)] public string MoneyOrderId { get; set; } = string.Empty;
+    [Required, StringLength(80), Display(Name = "Document type")] public string DocumentType { get; set; } = string.Empty;
+    [Required, StringLength(128), Display(Name = "Document number")] public string DocumentNumber { get; set; } = string.Empty;
+    public MoneyOrderSummaryViewModel? Summary { get; set; }
+}
+
+public sealed record MoneyOrderSummaryViewModel(string TransactionId, decimal Amount, decimal Fee, decimal Total, bool RequiresVerification, IdentityVerificationOutcome Outcome, string? MaskedDocumentReference);
+
+public sealed class StaffFormViewModel
+{
+    [Required, StringLength(48), Display(Name = "Staff ID")] public string StaffId { get; set; } = string.Empty;
+    [Required, StringLength(160)] public string Name { get; set; } = string.Empty;
+    [Required, EmailAddress, StringLength(254)] public string Email { get; set; } = string.Empty;
+    public StaffRole Role { get; set; }
+    [Required, StringLength(48), Display(Name = "Home branch")] public string BranchCode { get; set; } = string.Empty;
+    [DataType(DataType.Password), StringLength(256, MinimumLength = 10), Display(Name = "Password")] public string? Password { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+public sealed class BranchFormViewModel
+{
+    [Required, StringLength(48), Display(Name = "Branch code")] public string BranchCode { get; set; } = string.Empty;
+    [Required, StringLength(160)] public string Name { get; set; } = string.Empty;
+    [Required, StringLength(80)] public string Region { get; set; } = string.Empty;
+    [Required, StringLength(120), Display(Name = "Opening hours")] public string OpeningHours { get; set; } = string.Empty;
+    [Range(1, 20), Display(Name = "Counter terminals")] public int CounterCount { get; set; } = 2;
+    public bool IsOpen { get; set; } = true;
 }
 
 public sealed record ReportsViewModel(

@@ -1,26 +1,19 @@
 @model ApexPost.Web.Models.MoneyOrderFormViewModel
-@using ApexPost.Domain.Enums
 @{ ViewData["Title"] = "Money order"; }
-<h1>Money order and identity verification</h1>
+<h1>Money order</h1>
 @if (TempData["Notice"] is string notice) { <div class="alert alert-success" role="status" aria-live="polite">@notice</div> }
-<p class="text-muted">Document numbers are used only to create a masked reference and are not persisted. Verification is simulated; no external identity provider is called.</p>
+<p class="text-muted">The fee is calculated from the configured fee policy. Orders above the high-value threshold go to identity verification next and cannot be completed in a basket until the identity is verified.</p>
 <form asp-action="Create" method="post" autocomplete="off">
 <div asp-validation-summary="ModelOnly" class="validation-summary text-danger" role="alert"></div>
 <div class="row g-3">
- <div class="col-md-3"><label asp-for="MoneyOrderId" class="form-label"></label><input asp-for="MoneyOrderId" class="form-control" /><span asp-validation-for="MoneyOrderId" class="field-validation"></span></div>
- <div class="col-md-3"><label asp-for="BranchCode" class="form-label"></label><input asp-for="BranchCode" class="form-control" readonly /><span asp-validation-for="BranchCode" class="field-validation"></span></div>
- <div class="col-md-3"><label asp-for="Amount" class="form-label"></label><input asp-for="Amount" type="number" min="0.01" step="0.01" inputmode="decimal" class="form-control" /><span asp-validation-for="Amount" class="field-validation"></span></div>
- <div class="col-md-3"><label asp-for="Fee" class="form-label"></label><input asp-for="Fee" type="number" min="0" step="0.01" inputmode="decimal" class="form-control" /><span asp-validation-for="Fee" class="field-validation"></span></div>
+ <div class="col-md-4"><label asp-for="MoneyOrderId" class="form-label"></label><input asp-for="MoneyOrderId" class="form-control" /><span asp-validation-for="MoneyOrderId" class="field-validation"></span></div>
+ <div class="col-md-4"><label asp-for="BranchCode" class="form-label"></label><input asp-for="BranchCode" class="form-control" readonly /><span asp-validation-for="BranchCode" class="field-validation"></span></div>
+ <div class="col-md-4"><label asp-for="Amount" class="form-label"></label><input asp-for="Amount" type="number" min="0.01" step="0.01" inputmode="decimal" class="form-control" /><span asp-validation-for="Amount" class="field-validation"></span></div>
 </div>
 <div class="row g-3 mt-1">
  <div class="col-md-4"><label asp-for="Sender" class="form-label"></label><input asp-for="Sender" class="form-control" /><span asp-validation-for="Sender" class="field-validation"></span></div>
  <div class="col-md-4"><label asp-for="Recipient" class="form-label"></label><input asp-for="Recipient" class="form-control" /><span asp-validation-for="Recipient" class="field-validation"></span></div>
- <div class="col-md-4"><label asp-for="TransactionContextId" class="form-label"></label><input asp-for="TransactionContextId" class="form-control" /><span asp-validation-for="TransactionContextId" class="field-validation"></span></div>
+ <div class="col-md-4"><label asp-for="TransactionContextId" class="form-label"></label><input asp-for="TransactionContextId" class="form-control" aria-describedby="transaction-help" /><span asp-validation-for="TransactionContextId" class="field-validation"></span><small id="transaction-help" class="form-text">The counter transaction that will complete this order.</small></div>
 </div>
-<fieldset class="border p-3 mt-3"><legend class="float-none w-auto px-2">Identity verification (when required)</legend><div class="row g-3">
- <div class="col-md-4"><label asp-for="DocumentType" class="form-label"></label><input asp-for="DocumentType" class="form-control" /><span asp-validation-for="DocumentType" class="field-validation"></span></div>
- <div class="col-md-4"><label asp-for="DocumentNumber" class="form-label"></label><input asp-for="DocumentNumber" type="password" class="form-control" autocomplete="new-password" aria-describedby="document-number-help" /><span asp-validation-for="DocumentNumber" class="field-validation"></span><small id="document-number-help" class="form-text">Enter only if verification is needed. This field is cleared after errors.</small></div>
- <div class="col-md-4"><label asp-for="VerificationOutcome" class="form-label"></label><select asp-for="VerificationOutcome" asp-items="Html.GetEnumSelectList<IdentityVerificationOutcome>()" class="form-select"></select><span asp-validation-for="VerificationOutcome" class="field-validation"></span></div>
-</div></fieldset>
-<button class="btn btn-primary mt-3" type="submit">Create money order</button></form>
+<button class="btn btn-primary mt-3" type="submit">Issue money order</button></form>
 @section Scripts { <partial name="_ValidationScriptsPartial" /> }

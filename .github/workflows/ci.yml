@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore ApexPost.slnx
+
+      # Warnings fail the build: the brief requires a zero-warning build.
+      - name: Build
+        run: dotnet build ApexPost.slnx --no-restore --configuration Release -warnaserror
+
+      - name: Test
+        run: dotnet test ApexPost.slnx --no-build --configuration Release --verbosity normal

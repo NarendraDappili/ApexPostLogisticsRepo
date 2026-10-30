@@ -62,9 +62,10 @@ BenchmarkDotNet.Artifacts/
 project.lock.json
 project.fragment.lock.json
 artifacts/
-# Keep ASP.NET Core Data Protection keys private; other App_Data files are tracked.
-src/ApexPost.Web/App_Data/data-protection-keys/
-/.github/
+# App_Data is runtime data (JSON stores, audit log, Data Protection keys). Development seeds it on first run.
+src/ApexPost.Web/App_Data/
+# Local AI-assistant instructions are not part of the project; CI workflows under .github/workflows are.
+/.github/copilot-instructions.md
 /docs/WeekLabs/
 
 # ASP.NET Scaffolding

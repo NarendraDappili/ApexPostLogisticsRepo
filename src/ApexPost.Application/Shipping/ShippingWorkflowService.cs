@@ -1,5 +1,6 @@
 using ApexPost.Application.Pricing;
 using ApexPost.Application.Repositories;
+using ApexPost.Application.Validation;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
@@ -29,6 +30,7 @@ public sealed class ShippingWorkflowService
         cancellationToken.ThrowIfCancellationRequested();
         if (!Enum.IsDefined(request.ShipmentType)) throw new ArgumentOutOfRangeException(nameof(request.ShipmentType));
         if (!Enum.IsDefined(request.ServiceLevel)) throw new ArgumentOutOfRangeException(nameof(request.ServiceLevel));
+        RequestValidator.Validate(request);
 
         var shipment = CreateShipment(request);
         var branch = await _branches.FindByCodeAsync(shipment.OriginBranchCode, cancellationToken).ConfigureAwait(false)
@@ -59,5 +61,6 @@ public sealed class ShippingWorkflowService
         new ParcelWeight(request.WeightKilograms),
         new ParcelDimensions(request.LengthCentimetres, request.WidthCentimetres, request.HeightCentimetres),
         request.ShipmentType,
-        request.ServiceLevel);
+        request.ServiceLevel,
+        string.IsNullOrWhiteSpace(request.TransactionId) ? null : new CounterTransactionId(request.TransactionId));
 }

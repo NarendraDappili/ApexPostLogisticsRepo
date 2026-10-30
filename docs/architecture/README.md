@@ -136,13 +136,10 @@ from a blocked address still consumes a permit. See
 - The audit store is append-only through its Application API, not tamper-proof;
   audit write failures are logged rather than changing an already completed
   business action.
-- The JSON snapshots under `src/ApexPost.Web/App_Data/` are tracked in Git as
-  synthetic starting data; runtime writes can change them. Review data diffs
-  carefully and never commit real personal or operational records.
-- `src/ApexPost.Web/App_Data/data-protection-keys/` is excluded from Git.
-  Generated keys are local secrets and must not be committed or shared.
-- Demo seed data is synthetic and the seeder is not invoked by web startup. The
-  application currently provides no supported seed CLI.
+- `src/ApexPost.Web/App_Data/` is runtime data (JSON stores, the JSON Lines
+  audit log and the Data Protection key ring) and is ignored by Git.
+- In Development the synthetic demo data set is seeded into an empty data
+  folder at startup (ADR 0010); other environments never seed.
 
 These are current implementation boundaries, not production guarantees. The
 [JSON persistence ADR](../adr/0002-json-persistence-and-same-process-locking.md),
@@ -152,10 +149,11 @@ These are current implementation boundaries, not production guarantees. The
 ## Performance and measurement
 
 The implementation favors asynchronous I/O and uses `Task.WhenAll` only for
-independent checkout validation reads. It does not add `ValueTask` or a cache:
-there is no measured hot-read profile to justify their complexity or cache
-invalidation semantics. No benchmark harness or representative load profile is
-currently included, so this documentation makes no throughput or latency claim.
+independent checkout validation reads. The shipping-rate table is cached in
+memory and served through `ValueTask`, and the simulated courier lookup has a
+timeout and a `SemaphoreSlim` concurrency limit. No benchmark harness or
+representative load profile is included, so this documentation makes no
+throughput or latency claim.
 The MVC performance filter reports action duration against a configured warning
 threshold; it is operational timing, not a benchmark. See
 [concurrency and asynchronous behavior](../../DESIGN.md#concurrency-and-asynchronous-behavior)

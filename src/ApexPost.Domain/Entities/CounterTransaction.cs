@@ -46,7 +46,8 @@ public sealed class CounterTransaction : IEquatable<CounterTransaction>
     public void Void(StaffId managerId, string reason)
     {
         EnsureManagerAction(managerId, reason);
-        if (Status != CounterTransactionStatus.Open) throw new InvalidOperationException("Only an open transaction can be voided.");
+        // Checkout persists a sale as Paid, so a void must cancel a Paid sale as well as an Open one.
+        if (Status is not (CounterTransactionStatus.Open or CounterTransactionStatus.Paid)) throw new InvalidOperationException("Only an open or paid transaction can be voided.");
         Status = CounterTransactionStatus.Voided; StatusReason = reason.Trim(); AuthorizedBy = managerId;
     }
 

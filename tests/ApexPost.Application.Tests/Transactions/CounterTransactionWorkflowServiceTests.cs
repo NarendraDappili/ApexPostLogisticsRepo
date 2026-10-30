@@ -1,4 +1,7 @@
+using ApexPost.Application.Events;
+using ApexPost.Application.Inventory;
 using ApexPost.Application.MoneyOrders;
+using ApexPost.Application.Pricing;
 using ApexPost.Application.Repositories;
 using ApexPost.Application.Notifications;
 using ApexPost.Application.Transactions;
@@ -11,17 +14,46 @@ namespace ApexPost.Application.Tests.Transactions;
 public sealed class CounterTransactionWorkflowServiceTests
 {
     [Fact]
-    public async Task Checkout_creates_a_mixed_paid_basket_and_uses_configured_tax()
+    public async Task Checkout_creates_a_mixed_paid_basket_priced_on_the_server_and_uses_configured_tax()
     {
         var fixture = new Fixture(stock: 5);
-        var transaction = await fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 2, services: [new("Shipping", 8m)], moneyOrders: []));
+        fixture.Shipments.Items.Add(Shipment("SHP-1", "TX-1"));
+        var transaction = await fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 2, shipments: ["SHP-1"]));
 
         Assert.Equal(CounterTransactionStatus.Paid, transaction.Status);
         Assert.Equal(2, transaction.Lines.Count);
+        Assert.Contains(transaction.Lines, line => !line.IsRetail && line.UnitPrice.Amount == 8m && line.Description.Contains("SHP-1", StringComparison.Ordinal));
         Assert.Equal(28m, transaction.Subtotal.Amount);
         Assert.Equal(2.80m, transaction.Tax.Amount);
         Assert.Equal(30.80m, transaction.Total.Amount);
         Assert.Equal(3, fixture.Inventory.Quantity);
+    }
+
+    [Fact]
+    public async Task Checkout_accepts_several_retail_lines_in_one_basket()
+    {
+        var fixture = new Fixture(stock: 10);
+        var request = fixture.Request() with { RetailLines = [new("P-1", 2), new("P-1", 3)] };
+
+        var transaction = await fixture.Service.CheckoutAsync(request);
+
+        Assert.Equal(2, transaction.Lines.Count(line => line.IsRetail));
+        Assert.Equal(50m, transaction.Subtotal.Amount);
+        Assert.Equal(5, fixture.Inventory.Quantity);
+    }
+
+    [Fact]
+    public async Task Checkout_rejects_shipments_from_another_transaction_or_branch_and_bills_a_shipment_once()
+    {
+        var fixture = new Fixture();
+        fixture.Shipments.Items.Add(Shipment("SHP-OTHER", "TX-OTHER"));
+        fixture.Shipments.Items.Add(Shipment("SHP-1", "TX-1"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Service.CheckoutAsync(fixture.Request(shipments: ["SHP-OTHER"])));
+        var transaction = await fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 0, shipments: ["SHP-1", "shp-1"]));
+
+        Assert.Single(transaction.Lines);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 0, shipments: ["SHP-1"], transactionId: "TX-2")));
     }
 
     [Fact]
@@ -75,7 +107,23 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Void_transitions_an_open_transaction_only_with_manager_authorization()
+    public async Task Void_cancels_a_paid_sale_and_returns_its_stock()
+    {
+        var fixture = new Fixture(stock: 5);
+        var paid = await fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 3));
+        Assert.Equal(2, fixture.Inventory.Quantity);
+
+        var voided = await fixture.Service.VoidAsync(paid.Id, new("MANAGER-A", "keyed in error"));
+
+        Assert.Equal(CounterTransactionStatus.Voided, voided.Status);
+        Assert.Equal("keyed in error", voided.StatusReason);
+        Assert.Equal(5, fixture.Inventory.Quantity);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Service.RefundAsync(paid.Id, new("MANAGER-A", "second reversal")));
+        Assert.Equal(5, fixture.Inventory.Quantity);
+    }
+
+    [Fact]
+    public async Task Void_transitions_an_open_transaction_without_returning_stock_it_never_took()
     {
         var fixture = new Fixture();
         var open = new CounterTransaction(new("OPEN-1"), new("BR-A"), new("C-1"), new("CLERK-A"), [new(new ProductId("P-1"), "Envelope", 1, new(10m))], new(10m), new(1m), PaymentMethod.Cash);
@@ -85,6 +133,7 @@ public sealed class CounterTransactionWorkflowServiceTests
 
         Assert.Equal(CounterTransactionStatus.Voided, voided.Status);
         Assert.Equal("entry correction", voided.StatusReason);
+        Assert.Equal(5, fixture.Inventory.Quantity);
     }
 
     [Fact]
@@ -113,10 +162,25 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
+    public async Task A_sale_that_crosses_the_low_stock_threshold_raises_a_low_stock_alert_and_a_completed_event()
+    {
+        var notifications = new RecordingNotificationSender();
+        var observer = new RecordingObserver();
+        var fixture = new Fixture(stock: 4) { Notifications = notifications, ExtraObserver = observer };
+
+        await fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 2));
+
+        var alert = Assert.Single(notifications.Messages);
+        Assert.Contains("low-stock", alert.Subject, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(observer.Events, applicationEvent => applicationEvent is StockLow { Quantity: 2 });
+        Assert.Contains(observer.Events, applicationEvent => applicationEvent is TransactionCompleted);
+    }
+
+    [Fact]
     public async Task Void_and_refund_emit_simulated_notifications_and_delivery_failure_is_propagated()
     {
         var notifications = new RecordingNotificationSender();
-        var fixture = new Fixture { Notifications = notifications };
+        var fixture = new Fixture(stock: 50) { Notifications = notifications };
         var paid = await fixture.Service.CheckoutAsync(fixture.Request());
         await fixture.Service.RefundAsync(paid.Id, new("MANAGER-A", "customer request"));
         Assert.Single(notifications.Messages);
@@ -155,6 +219,9 @@ public sealed class CounterTransactionWorkflowServiceTests
         return order;
     }
 
+    private static Shipment Shipment(string id, string transactionId) =>
+        new(new(id), new("BR-A"), new("ZONE-A"), new(1m), new(10m, 10m, 1m), ShipmentType.Parcel, ShippingServiceLevel.Standard, new(transactionId));
+
     private sealed class Fixture
     {
         public Branch Branch { get; } = new(new("BR-A"), "Branch A");
@@ -162,22 +229,39 @@ public sealed class CounterTransactionWorkflowServiceTests
         public StaffMember Clerk { get; set; } = new(new("CLERK-A"), "Clerk A", StaffRole.CounterClerk, new("BR-A"));
         public StaffMember Manager { get; } = new(new("MANAGER-A"), "Manager A", StaffRole.BranchManager, new("BR-A"));
         public MemoryInventoryRepository Inventory { get; }
+        public MemoryShipmentRepository Shipments { get; } = new();
         public MemoryMoneyOrderRepository MoneyOrders { get; } = new();
         public MemoryTransactionRepository Transactions { get; set; } = new();
         public INotificationSender? Notifications { get; set; }
-        public CounterTransactionWorkflowService Service => new(new BranchRepo(Branch), new CounterRepo(Counter), new StaffRepo(() => [Clerk, Manager]), new ProductRepo(new Product(new("P-1"), "Envelope", new(10m))), Inventory, MoneyOrders, Transactions, new MoneyOrderPolicy(new(100m)), new FixedRateTaxPolicy(.1m), Notifications);
+        public IEventObserver? ExtraObserver { get; set; }
+        public CounterTransactionWorkflowService Service
+        {
+            get
+            {
+                IEventObserver[] observers = [.. new IEventObserver?[] { Notifications is null ? null : new NotificationEventObserver(Notifications, new NotificationRecipients()), ExtraObserver }.OfType<IEventObserver>()];
+                var events = observers.Length == 0 ? null : new EventPublisher(observers);
+                return new(new BranchRepo(Branch), new CounterRepo(Counter), new StaffRepo(() => [Clerk, Manager]), new ProductRepo(new Product(new("P-1"), "Envelope", new(10m))),
+                    new InventoryService(Inventory, new InventoryServiceOptions { LowStockThreshold = 2 }, events), Shipments,
+                    new RateProvider([new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, new ZoneCode("ZONE-A"), new Money(8m), new ParcelWeight(5m))]),
+                    MoneyOrders, Transactions, new MoneyOrderPolicy(new(100m)), new FixedRateTaxPolicy(.1m), events);
+            }
+        }
 
         public Fixture(int stock = 5) => Inventory = new MemoryInventoryRepository(new BranchInventoryItem(new("BR-A"), new("P-1"), stock));
-        public CounterCheckoutRequest Request(int retailQuantity = 1, IReadOnlyCollection<ServiceBasketLineRequest>? services = null, IReadOnlyCollection<string>? moneyOrders = null, string transactionId = "TX-1") => new(transactionId, "BR-A", "C-1", Clerk.Id.Value, PaymentMethod.Cash, [new("P-1", retailQuantity)], services ?? [], moneyOrders ?? []);
+        public CounterCheckoutRequest Request(int retailQuantity = 1, IReadOnlyCollection<string>? shipments = null, IReadOnlyCollection<string>? moneyOrders = null, string transactionId = "TX-1") =>
+            new(transactionId, "BR-A", "C-1", Clerk.Id.Value, PaymentMethod.Cash, retailQuantity > 0 ? [new("P-1", retailQuantity)] : [], shipments ?? [], moneyOrders ?? []);
     }
 
-    private sealed class BranchRepo(Branch branch) : IBranchRepository { public Task<Branch?> FindByCodeAsync(BranchCode code, CancellationToken t = default) => Task.FromResult<Branch?>(code == branch.Code ? branch : null); public Task SaveAsync(Branch b, CancellationToken t = default) => Task.CompletedTask; }
-    private sealed class CounterRepo(Counter counter) : ICounterRepository { public Task<Counter?> FindByCodeAsync(BranchCode b, CounterCode c, CancellationToken t = default) => Task.FromResult<Counter?>(b == counter.BranchCode && c == counter.Code ? counter : null); public Task SaveAsync(Counter c, CancellationToken t = default) => Task.CompletedTask; }
-    private sealed class StaffRepo(Func<IReadOnlyCollection<StaffMember>> staff) : IStaffMemberRepository { public Task<StaffMember?> FindByIdAsync(StaffId id, CancellationToken t = default) => Task.FromResult(staff().FirstOrDefault(x => x.Id == id)); public Task SaveAsync(StaffMember s, CancellationToken t = default) => Task.CompletedTask; }
+    private sealed class BranchRepo(Branch branch) : IBranchRepository { public Task<Branch?> FindByCodeAsync(BranchCode code, CancellationToken t = default) => Task.FromResult<Branch?>(code == branch.Code ? branch : null); public Task<IReadOnlyCollection<Branch>> GetAllAsync(CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Branch>>([branch]); public Task SaveAsync(Branch b, CancellationToken t = default) => Task.CompletedTask; }
+    private sealed class CounterRepo(Counter counter) : ICounterRepository { public Task<Counter?> FindByCodeAsync(BranchCode b, CounterCode c, CancellationToken t = default) => Task.FromResult<Counter?>(b == counter.BranchCode && c == counter.Code ? counter : null); public Task<IReadOnlyCollection<Counter>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Counter>>(b == counter.BranchCode ? [counter] : []); public Task SaveAsync(Counter c, CancellationToken t = default) => Task.CompletedTask; }
+    private sealed class StaffRepo(Func<IReadOnlyCollection<StaffMember>> staff) : IStaffMemberRepository { public Task<StaffMember?> FindByIdAsync(StaffId id, CancellationToken t = default) => Task.FromResult(staff().FirstOrDefault(x => x.Id == id)); public Task<IReadOnlyCollection<StaffMember>> GetAllAsync(CancellationToken t = default) => Task.FromResult(staff()); public Task SaveAsync(StaffMember s, CancellationToken t = default) => Task.CompletedTask; }
     private sealed class ProductRepo(Product product) : IProductRepository { public Task<Product?> FindByIdAsync(ProductId id, CancellationToken t = default) => Task.FromResult<Product?>(id == product.Id ? product : null); public Task<IReadOnlyCollection<Product>> GetAllAsync(CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Product>>([product]); public Task SaveAsync(Product p, CancellationToken t = default) => Task.CompletedTask; }
+    private sealed class RateProvider(IReadOnlyCollection<ShippingRate> rates) : IShippingRateProvider { public ValueTask<IReadOnlyCollection<ShippingRate>> GetRatesAsync(CancellationToken t = default) => ValueTask.FromResult(rates); }
+    private sealed class MemoryShipmentRepository : IShipmentRepository { public List<Shipment> Items { get; } = []; public Task<Shipment?> FindByIdAsync(ShipmentId id, CancellationToken t = default) => Task.FromResult(Items.FirstOrDefault(x => x.Id == id)); public Task<IReadOnlyCollection<Shipment>> FindByOriginBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Shipment>>(Items.Where(x => x.OriginBranchCode == b).ToArray()); public Task SaveAsync(Shipment s, CancellationToken t = default) { Items.Add(s); return Task.CompletedTask; } }
     private sealed class MemoryMoneyOrderRepository : IMoneyOrderRepository { public MoneyOrder? Order { get; set; } public Task<MoneyOrder?> FindByIdAsync(MoneyOrderId id, CancellationToken t = default) => Task.FromResult(Order?.Id == id ? Order : null); public Task<IReadOnlyCollection<MoneyOrder>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<MoneyOrder>>(Order is not null && Order.BranchCode == b ? [Order] : []); public Task SaveAsync(MoneyOrder m, CancellationToken t = default) { Order = m; return Task.CompletedTask; } }
     private sealed class MemoryTransactionRepository : ICounterTransactionRepository { private readonly Dictionary<string, CounterTransaction> _items = []; public Exception? SaveException { get; init; } public CancellationTokenSource? CancellationOnSave { get; init; } public Task<CounterTransaction?> FindByIdAsync(CounterTransactionId id, CancellationToken t = default) => Task.FromResult(_items.GetValueOrDefault(id.Value)); public Task<IReadOnlyCollection<CounterTransaction>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<CounterTransaction>>(_items.Values.Where(x => x.BranchCode == b).ToArray()); public Task SaveAsync(CounterTransaction tx, CancellationToken t = default) { if (SaveException is not null) throw SaveException; CancellationOnSave?.Cancel(); t.ThrowIfCancellationRequested(); _items[tx.Id.Value] = tx; return Task.CompletedTask; } }
     private sealed class MemoryInventoryRepository(BranchInventoryItem item) : IInventoryRepository { private readonly SemaphoreSlim _gate = new(1, 1); public int Quantity => item.Quantity; public Task<BranchInventoryItem?> FindAsync(BranchCode b, ProductId p, CancellationToken t = default) => Task.FromResult<BranchInventoryItem?>(item); public Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<BranchInventoryItem>>(item.BranchCode == b ? [item] : []); public Task SaveAsync(BranchInventoryItem i, CancellationToken t = default) => Task.CompletedTask; public async Task<T> UpdateAsync<T>(BranchCode b, ProductId p, Func<BranchInventoryItem, T> update, CancellationToken t = default) { await _gate.WaitAsync(t); try { return update(item); } finally { _gate.Release(); } } }
     private sealed class RecordingNotificationSender : INotificationSender { public List<NotificationMessage> Messages { get; } = []; public Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default) { Messages.Add(message); return Task.CompletedTask; } }
     private sealed class FailingNotificationSender : INotificationSender { public Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default) => Task.FromException(new IOException("simulated notification failure")); }
+    private sealed class RecordingObserver : IEventObserver { public List<ApexPostEvent> Events { get; } = []; public Task OnEventAsync(ApexPostEvent applicationEvent, CancellationToken cancellationToken = default) { Events.Add(applicationEvent); return Task.CompletedTask; } }
 }

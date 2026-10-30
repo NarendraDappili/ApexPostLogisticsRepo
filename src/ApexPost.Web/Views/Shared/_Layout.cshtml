@@ -33,9 +33,18 @@
                                 <li class="nav-item"><a class="nav-link text-dark" asp-controller="Shipping" asp-action="Create">Shipping</a></li>
                                 <li class="nav-item"><a class="nav-link text-dark" asp-controller="MoneyOrders" asp-action="Create">Money orders</a></li>
                             }
+                            @if (User.IsInRole("BranchManager"))
+                            {
+                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="CounterTransactions" asp-action="Manage">Transactions</a></li>
+                            }
                             @if (User.IsInRole("BranchManager") || User.IsInRole("Auditor") || User.IsInRole("Administrator"))
                             {
                                 <li class="nav-item"><a class="nav-link text-dark" asp-controller="Reports" asp-action="Index">Reports</a></li>
+                            }
+                            @if (User.IsInRole("Administrator"))
+                            {
+                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="StaffAdmin" asp-action="Index">Staff</a></li>
+                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="BranchAdmin" asp-action="Index">Branches</a></li>
                             }
                         }
                         else

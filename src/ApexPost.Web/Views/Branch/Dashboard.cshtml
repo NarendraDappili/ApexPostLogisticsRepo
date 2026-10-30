@@ -2,7 +2,7 @@
 @{ ViewData["Title"] = "Branch dashboard"; }
 <h1>Branch dashboard</h1>
 <form method="get" class="row g-2 mb-3">
-    <div class="col-sm-4"><label for="branchCode" class="form-label">Branch code</label><input id="branchCode" name="branchCode" value="@Model.BranchCode" class="form-control" autocomplete="off" /></div>
+    <div class="col-sm-4"><label for="branchCode" class="form-label">Branch</label><select id="branchCode" name="branchCode" class="form-select" asp-items="await Lookup.ViewableBranchesAsync(User, Model.BranchCode, Context.RequestAborted)"></select></div>
     <div class="col-sm-2 align-self-end"><button class="btn btn-primary" type="submit">View branch</button></div>
 </form>
 @if (Model.Message is not null) { <p class="text-muted" role="status">@Model.Message</p> }

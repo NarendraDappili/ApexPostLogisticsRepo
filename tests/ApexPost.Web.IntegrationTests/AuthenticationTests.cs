@@ -1,9 +1,13 @@
+using System.Net;
 using System.Text.RegularExpressions;
+using ApexPost.Application.Abstractions;
 using ApexPost.Application.Pricing;
 using ApexPost.Application.Repositories;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
+using ApexPost.Infrastructure.Security;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -31,7 +35,7 @@ public sealed class AuthenticationTests
     }
 
     [Fact]
-    public async Task Active_staff_member_can_sign_in_with_test_only_configuration()
+    public async Task Active_staff_member_can_sign_in_with_a_hashed_password()
     {
         await using var factory = new AuthWebApplicationFactory();
         await factory.SeedAsync();
@@ -40,6 +44,7 @@ public sealed class AuthenticationTests
         Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/Branch/Dashboard", response.Headers.Location?.OriginalString);
         Assert.Contains(response.Headers.GetValues("Set-Cookie"), header => header.Contains("httponly", StringComparison.OrdinalIgnoreCase) && header.Contains("samesite=strict", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(AuthWebApplicationFactory.TestPassword, await factory.ReadDataFileAsync("staff-members.json"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -55,6 +60,10 @@ public sealed class AuthenticationTests
         var inactive = await SignInAsync(client, "STF-INACTIVE-01", AuthWebApplicationFactory.TestPassword);
         Assert.Equal(System.Net.HttpStatusCode.OK, inactive.StatusCode);
         Assert.Contains("Sign-in failed", await inactive.Content.ReadAsStringAsync());
+
+        var unknown = await SignInAsync(client, "STF-NOBODY", AuthWebApplicationFactory.TestPassword);
+        Assert.Equal(System.Net.HttpStatusCode.OK, unknown.StatusCode);
+        Assert.Contains("Sign-in failed", await unknown.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -98,6 +107,7 @@ public sealed class AuthenticationTests
         var catalogue = await client.GetStringAsync("/Catalogue");
         var shipping = await client.GetStringAsync("/Shipping/Create");
         var moneyOrders = await client.GetStringAsync("/MoneyOrders/Create");
+        var basket = await client.GetStringAsync("/CounterTransactions/New");
 
         Assert.Contains("value=\"BR-NORTH\"", dashboard, StringComparison.Ordinal);
         Assert.Contains("Demo North Branch", dashboard, StringComparison.Ordinal);
@@ -107,7 +117,13 @@ public sealed class AuthenticationTests
         Assert.Contains("value=\"BR-NORTH\"", moneyOrders, StringComparison.Ordinal);
         Assert.Contains("Counter basket", dashboard, StringComparison.Ordinal);
         Assert.DoesNotContain(">Reports</a>", dashboard, StringComparison.Ordinal);
-        Assert.DoesNotContain("name=\"ClerkId\"", await client.GetStringAsync("/CounterTransactions/New"), StringComparison.Ordinal);
+        Assert.DoesNotContain(">Staff</a>", dashboard, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"ClerkId\"", basket, StringComparison.Ordinal);
+        // Prices, fees and verification outcomes are never form fields.
+        Assert.DoesNotContain("UnitPrice", basket, StringComparison.Ordinal);
+        Assert.DoesNotContain("name=\"Fee\"", moneyOrders, StringComparison.Ordinal);
+        Assert.DoesNotContain("VerificationOutcome", moneyOrders, StringComparison.Ordinal);
+        Assert.Contains("name=\"RetailLines[4].ProductId\"", basket, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -125,33 +141,22 @@ public sealed class AuthenticationTests
     }
 
     [Fact]
-    public async Task Checkout_post_redirects_and_reduces_stock()
+    public async Task Checkout_post_with_several_retail_lines_redirects_and_reduces_stock()
     {
         await using var factory = new AuthWebApplicationFactory();
         await factory.SeedAsync();
         using var client = factory.CreateClient();
         await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
-        var token = await GetAntiforgeryTokenAsync(client, "/CounterTransactions/New");
         var transactionId = $"TX-WEB-{Guid.NewGuid():N}";
 
-        var response = await client.PostAsync("/CounterTransactions/New", new FormUrlEncodedContent([
-            new("__RequestVerificationToken", token),
-            new("TransactionId", transactionId),
-            new("BranchCode", "BR-NORTH"),
-            new("CounterCode", "C-01"),
-            new("PaymentMethod", "0"),
-            new("ProductId", "PRD-001"),
-            new("RetailQuantity", "2"),
-            new("ServiceQuantity", "1"),
-            new("MoneyOrderIds", "")
-        ]));
+        var response = await CheckoutAsync(client, transactionId, [("PRD-001", 2), ("PRD-001", 1)]);
 
         Assert.True(response.StatusCode == System.Net.HttpStatusCode.Redirect, await response.Content.ReadAsStringAsync());
         Assert.Equal("/CounterTransactions/New", response.Headers.Location?.OriginalString);
         var confirmation = await client.GetStringAsync(response.Headers.Location
             ?? throw new InvalidOperationException("Successful checkout did not return a redirect location."));
-        Assert.True(confirmation.Contains($"Transaction {transactionId.ToUpperInvariant()} was paid.", StringComparison.Ordinal), confirmation);
-        Assert.Equal(98, await factory.GetNorthBranchStockAsync());
+        Assert.True(confirmation.Contains($"Transaction {transactionId.ToUpperInvariant()} was paid. Total: 30.00.", StringComparison.Ordinal), confirmation);
+        Assert.Equal(97, await factory.GetNorthBranchStockAsync());
     }
 
     [Fact]
@@ -167,8 +172,8 @@ public sealed class AuthenticationTests
             new("BranchCode", "BR-NORTH"),
             new("CounterCode", "C-01"),
             new("PaymentMethod", "0"),
-            new("ProductId", "PRD-001"),
-            new("RetailQuantity", "1")
+            new("RetailLines[0].ProductId", "PRD-001"),
+            new("RetailLines[0].Quantity", "1")
         ]));
 
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
@@ -176,45 +181,41 @@ public sealed class AuthenticationTests
     }
 
     [Fact]
-    public async Task Shipping_weight_limit_and_high_value_money_order_errors_are_shown_without_posting()
+    public async Task A_shipment_created_for_a_transaction_is_billed_in_the_basket_at_the_configured_rate()
     {
         await using var factory = new AuthWebApplicationFactory();
         await factory.SeedAsync();
         using var client = factory.CreateClient();
         await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
-        var shippingToken = await GetAntiforgeryTokenAsync(client, "/Shipping/Create");
-        var shippingResponse = await client.PostAsync("/Shipping/Create", new FormUrlEncodedContent([
-            new("__RequestVerificationToken", shippingToken),
-            new("ShipmentId", "SHP-WEB-TOO-HEAVY"),
-            new("OriginBranchCode", "BR-NORTH"),
-            new("DestinationZoneCode", "ZONE-01"),
-            new("ShipmentType", "1"),
-            new("ServiceLevel", "0"),
-            new("WeightKilograms", "6"),
-            new("LengthCentimetres", "10"),
-            new("WidthCentimetres", "10"),
-            new("HeightCentimetres", "10")
-        ]));
+        var transactionId = $"TX-WEB-{Guid.NewGuid():N}";
+        var shipmentId = $"SHP-WEB-{Guid.NewGuid():N}";
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await CreateShipmentAsync(client, shipmentId, transactionId, weight: "4")).StatusCode);
+
+        var response = await CheckoutAsync(client, transactionId, [], shipmentIds: shipmentId);
+
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Contains("Total: 12.00.", await client.GetStringAsync("/CounterTransactions/New"), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Shipping_weight_limit_and_unverified_high_value_money_order_errors_are_shown()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        var shippingResponse = await CreateShipmentAsync(client, "SHP-WEB-TOO-HEAVY", "TX-WEB-HEAVY", weight: "6");
         var shippingPage = await shippingResponse.Content.ReadAsStringAsync();
         Assert.Equal(System.Net.HttpStatusCode.OK, shippingResponse.StatusCode);
         Assert.True(shippingPage.Contains("configured service-level weight limit", StringComparison.OrdinalIgnoreCase), shippingPage);
 
-        var moneyOrderToken = await GetAntiforgeryTokenAsync(client, "/MoneyOrders/Create");
-        var moneyOrderResponse = await client.PostAsync("/MoneyOrders/Create", new FormUrlEncodedContent([
-            new("__RequestVerificationToken", moneyOrderToken),
-            new("MoneyOrderId", "MO-WEB-VERIFY"),
-            new("BranchCode", "BR-NORTH"),
-            new("Amount", "1500"),
-            new("Sender", "Synthetic Sender"),
-            new("Recipient", "Synthetic Recipient"),
-            new("Fee", "5"),
-            new("TransactionContextId", "TX-WEB-VERIFY"),
-            new("VerificationOutcome", "0")
-        ]));
-        var moneyOrderPage = await moneyOrderResponse.Content.ReadAsStringAsync();
-        Assert.Equal(System.Net.HttpStatusCode.OK, moneyOrderResponse.StatusCode);
-        Assert.Contains("successful verification", moneyOrderPage, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("FULL-DOCUMENT", moneyOrderPage, StringComparison.Ordinal);
+        var issued = await CreateMoneyOrderAsync(client, "MO-WEB-VERIFY", "TX-WEB-VERIFY", "1500");
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, issued.StatusCode);
+        Assert.Equal("/MoneyOrders/Verify/MO-WEB-VERIFY", issued.Headers.Location?.OriginalString);
+
+        var checkout = await CheckoutAsync(client, "TX-WEB-VERIFY", [], moneyOrderIds: "MO-WEB-VERIFY");
+        Assert.Equal(System.Net.HttpStatusCode.OK, checkout.StatusCode);
+        Assert.Contains("requires successful same-transaction verification", await checkout.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -224,21 +225,9 @@ public sealed class AuthenticationTests
         await factory.SeedAsync();
         using var client = factory.CreateClient();
         await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
-        var token = await GetAntiforgeryTokenAsync(client, "/Shipping/Create");
         var shipmentId = $"SHP-WEB-{Guid.NewGuid():N}";
 
-        var response = await client.PostAsync("/Shipping/Create", new FormUrlEncodedContent([
-            new("__RequestVerificationToken", token),
-            new("ShipmentId", shipmentId),
-            new("OriginBranchCode", "BR-NORTH"),
-            new("DestinationZoneCode", "ZONE-01"),
-            new("ShipmentType", "1"),
-            new("ServiceLevel", "0"),
-            new("WeightKilograms", "4"),
-            new("LengthCentimetres", "10"),
-            new("WidthCentimetres", "10"),
-            new("HeightCentimetres", "10")
-        ]));
+        var response = await CreateShipmentAsync(client, shipmentId, "TX-WEB-LABEL", weight: "4");
 
         Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
         Assert.StartsWith("/Shipping/Label/", response.Headers.Location?.OriginalString, StringComparison.Ordinal);
@@ -246,39 +235,41 @@ public sealed class AuthenticationTests
             ?? throw new InvalidOperationException("Successful shipment did not redirect to its label."));
         Assert.Contains("12.00", label, StringComparison.Ordinal);
         Assert.Contains(shipmentId.ToUpperInvariant(), label, StringComparison.Ordinal);
+        Assert.Contains("TX-WEB-LABEL", label, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Verified_high_value_money_order_post_redirects_and_persists_only_masked_document_data()
+    public async Task High_value_money_order_is_verified_in_a_separate_step_and_completed_in_the_basket()
     {
         await using var factory = new AuthWebApplicationFactory();
         await factory.SeedAsync();
         using var client = factory.CreateClient();
         await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
-        var token = await GetAntiforgeryTokenAsync(client, "/MoneyOrders/Create");
-        var orderId = $"MO-WEB-{Guid.NewGuid():N}";
+        var orderId = $"MO-WEB-{Guid.NewGuid():N}".ToUpperInvariant();
+        var transactionId = $"TX-WEB-{Guid.NewGuid():N}".ToUpperInvariant();
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await CreateMoneyOrderAsync(client, orderId, transactionId, "1500")).StatusCode);
 
-        var response = await client.PostAsync("/MoneyOrders/Create", new FormUrlEncodedContent([
+        var token = await GetAntiforgeryTokenAsync(client, $"/MoneyOrders/Verify/{orderId}");
+        var verified = await client.PostAsync("/MoneyOrders/Verify", new FormUrlEncodedContent([
             new("__RequestVerificationToken", token),
             new("MoneyOrderId", orderId),
-            new("BranchCode", "BR-NORTH"),
-            new("Amount", "1500"),
-            new("Sender", "Synthetic Sender"),
-            new("Recipient", "Synthetic Recipient"),
-            new("Fee", "5"),
-            new("TransactionContextId", "TX-WEB-VERIFIED"),
-            new("DocumentType", "Synthetic ID"),
-            new("DocumentNumber", "SYNTHETIC-1234"),
-            new("VerificationOutcome", "1")
+            new("DocumentType", "Passport"),
+            new("DocumentNumber", "SYNTH1234")
         ]));
 
-        Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
-        Assert.Equal("/MoneyOrders/Create", response.Headers.Location?.OriginalString);
-        var confirmation = await client.GetStringAsync("/MoneyOrders/Create");
-        Assert.Contains($"Money order {orderId.ToUpperInvariant()} was created.", confirmation, StringComparison.Ordinal);
-        Assert.DoesNotContain("SYNTHETIC-1234", confirmation, StringComparison.Ordinal);
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, verified.StatusCode);
+        var page = await client.GetStringAsync(verified.Headers.Location!);
+        Assert.Contains("Identity verification for " + orderId + ": Verified.", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("SYNTH1234", page, StringComparison.Ordinal);
         var saved = await factory.FindMoneyOrderAsync(orderId);
+        Assert.Equal(IdentityVerificationOutcome.Verified, saved.IdentityVerificationOutcome);
         Assert.Equal("****1234", saved.IdentityVerification?.MaskedDocumentReference.Value);
+        Assert.Equal(17.50m, saved.Fee.Amount);
+        Assert.DoesNotContain("SYNTH1234", await factory.ReadDataFileAsync("money-orders.json"), StringComparison.Ordinal);
+
+        var checkout = await CheckoutAsync(client, transactionId, [], moneyOrderIds: orderId);
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, checkout.StatusCode);
+        Assert.Contains("Total: 1517.50.", await client.GetStringAsync("/CounterTransactions/New"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -316,6 +307,30 @@ public sealed class AuthenticationTests
     }
 
     [Fact]
+    public async Task Branch_manager_can_void_a_paid_sale_from_the_default_configuration_and_stock_is_returned()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var clerk = factory.CreateClient();
+        await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await CheckoutAsync(clerk, "TX-WEB-VOID", [("PRD-001", 4)])).StatusCode);
+        Assert.Equal(96, await factory.GetNorthBranchStockAsync());
+
+        using var manager = factory.CreateClient();
+        await SignInAsync(manager, "STF-MANAGER-01", AuthWebApplicationFactory.TestPassword);
+        var token = await GetAntiforgeryTokenAsync(manager, "/CounterTransactions/Manage");
+        var response = await manager.PostAsync("/CounterTransactions/Void", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("TransactionId", "TX-WEB-VOID"), new("Reason", "Keyed at the wrong counter") ]));
+
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal("/CounterTransactions/Manage", response.Headers.Location?.OriginalString);
+        var page = await manager.GetStringAsync("/CounterTransactions/Manage");
+        Assert.Contains("Transaction TX-WEB-VOID voided.", page, StringComparison.Ordinal);
+        Assert.Contains("Voided (Keyed at the wrong counter)", page, StringComparison.Ordinal);
+        Assert.Equal(100, await factory.GetNorthBranchStockAsync());
+    }
+
+    [Fact]
     public async Task Branch_manager_is_authorized_to_branch_report()
     {
         await using var factory = new AuthWebApplicationFactory();
@@ -324,6 +339,94 @@ public sealed class AuthenticationTests
         await SignInAsync(client, "STF-MANAGER-01", AuthWebApplicationFactory.TestPassword);
         var response = await client.GetAsync("/Reports");
         Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Administrator_can_add_and_deactivate_staff_and_other_roles_are_denied()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var clerk = factory.CreateClient();
+        await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        var denied = await clerk.GetAsync("/StaffAdmin");
+        Assert.StartsWith("/Account/AccessDenied", denied.Headers.Location?.AbsolutePath);
+
+        using var admin = factory.CreateClient();
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+        var token = await GetAntiforgeryTokenAsync(admin, "/StaffAdmin/Create");
+        var created = await admin.PostAsync("/StaffAdmin/Create", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("StaffId", "STF-NEW-01"), new("Name", "New Clerk"),
+            new("Email", "new.clerk@example.test"), new("Role", "0"), new("BranchCode", "BR-NORTH"), new("Password", "new-clerk-password") ]));
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, created.StatusCode);
+
+        using var newClerk = factory.CreateClient();
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await SignInAsync(newClerk, "STF-NEW-01", "new-clerk-password")).StatusCode);
+
+        token = await GetAntiforgeryTokenAsync(admin, "/StaffAdmin");
+        var deactivated = await admin.PostAsync("/StaffAdmin/Deactivate/STF-NEW-01", new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, deactivated.StatusCode);
+        Assert.Contains("Inactive", await admin.GetStringAsync("/StaffAdmin"), StringComparison.Ordinal);
+        Assert.StartsWith("/Account/Login", (await newClerk.GetAsync("/CounterTransactions/New")).Headers.Location?.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task Administrator_can_add_and_close_a_branch()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var admin = factory.CreateClient();
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+        var token = await GetAntiforgeryTokenAsync(admin, "/BranchAdmin/Create");
+
+        var created = await admin.PostAsync("/BranchAdmin/Create", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("BranchCode", "BR-HARBOUR"), new("Name", "Harbour Branch"),
+            new("Region", "Coast"), new("OpeningHours", "Mon-Fri 09:00-17:00"), new("CounterCount", "2") ]));
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, created.StatusCode);
+
+        token = await GetAntiforgeryTokenAsync(admin, "/BranchAdmin");
+        var closed = await admin.PostAsync("/BranchAdmin/Close/BR-HARBOUR", new FormUrlEncodedContent([new("__RequestVerificationToken", token)]));
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, closed.StatusCode);
+        var list = await admin.GetStringAsync("/BranchAdmin");
+        Assert.Contains("Harbour Branch", list, StringComparison.Ordinal);
+        Assert.Contains("Branch BR-HARBOUR is now closed.", list, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Administrator_can_view_a_branch_they_created_and_pick_it_from_the_branch_dropdown()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        await factory.SeedSouthBranchAsync();
+        using var admin = factory.CreateClient();
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+
+        var dashboard = await admin.GetAsync("/Branch/Dashboard?branchCode=BR-SOUTH");
+        var page = await dashboard.Content.ReadAsStringAsync();
+        Assert.Equal(System.Net.HttpStatusCode.OK, dashboard.StatusCode);
+        Assert.Contains("Demo South Branch", page, StringComparison.Ordinal);
+        Assert.Contains("<option selected=\"selected\" value=\"BR-SOUTH\">", page, StringComparison.Ordinal);
+        Assert.Contains("value=\"BR-NORTH\"", page, StringComparison.Ordinal);
+        Assert.Equal(System.Net.HttpStatusCode.OK, (await admin.GetAsync("/Catalogue?branchCode=BR-SOUTH")).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.OK, (await admin.GetAsync("/Reports?branchCode=BR-SOUTH")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Clerk_branch_dropdown_lists_only_the_home_branch_and_forms_offer_stored_values()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        await factory.SeedSouthBranchAsync();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+
+        var dashboard = await client.GetStringAsync("/Branch/Dashboard");
+        var basket = await client.GetStringAsync("/CounterTransactions/New");
+        var shipping = await client.GetStringAsync("/Shipping/Create");
+
+        Assert.DoesNotContain("value=\"BR-SOUTH\"", dashboard, StringComparison.Ordinal);
+        Assert.Contains("<option value=\"C-01\">C-01</option>", basket, StringComparison.Ordinal);
+        Assert.Contains("<option value=\"PRD-001\">PRD-001 - Demo Retail Envelope (10.00)</option>", basket, StringComparison.Ordinal);
+        Assert.Contains("<option value=\"ZONE-01\">ZONE-01</option>", shipping, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -392,6 +495,59 @@ public sealed class AuthenticationTests
             new("__RequestVerificationToken", token), new("StaffId", staffId), new("Password", password) ]));
     }
 
+    private static async Task<HttpResponseMessage> CheckoutAsync(HttpClient client, string transactionId, IReadOnlyList<(string ProductId, int Quantity)> retailLines, string shipmentIds = "", string moneyOrderIds = "")
+    {
+        var token = await GetAntiforgeryTokenAsync(client, "/CounterTransactions/New");
+        var fields = new List<KeyValuePair<string, string>>
+        {
+            new("__RequestVerificationToken", token),
+            new("TransactionId", transactionId),
+            new("BranchCode", "BR-NORTH"),
+            new("CounterCode", "C-01"),
+            new("PaymentMethod", "0"),
+            new("ShipmentIds", shipmentIds),
+            new("MoneyOrderIds", moneyOrderIds)
+        };
+        for (var index = 0; index < retailLines.Count; index++)
+        {
+            fields.Add(new($"RetailLines[{index}].ProductId", retailLines[index].ProductId));
+            fields.Add(new($"RetailLines[{index}].Quantity", retailLines[index].Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
+        return await client.PostAsync("/CounterTransactions/New", new FormUrlEncodedContent(fields));
+    }
+
+    private static async Task<HttpResponseMessage> CreateShipmentAsync(HttpClient client, string shipmentId, string transactionId, string weight)
+    {
+        var token = await GetAntiforgeryTokenAsync(client, "/Shipping/Create");
+        return await client.PostAsync("/Shipping/Create", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token),
+            new("ShipmentId", shipmentId),
+            new("TransactionId", transactionId),
+            new("OriginBranchCode", "BR-NORTH"),
+            new("DestinationZoneCode", "ZONE-01"),
+            new("ShipmentType", "1"),
+            new("ServiceLevel", "0"),
+            new("WeightKilograms", weight),
+            new("LengthCentimetres", "10"),
+            new("WidthCentimetres", "10"),
+            new("HeightCentimetres", "10")
+        ]));
+    }
+
+    private static async Task<HttpResponseMessage> CreateMoneyOrderAsync(HttpClient client, string orderId, string transactionId, string amount)
+    {
+        var token = await GetAntiforgeryTokenAsync(client, "/MoneyOrders/Create");
+        return await client.PostAsync("/MoneyOrders/Create", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token),
+            new("MoneyOrderId", orderId),
+            new("BranchCode", "BR-NORTH"),
+            new("Amount", amount),
+            new("Sender", "Synthetic Sender"),
+            new("Recipient", "Synthetic Recipient"),
+            new("TransactionContextId", transactionId)
+        ]));
+    }
+
     private static async Task<string> GetAntiforgeryTokenAsync(HttpClient client)
         => await GetAntiforgeryTokenAsync(client, "/Account/Login");
 
@@ -414,16 +570,13 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // UseSetting is visible to values Program.cs reads before Build(); ConfigureAppConfiguration is not,
+        // and without this the suite would write into the web project's own App_Data folder.
+        builder.UseSetting("ApexPost:DataDirectory", _dataDirectory);
+        builder.UseSetting("ApexPost:RateLimiting:LoginPermitLimit", "100");
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["ApexPost:DataDirectory"] = _dataDirectory,
-            ["ApexPost:Authentication:DemoAccounts:STF-CLERK-01"] = TestPassword,
-            ["ApexPost:Authentication:DemoAccounts:STF-INACTIVE-01"] = TestPassword,
-            ["ApexPost:Authentication:DemoAccounts:STF-MANAGER-01"] = TestPassword,
-            ["ApexPost:Authentication:DemoAccounts:STF-EMPTY-MANAGER"] = TestPassword,
-            ["ApexPost:Security:Integration:AllowedIps:0"] = "127.0.0.1",
-            ["ApexPost:Security:Integration:AllowedIps:1"] = "::1",
-            ["ApexPost:RateLimiting:LoginPermitLimit"] = "100",
+            ["ApexPost:DemoSeed:Enabled"] = "false",
             ["ApexPost:Performance:WarningThresholdMilliseconds"] = "0"
         }));
         builder.ConfigureLogging(logging => { logging.ClearProviders(); logging.AddProvider(_loggerProvider); });
@@ -432,6 +585,11 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
             services.PostConfigure<IntegrationSecurityOptions>(options => options.AllowedIps = ["127.0.0.1", "::1"]);
             services.RemoveAll<IShippingRateProvider>();
             services.AddSingleton<IShippingRateProvider>(new TestShippingRateProvider());
+            // A lower PBKDF2 work factor keeps the suite fast; production uses the default.
+            services.RemoveAll<IPasswordHasher>();
+            services.AddSingleton<IPasswordHasher>(new Pbkdf2PasswordHasher(10_000));
+            // The test server has no socket, so give requests the loopback address a local browser would have.
+            services.AddTransient<IStartupFilter, LoopbackClientStartupFilter>();
         });
     }
 
@@ -445,15 +603,24 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         var staff = scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>();
         var products = scope.ServiceProvider.GetRequiredService<IProductRepository>();
         var inventory = scope.ServiceProvider.GetRequiredService<IInventoryRepository>();
+        var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
         await branches.SaveAsync(new Branch(new BranchCode("BR-NORTH"), "Demo North Branch"));
         await counters.SaveAsync(new Counter(new CounterCode("C-01"), new BranchCode("BR-NORTH")));
-        await staff.SaveAsync(new StaffMember(new StaffId("STF-CLERK-01"), "Test Clerk", StaffRole.CounterClerk, new BranchCode("BR-NORTH")));
-        var inactive = new StaffMember(new StaffId("STF-INACTIVE-01"), "Inactive Clerk", StaffRole.CounterClerk, new BranchCode("BR-NORTH"));
+        await staff.SaveAsync(WithPassword(new StaffMember(new StaffId("STF-CLERK-01"), "Test Clerk", StaffRole.CounterClerk, new BranchCode("BR-NORTH")), hasher));
+        var inactive = WithPassword(new StaffMember(new StaffId("STF-INACTIVE-01"), "Inactive Clerk", StaffRole.CounterClerk, new BranchCode("BR-NORTH")), hasher);
         inactive.Deactivate();
         await staff.SaveAsync(inactive);
-        await staff.SaveAsync(new StaffMember(new StaffId("STF-MANAGER-01"), "Test Manager", StaffRole.BranchManager, new BranchCode("BR-NORTH")));
+        await staff.SaveAsync(WithPassword(new StaffMember(new StaffId("STF-MANAGER-01"), "Test Manager", StaffRole.BranchManager, new BranchCode("BR-NORTH")), hasher));
+        await staff.SaveAsync(WithPassword(new StaffMember(new StaffId("STF-ADMIN-01"), "Test Administrator", StaffRole.Administrator, new BranchCode("BR-NORTH"), "admin@example.test"), hasher));
         await products.SaveAsync(new Product(new ProductId("PRD-001"), "Demo Retail Envelope", new Money(10m)));
         await inventory.SaveAsync(new BranchInventoryItem(new BranchCode("BR-NORTH"), new ProductId("PRD-001"), 100));
+    }
+
+    public async Task SeedSouthBranchAsync()
+    {
+        using var scope = Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IBranchRepository>()
+            .SaveAsync(new Branch(new BranchCode("BR-SOUTH"), "Demo South Branch"));
     }
 
     public async Task SeedEmptyReportBranchAsync()
@@ -462,7 +629,7 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         await scope.ServiceProvider.GetRequiredService<IBranchRepository>()
             .SaveAsync(new Branch(new BranchCode("BR-EMPTY"), "Empty Report Branch"));
         await scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>()
-            .SaveAsync(new StaffMember(new StaffId("STF-EMPTY-MANAGER"), "Empty Report Manager", StaffRole.BranchManager, new BranchCode("BR-EMPTY")));
+            .SaveAsync(WithPassword(new StaffMember(new StaffId("STF-EMPTY-MANAGER"), "Empty Report Manager", StaffRole.BranchManager, new BranchCode("BR-EMPTY")), scope.ServiceProvider.GetRequiredService<IPasswordHasher>()));
     }
 
     public async Task<int> GetNorthBranchStockAsync()
@@ -496,18 +663,39 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         return await scope.ServiceProvider.GetRequiredService<IAuditStore>().ReadAsync();
     }
 
+    public Task<string> ReadDataFileAsync(string fileName) => File.ReadAllTextAsync(Path.Combine(_dataDirectory, fileName));
+
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
         if (disposing && Directory.Exists(_dataDirectory)) Directory.Delete(_dataDirectory, recursive: true);
     }
 
+    private static StaffMember WithPassword(StaffMember member, IPasswordHasher hasher)
+    {
+        member.SetPasswordHash(hasher.Hash(TestPassword));
+        return member;
+    }
+
     private sealed class TestShippingRateProvider : IShippingRateProvider
     {
-        public Task<IReadOnlyCollection<ShippingRate>> GetRatesAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyCollection<ShippingRate>>([
+        public ValueTask<IReadOnlyCollection<ShippingRate>> GetRatesAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyCollection<ShippingRate>>([
                 new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, new ZoneCode("ZONE-01"), new Money(12m), new ParcelWeight(5m))
             ]);
+    }
+
+    private sealed class LoopbackClientStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use((context, nextMiddleware) =>
+            {
+                context.Connection.RemoteIpAddress ??= IPAddress.Loopback;
+                return nextMiddleware(context);
+            });
+            next(app);
+        };
     }
 }
 
