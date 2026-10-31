@@ -1,5 +1,7 @@
 using ApexPost.Application.Abstractions;
 using ApexPost.Application.BranchManagement;
+using ApexPost.Application.Catalogue;
+using ApexPost.Application.Queries;
 using ApexPost.Application.Events;
 using ApexPost.Application.Inventory;
 using ApexPost.Application.MoneyOrders;
@@ -12,6 +14,8 @@ using ApexPost.Application.StaffManagement;
 using ApexPost.Application.Transactions;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Infrastructure.Persistence;
+using ApexPost.Infrastructure.Queries;
+using ApexPost.Infrastructure.Persistence.StoredProcedures;
 using ApexPost.Infrastructure.Pricing;
 using ApexPost.Infrastructure.Repositories;
 using ApexPost.Infrastructure.Seed;
@@ -78,10 +82,10 @@ builder.Services.AddAuthorization(options =>
 });
 builder.Services.AddSingleton<IAuthorizationHandler, SameBranchAuthorizationHandler>();
 
+// Local runtime folder for the data-protection key ring only; business data and the audit trail are in SQL Server.
 var configuredDataDirectory = builder.Configuration["ApexPost:DataDirectory"] ?? "App_Data";
 var dataDirectory = Path.IsPathRooted(configuredDataDirectory) ? configuredDataDirectory : Path.Combine(builder.Environment.ContentRootPath, configuredDataDirectory);
 builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDirectory, "data-protection-keys")));
-builder.Services.AddSingleton(new JsonRepositoryOptions { DataDirectory = dataDirectory });
 
 // SQL Server is the system of record. The connection string comes from user-secrets in Development
 // (dotnet user-secrets set "ConnectionStrings:ApexPostDb" "...") and from deployment configuration elsewhere.
@@ -107,7 +111,8 @@ builder.Services.AddScoped<ICounterTransactionRepository, EfCounterTransactionRe
 builder.Services.AddSingleton<ShippingRateCache>();
 builder.Services.AddScoped<IShippingRateProvider, EfShippingRateProvider>();
 builder.Services.AddScoped<DemoDataSeeder>();
-builder.Services.AddSingleton<IAuditStore, JsonAuditStore>();
+// Scoped so audit rows share the request's options (and CreatedBy stamping), but each append opens its own context.
+builder.Services.AddScoped<IAuditStore, EfAuditStore>();
 builder.Services.AddScoped<AuditActionFilter>();
 builder.Services.AddScoped<ValidationActionFilter>();
 builder.Services.AddScoped<PerformanceActionFilter>();
@@ -138,7 +143,15 @@ builder.Services.AddScoped<ShippingWorkflowService>();
 builder.Services.AddScoped<ParcelStatusService>();
 builder.Services.AddScoped<MoneyOrderWorkflowService>();
 builder.Services.AddScoped<CounterTransactionWorkflowService>();
-builder.Services.AddScoped<BranchReportService>();
+builder.Services.AddScoped<IBranchReportQueries, EfBranchReportQueries>();
+builder.Services.AddScoped<IBranchQueries, EfBranchQueries>();
+builder.Services.AddScoped<ICatalogueQueries, EfCatalogueQueries>();
+builder.Services.AddScoped<ITransactionQueries, EfTransactionQueries>();
+builder.Services.AddScoped<IStaffQueries, EfStaffQueries>();
+builder.Services.AddScoped<ICatalogueBulkUpdates, EfCatalogueBulkUpdates>();
+builder.Services.AddScoped<PriceRevisionService>();
+builder.Services.AddScoped<IStockAdjustments, EfStockAdjustments>();
+builder.Services.AddScoped<StockAdjustmentService>();
 builder.Services.AddScoped<StaffManagementService>();
 builder.Services.AddScoped<BranchManagementService>();
 builder.Services.AddScoped<ReferenceDataLookup>();

@@ -14,7 +14,8 @@ public interface IInventoryRepository
         ProductId productId,
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default);
+    /// <summary>Stages a stock row for a product the branch has not stocked before.</summary>
+    void Add(BranchInventoryItem inventoryItem);
 
     void Update(BranchInventoryItem inventoryItem);
 }

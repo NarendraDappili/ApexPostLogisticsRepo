@@ -22,6 +22,7 @@ public static partial class ExceptionProblemMapping
     {
         ConflictException => new(StatusCodes.Status409Conflict, "The request conflicts with the current data.", exception.Message),
         NotFoundException => new(StatusCodes.Status404NotFound, "The requested record was not found.", exception.Message),
+        RuleViolationException => new(StatusCodes.Status400BadRequest, "The request breaks a business rule.", exception.Message),
         ArgumentException or InvalidOperationException when IsThrownByBusinessCode(exception) =>
             new(StatusCodes.Status400BadRequest, "The request breaks a business rule.", WithoutParameterName(exception.Message)),
         _ => null,

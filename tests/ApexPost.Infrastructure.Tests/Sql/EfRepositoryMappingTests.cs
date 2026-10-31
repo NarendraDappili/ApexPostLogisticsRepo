@@ -32,7 +32,7 @@ public sealed class EfRepositoryMappingTests(SqlServerTestDatabase database)
             Assert.Equal(("Harbour Branch", "Coast", true), (branch.Name, branch.Region, branch.IsOpen));
             Assert.Equal("STF-AUDITOR", db.Entry(branch).Property<string>(ShadowColumns.CreatedBy).CurrentValue);
             Assert.Null(db.Entry(branch).Property<DateTime?>(ShadowColumns.ModifiedAtUtc).CurrentValue);
-            Assert.Single(await new EfCounterRepository(db).FindByBranchAsync(branch.Code));
+            Assert.NotNull(await new EfCounterRepository(db).FindByCodeAsync(branch.Code, new("C-01")));
             var staff = (await new EfStaffMemberRepository(db).FindByIdAsync(new($"STF-{suffix}")))!;
             Assert.Equal((StaffRole.CounterClerk, branch.Code, $"clerk.{suffix.ToLowerInvariant()}@example.test"), (staff.Role, staff.AssignedBranchCode, staff.Email));
 
@@ -124,7 +124,7 @@ public sealed class EfRepositoryMappingTests(SqlServerTestDatabase database)
         }
 
         await using var check = database.CreateContext();
-        var stored = Assert.Single(await new EfCounterTransactionRepository(check).FindByBranchAsync(data.Branch));
+        var stored = (await new EfCounterTransactionRepository(check).FindByIdAsync(id))!;
         Assert.Equal((CounterTransactionStatus.Refunded, data.Manager, 30.80m), (stored.Status, stored.AuthorizedBy, stored.Total.Amount));
         Assert.Equal((PaymentMethod.DigitalWallet, 30.80m), (stored.Payment.Method, stored.Payment.Amount.Amount));
         Assert.Equal([(true, 2, 20m), (false, 1, 8m)], stored.Lines.Select(line => (line.IsRetail, line.Quantity, line.Total.Amount)).OrderByDescending(line => line.IsRetail));
@@ -181,7 +181,7 @@ public sealed class EfRepositoryMappingTests(SqlServerTestDatabase database)
         var data = await SqlTestData.SeedAsync(database, stock: 1);
         await using var db = database.CreateContext();
         var repository = new EfBranchRepository(db);
-        var listed = (await repository.GetAllAsync()).Single(branch => branch.Code == data.Branch);
+        var listed = await db.Branches.AsNoTracking().SingleAsync(branch => branch.Code == data.Branch);
 
         listed.Close();
 

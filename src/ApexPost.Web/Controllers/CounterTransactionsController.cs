@@ -1,4 +1,4 @@
-using ApexPost.Application.Repositories;
+using ApexPost.Application.Queries;
 using ApexPost.Application.Transactions;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Web.Models;
@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ApexPost.Web.Controllers;
 
-public sealed class CounterTransactionsController(CounterTransactionWorkflowService transactions, ICounterTransactionRepository transactionHistory) : Controller
+public sealed class CounterTransactionsController(CounterTransactionWorkflowService transactions, ITransactionQueries transactionHistory) : Controller
 {
     [Authorize(Roles = "CounterClerk"), HttpGet]
     public IActionResult New() => View(new CounterBasketViewModel
@@ -45,11 +45,9 @@ public sealed class CounterTransactionsController(CounterTransactionWorkflowServ
     {
         var branchCode = User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value;
         if (string.IsNullOrWhiteSpace(branchCode)) return Forbid();
-        var history = await transactionHistory.FindByBranchAsync(new BranchCode(branchCode), cancellationToken);
+        var history = await transactionHistory.GetRecentAsync(new BranchCode(branchCode), 50, cancellationToken);
         return View(new TransactionListViewModel(branchCode, history
-            .OrderByDescending(transaction => transaction.OccurredAtUtc)
-            .Take(50)
-            .Select(transaction => new TransactionSummaryViewModel(transaction.Id.Value, transaction.OccurredAtUtc, transaction.CounterCode.Value, transaction.ClerkId.Value, transaction.Total.Amount, transaction.Status, transaction.StatusReason))
+            .Select(transaction => new TransactionSummaryViewModel(transaction.TransactionId, transaction.OccurredAtUtc, transaction.CounterCode, transaction.ClerkId, transaction.Total, transaction.Status, transaction.StatusReason))
             .ToArray()));
     }
 

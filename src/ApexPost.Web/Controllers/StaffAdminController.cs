@@ -1,3 +1,4 @@
+using ApexPost.Application.Queries;
 using ApexPost.Application.StaffManagement;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Web.Models;
@@ -9,11 +10,11 @@ namespace ApexPost.Web.Controllers;
 
 /// <summary>Staff administration. Administrator-only and, as an admin endpoint, limited to the configured IP allowlist.</summary>
 [Authorize(Roles = "Administrator"), RequireIpAllowlist]
-public sealed class StaffAdminController(StaffManagementService staffManagement) : Controller
+public sealed class StaffAdminController(StaffManagementService staffManagement, IStaffQueries staffQueries) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken cancellationToken) =>
-        View(await staffManagement.GetAllAsync(cancellationToken));
+        View(await staffQueries.GetStaffAsync(cancellationToken));
 
     [HttpGet]
     public IActionResult Create() => View(new StaffFormViewModel());

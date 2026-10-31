@@ -10,8 +10,6 @@ public interface IBranchRepository
 {
     Task<Branch?> FindByCodeAsync(BranchCode code, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyCollection<Branch>> GetAllAsync(CancellationToken cancellationToken = default);
-
     void Add(Branch branch);
 
     void Update(Branch branch);

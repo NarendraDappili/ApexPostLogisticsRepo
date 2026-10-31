@@ -19,6 +19,16 @@ public sealed class Product : IEquatable<Product>
         CategoryCode = ProductCategory.NormalizeCode(categoryCode ?? ProductCategory.GeneralCode);
     }
 
+    // Used only when a stored product is materialized; the price is loaded afterwards as a complex value.
+    private Product(ProductId id, string name, Sku sku, string categoryCode)
+    {
+        Id = id;
+        Name = name;
+        Sku = sku;
+        CategoryCode = categoryCode;
+        UnitPrice = null!;
+    }
+
     public ProductId Id { get; }
 
     public Sku Sku { get; }

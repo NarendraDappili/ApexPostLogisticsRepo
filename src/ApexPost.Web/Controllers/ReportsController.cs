@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace ApexPost.Web.Controllers;
 
 [Authorize(Roles = "BranchManager,Auditor,Administrator", Policy = AuthorizationPolicies.SameBranchOnly)]
-public sealed class ReportsController(BranchReportService reports, IConfiguration configuration) : Controller
+public sealed class ReportsController(IBranchReportQueries reports, IConfiguration configuration, TimeProvider timeProvider) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index(string? branchCode, DateOnly? day, CancellationToken cancellationToken)
@@ -20,7 +20,7 @@ public sealed class ReportsController(BranchReportService reports, IConfiguratio
         try
         {
             var branch = new BranchCode(branchCode);
-            var reportDay = day ?? DateOnly.FromDateTime(DateTime.UtcNow);
+            var reportDay = day ?? DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
             var threshold = configuration.GetValue<int?>("ApexPost:Inventory:LowStockThreshold") ?? 10;
             var sales = await reports.GetDailySalesAsync(branch, reportDay, cancellationToken);
             var lowStock = await reports.GetLowStockAsync(branch, threshold, cancellationToken);

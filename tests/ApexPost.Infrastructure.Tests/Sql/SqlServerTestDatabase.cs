@@ -24,10 +24,14 @@ public sealed class SqlServerTestDatabase : IAsyncLifetime
 
     /// <summary>A new context, as one web request would get, with the production audit-column interceptor.</summary>
     public ApexPostDbContext CreateContext(ICurrentStaffContext? currentStaff = null, int? maxBatchSize = null, params IInterceptor[] interceptors) =>
-        new(new DbContextOptionsBuilder<ApexPostDbContext>()
+        new(CreateOptions(currentStaff, maxBatchSize, interceptors));
+
+    /// <summary>The options one request's contexts share, as the web app's dependency injection builds them.</summary>
+    public DbContextOptions<ApexPostDbContext> CreateOptions(ICurrentStaffContext? currentStaff = null, int? maxBatchSize = null, params IInterceptor[] interceptors) =>
+        new DbContextOptionsBuilder<ApexPostDbContext>()
             .UseSqlServer(ConnectionString, sql => { if (maxBatchSize is { } size) sql.MaxBatchSize(size); })
             .AddInterceptors([new AuditColumnsInterceptor(TimeProvider.System, currentStaff), .. interceptors])
-            .Options);
+            .Options;
 
     public async Task InitializeAsync()
     {

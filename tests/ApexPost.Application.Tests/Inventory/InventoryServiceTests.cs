@@ -153,6 +153,9 @@ public sealed class InventoryServiceTests
         public Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyCollection<BranchInventoryItem>>(_items.Values.Where(item => item.BranchCode == branchCode).ToArray());
 
+        public void Add(BranchInventoryItem inventoryItem) =>
+            _items[(inventoryItem.BranchCode.Value, inventoryItem.ProductId.Value)] = inventoryItem;
+
         public void Update(BranchInventoryItem inventoryItem) =>
             _items[(inventoryItem.BranchCode.Value, inventoryItem.ProductId.Value)] = inventoryItem;
     }

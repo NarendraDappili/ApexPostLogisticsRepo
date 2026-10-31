@@ -1,10 +1,43 @@
 @model ApexPost.Web.Models.CatalogueViewModel
 @{ ViewData["Title"] = "Product catalogue"; }
 <h1>Product catalogue and branch stock</h1>
+@if (TempData["Notice"] is string notice) { <div class="alert alert-success" role="status" aria-live="polite">@notice</div> }
+@if (TempData["Error"] is string error) { <div class="alert alert-danger" role="alert">@error</div> }
 <form method="get" class="row g-2 mb-3">
     <div class="col-sm-4"><label for="branchCode" class="form-label">Branch</label><select id="branchCode" name="branchCode" class="form-select" asp-items="await Lookup.ViewableBranchesAsync(User, Model.BranchCode, Context.RequestAborted)"></select></div>
     <div class="col-sm-2 align-self-end"><button class="btn btn-primary" type="submit">Load stock</button></div>
 </form>
+@if (Model.Categories is { Count: > 0 } categories)
+{
+    <section aria-labelledby="price-revision-heading" class="mb-3">
+        <h2 id="price-revision-heading" class="h5">Revise prices for a category</h2>
+        <form method="post" asp-action="RevisePrices" class="row g-2">
+            <div class="col-sm-4">
+                <label for="CategoryCode" class="form-label">Category</label>
+                <select id="CategoryCode" name="CategoryCode" class="form-select" required>
+                    @foreach (var category in categories)
+                    {
+                        <option value="@category.CategoryCode">@category.CategoryCode - @category.Name (@category.ProductCount products)</option>
+                    }
+                </select>
+            </div>
+            <div class="col-sm-2"><label for="Percentage" class="form-label">Change (%)</label><input id="Percentage" name="Percentage" type="number" step="0.01" min="-50" max="100" class="form-control" required /></div>
+            <div class="col-sm-2 align-self-end"><button class="btn btn-outline-primary" type="submit">Apply</button></div>
+        </form>
+    </section>
+}
+@if (User.IsInRole("BranchManager") && string.Equals(Model.BranchCode, User.FindFirst(ApexPost.Web.Security.ApexPostClaimTypes.BranchCode)?.Value, StringComparison.OrdinalIgnoreCase))
+{
+    <section aria-labelledby="stock-adjustment-heading" class="mb-3">
+        <h2 id="stock-adjustment-heading" class="h5">Adjust stock at @Model.BranchCode</h2>
+        <form method="post" asp-action="AdjustStock" class="row g-2">
+            <div class="col-sm-4"><label for="ProductId" class="form-label">Product</label><select id="ProductId" name="ProductId" class="form-select" required asp-items="await Lookup.ProductsAsync(Context.RequestAborted)"></select></div>
+            <div class="col-sm-2"><label for="Delta" class="form-label">Change (units)</label><input id="Delta" name="Delta" type="number" step="1" min="-10000" max="10000" class="form-control" required /></div>
+            <div class="col-sm-4"><label for="Reason" class="form-label">Reason</label><input id="Reason" name="Reason" maxlength="200" class="form-control" required placeholder="Stock count, damage, delivery" /></div>
+            <div class="col-sm-2 align-self-end"><button class="btn btn-outline-primary" type="submit">Adjust</button></div>
+        </form>
+    </section>
+}
 @if (Model.Message is not null) { <p class="text-muted" role="status">@Model.Message</p> }
 @if (Model.Products.Count == 0)
 {
@@ -15,11 +48,11 @@ else
     <div class="table-responsive">
         <table class="table table-striped">
             <caption>Products, unit prices and stock for @(!string.IsNullOrWhiteSpace(Model.BranchCode) ? Model.BranchCode : "the selected view")</caption>
-            <thead><tr><th scope="col">Product ID</th><th scope="col">Name</th><th scope="col">Unit price</th><th scope="col">Stock quantity</th></tr></thead>
+            <thead><tr><th scope="col">Product ID</th><th scope="col">SKU</th><th scope="col">Name</th><th scope="col">Category</th><th scope="col">Unit price</th><th scope="col">Stock quantity</th></tr></thead>
             <tbody>
             @foreach (var item in Model.Products)
             {
-                <tr><th scope="row">@item.ProductId</th><td>@item.Name</td><td>@item.UnitPrice.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td><td>@(item.StockQuantity?.ToString() ?? "Not loaded")</td></tr>
+                <tr><th scope="row">@item.ProductId</th><td>@item.Sku</td><td>@item.Name</td><td>@item.CategoryCode</td><td>@item.UnitPrice.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td><td>@(item.StockQuantity?.ToString() ?? "Not loaded")</td></tr>
             }
             </tbody>
         </table>

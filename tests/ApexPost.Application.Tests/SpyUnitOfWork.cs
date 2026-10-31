@@ -28,6 +28,12 @@ internal sealed class SpyUnitOfWork : IUnitOfWork
         return Task.FromResult(0);
     }
 
-    public Task<TResult> ExecuteInTransactionAsync<TResult>(Func<CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken = default) =>
-        operation(cancellationToken);
+    /// <summary>How many explicit transactions were opened.</summary>
+    public int Transactions { get; private set; }
+
+    public Task<TResult> ExecuteInTransactionAsync<TResult>(Func<CancellationToken, Task<TResult>> operation, CancellationToken cancellationToken = default)
+    {
+        Transactions++;
+        return operation(cancellationToken);
+    }
 }

@@ -29,9 +29,6 @@ public sealed class BranchManagementService
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
-    public async Task<IReadOnlyCollection<Branch>> GetAllAsync(CancellationToken cancellationToken = default) =>
-        (await _branches.GetAllAsync(cancellationToken).ConfigureAwait(false)).OrderBy(branch => branch.Code.Value, StringComparer.Ordinal).ToArray();
-
     public async Task<Branch> GetAsync(BranchCode branchCode, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(branchCode);

@@ -14,7 +14,7 @@ public sealed class CheckoutPersistenceTests(SqlServerTestDatabase database)
     public async Task A_sale_is_stored_with_its_lines_payment_and_stock_decrement_in_one_commit()
     {
         var data = await SqlTestData.SeedAsync(database, stock: 5);
-        var commands = new CommandRecorder();
+        var commands = new SqlCommandLog();
 
         await using (var db = database.CreateContext(interceptors: commands))
         {
@@ -27,9 +27,9 @@ public sealed class CheckoutPersistenceTests(SqlServerTestDatabase database)
         Assert.Equal(3, (await check.BranchStock.AsNoTracking().SingleAsync(item => item.BranchCode == data.Branch)).Quantity);
         // EF may split the writes into several batches (dependent rows need generated keys), but every one of them
         // runs inside the single database transaction that one SaveChanges opens and commits.
-        Assert.Single(commands, text => text == CommandRecorder.Committed);
+        Assert.Equal(1, commands.Commits);
         Assert.All(["UPDATE [BranchStock]", "INSERT INTO [CounterTransactions]", "INSERT INTO [TransactionLines]", "INSERT INTO [Payments]"],
-            write => Assert.Contains(commands, text => text.Contains(write, StringComparison.Ordinal)));
+            write => Assert.Contains(commands.Commands, text => text.Contains(write, StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -101,24 +101,6 @@ public sealed class CheckoutPersistenceTests(SqlServerTestDatabase database)
         Assert.InRange(stock, 0, 3);
         Assert.Equal(outcomes.Count(sold => sold), stored);
         Assert.Equal(3 - stored, stock);
-    }
-
-    /// <summary>Records the text of every command EF sends, plus transaction commits.</summary>
-    private sealed class CommandRecorder : List<string>, IDbCommandInterceptor, IDbTransactionInterceptor
-    {
-        public const string Committed = "transaction committed";
-
-        public ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
-        {
-            Add(command.CommandText);
-            return ValueTask.FromResult(result);
-        }
-
-        public Task TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData eventData, CancellationToken cancellationToken = default)
-        {
-            Add(Committed);
-            return Task.CompletedTask;
-        }
     }
 
     /// <summary>Lets every command run until the matching one, then fails as a database error would.</summary>

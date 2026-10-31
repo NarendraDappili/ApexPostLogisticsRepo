@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using ApexPost.Application.Queries;
 using ApexPost.Application.Reports;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
@@ -12,9 +13,24 @@ public sealed class LoginViewModel
     [Required, DataType(DataType.Password), StringLength(256)] public string Password { get; set; } = string.Empty;
 }
 
-public sealed record BranchDashboardViewModel(string BranchCode, string? BranchName, bool? IsOpen, string? Message = null);
-public sealed record CatalogueItemViewModel(string ProductId, string Name, decimal UnitPrice, int? StockQuantity);
-public sealed record CatalogueViewModel(string BranchCode, IReadOnlyCollection<CatalogueItemViewModel> Products, string? Message = null);
+public sealed record BranchDashboardViewModel(string BranchCode, BranchDashboard? Dashboard, string? Message = null);
+public sealed record CatalogueItemViewModel(string ProductId, string Sku, string Name, string CategoryCode, decimal UnitPrice, int? StockQuantity);
+public sealed record CatalogueViewModel(string BranchCode, IReadOnlyCollection<CatalogueItemViewModel> Products, string? Message = null, IReadOnlyCollection<CategoryItem>? Categories = null);
+
+/// <summary>Branch Manager form for a stock correction at their own branch.</summary>
+public sealed class StockAdjustmentViewModel
+{
+    [Required, StringLength(48), Display(Name = "Product")] public string ProductId { get; set; } = string.Empty;
+    [Range(-10000, 10000), Display(Name = "Change (units)")] public int Delta { get; set; }
+    [Required, StringLength(StockAdjustment.MaxReasonLength)] public string Reason { get; set; } = string.Empty;
+}
+
+/// <summary>Administrator form for a set-based price revision of one category.</summary>
+public sealed class PriceRevisionViewModel
+{
+    [Required, StringLength(ProductCategory.MaxCodeLength), Display(Name = "Category")] public string CategoryCode { get; set; } = string.Empty;
+    [Range(typeof(decimal), "-50", "100"), Display(Name = "Change (%)")] public decimal Percentage { get; set; }
+}
 
 public sealed class CounterBasketViewModel
 {

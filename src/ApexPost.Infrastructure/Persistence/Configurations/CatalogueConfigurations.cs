@@ -38,6 +38,7 @@ internal sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(product => product.Sku);
         builder.HasIndex(product => product.Sku).IsUnique().HasDatabaseName("UX_Products_Sku");
         builder.Property(product => product.Name).HasMaxLength(NameLength);
+        builder.ComplexProperty(product => product.UnitPrice, price => price.Property(money => money.Amount).HasColumnName("UnitPrice").HasPrecision(18, 2));
         builder.Property(product => product.CategoryCode).HasMaxLength(ProductCategory.MaxCodeLength).IsUnicode(false);
         builder.HasOne<ProductCategory>().WithMany().HasForeignKey(product => product.CategoryCode).HasPrincipalKey(category => category.Code).OnDelete(DeleteBehavior.Restrict);
         builder.HasAuditColumns();

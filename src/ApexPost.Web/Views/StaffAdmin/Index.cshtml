@@ -1,4 +1,4 @@
-@model IReadOnlyCollection<ApexPost.Domain.Entities.StaffMember>
+@model IReadOnlyList<ApexPost.Application.Queries.StaffListItem>
 @{ ViewData["Title"] = "Staff"; }
 <h1>Staff</h1>
 @if (TempData["Notice"] is string notice) { <div class="alert alert-success" role="status" aria-live="polite">@notice</div> }
@@ -11,15 +11,15 @@
         @foreach (var member in Model)
         {
             <tr>
-                <th scope="row">@member.Id.Value</th>
+                <th scope="row">@member.StaffId</th>
                 <td>@member.Name</td>
                 <td>@member.Email</td>
                 <td>@member.Role</td>
-                <td>@member.AssignedBranchCode.Value</td>
+                <td>@member.BranchCode</td>
                 <td>@(member.IsActive ? "Active" : "Inactive")</td>
                 <td class="d-flex gap-2">
-                    <a class="btn btn-sm btn-outline-primary" asp-action="Edit" asp-route-id="@member.Id.Value">Edit</a>
-                    <form method="post" asp-action="@(member.IsActive ? "Deactivate" : "Activate")" asp-route-id="@member.Id.Value">
+                    <a class="btn btn-sm btn-outline-primary" asp-action="Edit" asp-route-id="@member.StaffId">Edit</a>
+                    <form method="post" asp-action="@(member.IsActive ? "Deactivate" : "Activate")" asp-route-id="@member.StaffId">
                         <button class="btn btn-sm @(member.IsActive ? "btn-outline-danger" : "btn-outline-success")" type="submit">@(member.IsActive ? "Deactivate" : "Reactivate")</button>
                     </form>
                 </td>

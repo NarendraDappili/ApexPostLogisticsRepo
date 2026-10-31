@@ -14,3 +14,6 @@ public sealed class ConcurrencyConflictException(string message, Exception? inne
 
 /// <summary>A unique business key (branch code, SKU, staff email, transaction ID) is already in use.</summary>
 public sealed class DuplicateKeyException(string message, Exception? innerException = null) : ConflictException(message, innerException);
+
+/// <summary>The database refused a request because it breaks a business rule, for example a stored procedure's THROW.</summary>
+public sealed class RuleViolationException(string message, Exception? innerException = null) : InvalidOperationException(message, innerException);

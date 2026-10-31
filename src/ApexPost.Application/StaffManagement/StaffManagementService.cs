@@ -33,9 +33,6 @@ public sealed class StaffManagementService
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
 
-    public async Task<IReadOnlyCollection<StaffMember>> GetAllAsync(CancellationToken cancellationToken = default) =>
-        (await _staff.GetAllAsync(cancellationToken).ConfigureAwait(false)).OrderBy(member => member.Id.Value, StringComparer.Ordinal).ToArray();
-
     public async Task<StaffMember> GetAsync(StaffId staffId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(staffId);
