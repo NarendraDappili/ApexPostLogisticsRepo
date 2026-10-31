@@ -7,12 +7,13 @@ using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Infrastructure.Persistence;
-using ApexPost.Infrastructure.Repositories;
+using ApexPost.Infrastructure.Persistence.Entities;
 using ApexPost.Infrastructure.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -46,7 +47,9 @@ public sealed class AuthenticationTests
         Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/Branch/Dashboard", response.Headers.Location?.OriginalString);
         Assert.Contains(response.Headers.GetValues("Set-Cookie"), header => header.Contains("httponly", StringComparison.OrdinalIgnoreCase) && header.Contains("samesite=strict", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(AuthWebApplicationFactory.TestPassword, await factory.ReadDataFileAsync("staff-members.json"), StringComparison.Ordinal);
+        var storedStaff = await factory.ReadStoredStaffAsync();
+        Assert.Contains("PBKDF2-SHA256$", storedStaff, StringComparison.Ordinal);
+        Assert.DoesNotContain(AuthWebApplicationFactory.TestPassword, storedStaff, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -140,6 +143,25 @@ public sealed class AuthenticationTests
 
         Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
         Assert.StartsWith("/Account/AccessDenied", response.Headers.Location?.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task A_sale_posted_through_the_counter_screen_is_stored_with_lines_payment_and_audit_columns()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+
+        var response = await CheckoutAsync(client, "TX-WEB-STORED", [("PRD-001", 3)]);
+
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
+        var stored = await factory.ReadStoredSaleAsync("TX-WEB-STORED");
+        Assert.Equal(("Paid", "BR-NORTH", "C-01", "STF-CLERK-01", 30.00m), (stored.Status, stored.BranchCode, stored.CounterCode, stored.ClerkStaffCode, stored.Subtotal));
+        Assert.Equal((1, 3, "Cash", 30.00m), (stored.LineCount, stored.UnitsSold, stored.PaymentMethod, stored.PaymentAmount));
+        // The audit column records the signed-in clerk, taken from the cookie and never from the form.
+        Assert.Equal("STF-CLERK-01", stored.CreatedBy);
+        Assert.Equal(97, await factory.GetNorthBranchStockAsync());
     }
 
     [Fact]
@@ -267,7 +289,9 @@ public sealed class AuthenticationTests
         Assert.Equal(IdentityVerificationOutcome.Verified, saved.IdentityVerificationOutcome);
         Assert.Equal("****1234", saved.IdentityVerification?.MaskedDocumentReference.Value);
         Assert.Equal(17.50m, saved.Fee.Amount);
-        Assert.DoesNotContain("SYNTH1234", await factory.ReadDataFileAsync("money-orders.json"), StringComparison.Ordinal);
+        var storedMoneyOrders = await factory.ReadStoredMoneyOrdersAsync();
+        Assert.Contains("****1234", storedMoneyOrders, StringComparison.Ordinal);
+        Assert.DoesNotContain("SYNTH1234", storedMoneyOrders, StringComparison.Ordinal);
 
         var checkout = await CheckoutAsync(client, transactionId, [], moneyOrderIds: orderId);
         Assert.Equal(System.Net.HttpStatusCode.Redirect, checkout.StatusCode);
@@ -566,6 +590,7 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
 {
     public const string TestPassword = "test-only-password";
     private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "ApexPost-WebTests", Guid.NewGuid().ToString("N"));
+    private readonly TestDatabase _database = new();
     private readonly TestLoggerProvider _loggerProvider = new();
 
     public IReadOnlyCollection<string> LogMessages => _loggerProvider.Messages;
@@ -576,6 +601,7 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         // and without this the suite would write into the web project's own App_Data folder.
         builder.UseSetting("ApexPost:DataDirectory", _dataDirectory);
         builder.UseSetting("ApexPost:RateLimiting:LoginPermitLimit", "100");
+        _database.Attach(builder);
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ApexPost:DemoSeed:Enabled"] = "false",
@@ -585,8 +611,6 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         builder.ConfigureTestServices(services =>
         {
             services.PostConfigure<IntegrationSecurityOptions>(options => options.AllowedIps = ["127.0.0.1", "::1"]);
-            services.RemoveAll<IShippingRateProvider>();
-            services.AddSingleton<IShippingRateProvider>(new TestShippingRateProvider());
             // A lower PBKDF2 work factor keeps the suite fast; production uses the default.
             services.RemoveAll<IPasswordHasher>();
             services.AddSingleton<IPasswordHasher>(new Pbkdf2PasswordHasher(10_000));
@@ -612,11 +636,13 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         staff.Add(inactive);
         staff.Add(WithPassword(new StaffMember(new StaffId("STF-MANAGER-01"), "Test Manager", StaffRole.BranchManager, new BranchCode("BR-NORTH")), hasher));
         staff.Add(WithPassword(new StaffMember(new StaffId("STF-ADMIN-01"), "Test Administrator", StaffRole.Administrator, new BranchCode("BR-NORTH"), "admin@example.test"), hasher));
+        // No use case creates catalogue, stock or rate rows, so their test data is added through the context directly.
+        var db = scope.ServiceProvider.GetRequiredService<ApexPostDbContext>();
+        db.Products.Add(new Product(new ProductId("PRD-001"), "Demo Retail Envelope", new Money(10m)));
+        db.BranchStock.Add(new BranchInventoryItem(new BranchCode("BR-NORTH"), new ProductId("PRD-001"), 100));
+        db.ShippingZones.Add(new ShippingZoneEntity { ZoneCode = new ZoneCode("ZONE-01"), Name = "Test Zone 01" });
+        db.ShippingRates.Add(new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, new ZoneCode("ZONE-01"), new Money(12m), new ParcelWeight(5m)));
         await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
-        // No use case creates catalogue or stock rows, so test data for them is written straight to the store.
-        var store = scope.ServiceProvider.GetRequiredService<JsonRepositoryOptions>();
-        await new JsonProductRepository(store).SaveAsync(new Product(new ProductId("PRD-001"), "Demo Retail Envelope", new Money(10m)));
-        await new JsonInventoryRepository(store).SaveAsync(new BranchInventoryItem(new BranchCode("BR-NORTH"), new ProductId("PRD-001"), 100));
     }
 
     public async Task SeedSouthBranchAsync()
@@ -669,7 +695,37 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         return await scope.ServiceProvider.GetRequiredService<IAuditStore>().ReadAsync();
     }
 
-    public Task<string> ReadDataFileAsync(string fileName) => File.ReadAllTextAsync(Path.Combine(_dataDirectory, fileName));
+    /// <summary>Every stored staff row as JSON, to prove what the database holds.</summary>
+    public Task<string> ReadStoredStaffAsync() =>
+        ReadJsonAsync(db => db.Database.SqlQuery<string>($"SELECT (SELECT StaffCode, Name, Email, PasswordHash FROM Staff FOR JSON PATH) AS [Value]"));
+
+    /// <summary>Every stored money order and identity verification as JSON, to prove what the database holds.</summary>
+    public Task<string> ReadStoredMoneyOrdersAsync() =>
+        ReadJsonAsync(db => db.Database.SqlQuery<string>($"SELECT (SELECT m.*, v.DocumentType, v.MaskedDocumentReference, v.Outcome FROM MoneyOrders m LEFT JOIN IdentityVerifications v ON v.MoneyOrderId = m.MoneyOrderId FOR JSON PATH) AS [Value]"));
+
+    /// <summary>The stored rows of one sale, read with plain SQL so the check does not depend on the EF mapping.</summary>
+    public async Task<StoredSale> ReadStoredSaleAsync(string transactionCode)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApexPostDbContext>();
+        return await db.Database.SqlQuery<StoredSale>($"""
+            SELECT t.Status, t.BranchCode, t.CounterCode, t.ClerkStaffCode, t.Subtotal, t.CreatedBy,
+                   (SELECT COUNT(*) FROM TransactionLines l WHERE l.CounterTransactionId = t.CounterTransactionId) AS LineCount,
+                   (SELECT SUM(l.Quantity) FROM TransactionLines l WHERE l.CounterTransactionId = t.CounterTransactionId AND l.ProductCode IS NOT NULL) AS UnitsSold,
+                   p.PaymentMethod, p.Amount AS PaymentAmount
+            FROM CounterTransactions t
+            JOIN Payments p ON p.CounterTransactionId = t.CounterTransactionId
+            WHERE t.TransactionCode = {transactionCode}
+            """).SingleAsync();
+    }
+
+    public sealed record StoredSale(string Status, string BranchCode, string CounterCode, string ClerkStaffCode, decimal Subtotal, string CreatedBy, int LineCount, int UnitsSold, string PaymentMethod, decimal PaymentAmount);
+
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        await _database.DropAsync();
+    }
 
     protected override void Dispose(bool disposing)
     {
@@ -677,18 +733,16 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         if (disposing && Directory.Exists(_dataDirectory)) Directory.Delete(_dataDirectory, recursive: true);
     }
 
+    private async Task<string> ReadJsonAsync(Func<ApexPostDbContext, IQueryable<string>> query)
+    {
+        using var scope = Services.CreateScope();
+        return await query(scope.ServiceProvider.GetRequiredService<ApexPostDbContext>()).SingleAsync() ?? "[]";
+    }
+
     private static StaffMember WithPassword(StaffMember member, IPasswordHasher hasher)
     {
         member.SetPasswordHash(hasher.Hash(TestPassword));
         return member;
-    }
-
-    private sealed class TestShippingRateProvider : IShippingRateProvider
-    {
-        public ValueTask<IReadOnlyCollection<ShippingRate>> GetRatesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyCollection<ShippingRate>>([
-                new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, new ZoneCode("ZONE-01"), new Money(12m), new ParcelWeight(5m))
-            ]);
     }
 
     private sealed class LoopbackClientStartupFilter : IStartupFilter

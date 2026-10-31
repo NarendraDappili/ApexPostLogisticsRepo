@@ -1,16 +1,14 @@
-using ApexPost.Application.Abstractions;
-using ApexPost.Infrastructure.Persistence;
 using ApexPost.Infrastructure.Seed;
 
 namespace ApexPost.Web.Services;
 
 /// <summary>
 /// Seeds the synthetic demo data set before the server accepts requests, in Development only and only when
-/// <c>ApexPost:DemoSeed:Enabled</c> is true. Existing non-demo data is never modified.
+/// <c>ApexPost:DemoSeed:Enabled</c> is true. It needs a migrated, empty ApexPostDb; existing data is never modified,
+/// and the schema is never created or migrated here.
 /// </summary>
 public sealed class DemoDataSeedHostedService(
-    JsonRepositoryOptions options,
-    IPasswordHasher passwordHasher,
+    IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
     IHostEnvironment environment,
     ILogger<DemoDataSeedHostedService> logger) : IHostedService
@@ -25,16 +23,17 @@ public sealed class DemoDataSeedHostedService(
             return;
         }
 
+        await using var scope = scopeFactory.CreateAsyncScope();
         try
         {
-            var result = await new DemoDataSeeder(options, demoPassword, passwordHasher).SeedAsync(cancellationToken).ConfigureAwait(false);
-            if (result.WasAlreadySeeded) logger.LogInformation("Demo data is already seeded in {DataDirectory}.", options.DataDirectory);
+            var result = await scope.ServiceProvider.GetRequiredService<DemoDataSeeder>().SeedAsync(demoPassword, cancellationToken).ConfigureAwait(false);
+            if (result.WasAlreadySeeded) logger.LogInformation("ApexPostDb already contains data; demo seeding was skipped.");
             else logger.LogInformation("Seeded demo data: {Branches} branches, {Staff} staff, {Products} products, {Rates} shipping rates, {Transactions} transactions.",
                 result.BranchCount, result.StaffCount, result.ProductCount, result.RateCount, result.HistoricalTransactionCount);
         }
         catch (InvalidOperationException exception)
         {
-            logger.LogWarning("Demo data was not seeded: {Reason} Point ApexPost:DataDirectory at an empty folder to get the demo data set.", exception.Message);
+            logger.LogWarning("Demo data was not seeded: {Reason}", exception.Message);
         }
     }
 

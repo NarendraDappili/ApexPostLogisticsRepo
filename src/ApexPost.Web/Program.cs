@@ -14,6 +14,7 @@ using ApexPost.Domain.ValueObjects;
 using ApexPost.Infrastructure.Persistence;
 using ApexPost.Infrastructure.Pricing;
 using ApexPost.Infrastructure.Repositories;
+using ApexPost.Infrastructure.Seed;
 using ApexPost.Infrastructure.Auditing;
 using ApexPost.Infrastructure.Security;
 using ApexPost.Infrastructure.Simulation;
@@ -25,6 +26,8 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Threading.RateLimiting;
 using ApexPost.Web.Middleware;
 
@@ -79,18 +82,31 @@ var configuredDataDirectory = builder.Configuration["ApexPost:DataDirectory"] ??
 var dataDirectory = Path.IsPathRooted(configuredDataDirectory) ? configuredDataDirectory : Path.Combine(builder.Environment.ContentRootPath, configuredDataDirectory);
 builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDirectory, "data-protection-keys")));
 builder.Services.AddSingleton(new JsonRepositoryOptions { DataDirectory = dataDirectory });
-// One unit of work per request: repositories stage changes in it and each use case commits once.
-builder.Services.AddScoped<JsonUnitOfWork>();
-builder.Services.AddScoped<IUnitOfWork>(services => services.GetRequiredService<JsonUnitOfWork>());
-builder.Services.AddScoped<IBranchRepository, JsonBranchRepository>();
-builder.Services.AddScoped<ICounterRepository, JsonCounterRepository>();
-builder.Services.AddScoped<IStaffMemberRepository, JsonStaffMemberRepository>();
-builder.Services.AddScoped<IProductRepository, JsonProductRepository>();
-builder.Services.AddScoped<IInventoryRepository, JsonInventoryRepository>();
-builder.Services.AddScoped<IShipmentRepository, JsonShipmentRepository>();
-builder.Services.AddScoped<IMoneyOrderRepository, JsonMoneyOrderRepository>();
-builder.Services.AddScoped<ICounterTransactionRepository, JsonCounterTransactionRepository>();
-builder.Services.AddSingleton<IShippingRateProvider, JsonShippingRateProvider>();
+
+// SQL Server is the system of record. The connection string comes from user-secrets in Development
+// (dotnet user-secrets set "ConnectionStrings:ApexPostDb" "...") and from deployment configuration elsewhere.
+var connectionString = builder.Configuration.GetConnectionString(ApexPostDesignTimeDbContextFactory.ConnectionStringName)
+    ?? throw new InvalidOperationException("ConnectionStrings:ApexPostDb is not configured. In Development set it with dotnet user-secrets; see README.md.");
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentStaffContext, HttpCurrentStaffContext>();
+builder.Services.AddScoped<AuditColumnsInterceptor>();
+// One DbContext per request, shared by every repository and the unit of work of that request.
+builder.Services.AddDbContext<ApexPostDbContext>((services, options) => options
+    .UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure())
+    .AddInterceptors(services.GetRequiredService<AuditColumnsInterceptor>()));
+builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+builder.Services.AddScoped<IBranchRepository, EfBranchRepository>();
+builder.Services.AddScoped<ICounterRepository, EfCounterRepository>();
+builder.Services.AddScoped<IStaffMemberRepository, EfStaffMemberRepository>();
+builder.Services.AddScoped<IProductRepository, EfProductRepository>();
+builder.Services.AddScoped<IInventoryRepository, EfInventoryRepository>();
+builder.Services.AddScoped<IShipmentRepository, EfShipmentRepository>();
+builder.Services.AddScoped<IMoneyOrderRepository, EfMoneyOrderRepository>();
+builder.Services.AddScoped<ICounterTransactionRepository, EfCounterTransactionRepository>();
+builder.Services.AddSingleton<ShippingRateCache>();
+builder.Services.AddScoped<IShippingRateProvider, EfShippingRateProvider>();
+builder.Services.AddScoped<DemoDataSeeder>();
 builder.Services.AddSingleton<IAuditStore, JsonAuditStore>();
 builder.Services.AddScoped<AuditActionFilter>();
 builder.Services.AddScoped<ValidationActionFilter>();

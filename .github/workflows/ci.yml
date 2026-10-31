@@ -26,5 +26,18 @@ jobs:
       - name: Build
         run: dotnet build ApexPost.slnx --no-restore --configuration Release -warnaserror
 
+      # Integration tests create and drop their own databases on a real SQL Server. The container is thrown away
+      # with the runner and gets a random password per run, so no credential is stored in the repository.
+      - name: Start SQL Server
+        run: |
+          SA_PASSWORD="Ci-$(openssl rand -hex 16)!"
+          echo "::add-mask::$SA_PASSWORD"
+          docker run -d --name mssql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD="$SA_PASSWORD" -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+          for attempt in $(seq 1 60); do
+            docker exec mssql /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$SA_PASSWORD" -Q "SELECT 1" > /dev/null 2>&1 && break
+            sleep 2
+          done
+          echo "APEXPOST_TEST_SQLSERVER=Server=localhost,1433;User ID=sa;Password=$SA_PASSWORD;TrustServerCertificate=True" >> "$GITHUB_ENV"
+
       - name: Test
         run: dotnet test ApexPost.slnx --no-build --configuration Release --verbosity normal
