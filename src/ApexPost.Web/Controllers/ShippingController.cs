@@ -28,7 +28,7 @@ public sealed class ShippingController(ShippingWorkflowService shipping) : Contr
             return RedirectToAction(nameof(Label), new { id = result.Shipment.Id.Value });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { ModelState.AddModelError(string.Empty, exception.Message); return View(input); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { this.UseConflictStatus(exception); ModelState.AddModelError(string.Empty, exception.Message); return View(input); }
     }
 
     [HttpGet]

@@ -127,7 +127,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     {
         var fixture = new Fixture();
         var open = new CounterTransaction(new("OPEN-1"), new("BR-A"), new("C-1"), new("CLERK-A"), [new(new ProductId("P-1"), "Envelope", 1, new(10m))], new(10m), new(1m), PaymentMethod.Cash);
-        await fixture.Transactions.SaveAsync(open);
+        fixture.Transactions.Add(open);
 
         var voided = await fixture.Service.VoidAsync(open.Id, new("MANAGER-A", "entry correction"));
 
@@ -188,28 +188,61 @@ public sealed class CounterTransactionWorkflowServiceTests
 
         var failingFixture = new Fixture { Notifications = new FailingNotificationSender() };
         var open = new CounterTransaction(new("OPEN-NOTIFY"), new("BR-A"), new("C-1"), new("CLERK-A"), [new(new ProductId("P-1"), "Envelope", 1, new(10m))], new(10m), new(1m), PaymentMethod.Cash);
-        await failingFixture.Transactions.SaveAsync(open);
+        failingFixture.Transactions.Add(open);
         await Assert.ThrowsAsync<IOException>(() => failingFixture.Service.VoidAsync(open.Id, new("MANAGER-A", "correction")));
         Assert.Equal(CounterTransactionStatus.Voided, (await failingFixture.Transactions.FindByIdAsync(open.Id))!.Status);
     }
 
+    // Week 2 compensated stock by hand after a failed save. With a unit of work the stock change and the sale are
+    // one commit, so these tests prove the commit is attempted once and that nothing is raised when it fails.
+    // Proof that the database rows really roll back together belongs to the SQL Server integration tests.
     [Fact]
-    public async Task Failed_transaction_save_compensates_previously_removed_inventory()
+    public async Task Failed_commit_persists_nothing_and_raises_no_sale_events()
     {
-        var fixture = new Fixture(stock: 5) { Transactions = new MemoryTransactionRepository { SaveException = new IOException("write failed") } };
+        var observer = new RecordingObserver();
+        var fixture = new Fixture(stock: 3) { UnitOfWork = new SpyUnitOfWork { FailWith = new IOException("write failed") }, ExtraObserver = observer };
+
         await Assert.ThrowsAsync<IOException>(() => fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 2)));
-        Assert.Equal(5, fixture.Inventory.Quantity);
+
+        Assert.Equal((1, 0), (fixture.UnitOfWork.Attempts, fixture.UnitOfWork.Commits));
+        Assert.Empty(observer.Events);
     }
 
     [Fact]
-    public async Task Cancelled_transaction_save_still_compensates_previously_removed_inventory()
+    public async Task Cancelled_commit_persists_nothing_and_raises_no_sale_events()
     {
         using var cancellation = new CancellationTokenSource();
-        var fixture = new Fixture(stock: 5) { Transactions = new MemoryTransactionRepository { CancellationOnSave = cancellation } };
+        var observer = new RecordingObserver();
+        var fixture = new Fixture(stock: 3) { UnitOfWork = new SpyUnitOfWork { CancelOnCommit = cancellation }, ExtraObserver = observer };
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 2), cancellation.Token));
 
-        Assert.Equal(5, fixture.Inventory.Quantity);
+        Assert.Equal(0, fixture.UnitOfWork.Commits);
+        Assert.Empty(observer.Events);
+    }
+
+    [Fact]
+    public async Task Checkout_and_reversal_each_commit_exactly_once()
+    {
+        var fixture = new Fixture(stock: 5);
+        fixture.Shipments.Items.Add(Shipment("SHP-1", "TX-1"));
+
+        var paid = await fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 2, shipments: ["SHP-1"]));
+        Assert.Equal(1, fixture.UnitOfWork.Commits);
+
+        await fixture.Service.VoidAsync(paid.Id, new("MANAGER-A", "keyed in error"));
+        Assert.Equal(2, fixture.UnitOfWork.Commits);
+    }
+
+    [Fact]
+    public async Task Rejected_checkout_or_reversal_never_commits()
+    {
+        var fixture = new Fixture(stock: 1);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 2)));
+        await Assert.ThrowsAsync<CounterTransactionNotFoundException>(() => fixture.Service.RefundAsync(new("TX-404"), new("MANAGER-A", "no such sale")));
+
+        Assert.Equal(0, fixture.UnitOfWork.Attempts);
     }
 
     private static MoneyOrder CreateMoneyOrder(string id, string context, decimal amount, IdentityVerificationOutcome outcome)
@@ -232,6 +265,7 @@ public sealed class CounterTransactionWorkflowServiceTests
         public MemoryShipmentRepository Shipments { get; } = new();
         public MemoryMoneyOrderRepository MoneyOrders { get; } = new();
         public MemoryTransactionRepository Transactions { get; set; } = new();
+        public SpyUnitOfWork UnitOfWork { get; set; } = new();
         public INotificationSender? Notifications { get; set; }
         public IEventObserver? ExtraObserver { get; set; }
         public CounterTransactionWorkflowService Service
@@ -241,9 +275,9 @@ public sealed class CounterTransactionWorkflowServiceTests
                 IEventObserver[] observers = [.. new IEventObserver?[] { Notifications is null ? null : new NotificationEventObserver(Notifications, new NotificationRecipients()), ExtraObserver }.OfType<IEventObserver>()];
                 var events = observers.Length == 0 ? null : new EventPublisher(observers);
                 return new(new BranchRepo(Branch), new CounterRepo(Counter), new StaffRepo(() => [Clerk, Manager]), new ProductRepo(new Product(new("P-1"), "Envelope", new(10m))),
-                    new InventoryService(Inventory, new InventoryServiceOptions { LowStockThreshold = 2 }, events), Shipments,
+                    new InventoryService(Inventory, UnitOfWork, new InventoryServiceOptions { LowStockThreshold = 2 }, events), Shipments,
                     new RateProvider([new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, new ZoneCode("ZONE-A"), new Money(8m), new ParcelWeight(5m))]),
-                    MoneyOrders, Transactions, new MoneyOrderPolicy(new(100m)), new FixedRateTaxPolicy(.1m), events);
+                    MoneyOrders, Transactions, new MoneyOrderPolicy(new(100m)), new FixedRateTaxPolicy(.1m), UnitOfWork, events);
             }
         }
 
@@ -252,15 +286,15 @@ public sealed class CounterTransactionWorkflowServiceTests
             new(transactionId, "BR-A", "C-1", Clerk.Id.Value, PaymentMethod.Cash, retailQuantity > 0 ? [new("P-1", retailQuantity)] : [], shipments ?? [], moneyOrders ?? []);
     }
 
-    private sealed class BranchRepo(Branch branch) : IBranchRepository { public Task<Branch?> FindByCodeAsync(BranchCode code, CancellationToken t = default) => Task.FromResult<Branch?>(code == branch.Code ? branch : null); public Task<IReadOnlyCollection<Branch>> GetAllAsync(CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Branch>>([branch]); public Task SaveAsync(Branch b, CancellationToken t = default) => Task.CompletedTask; }
-    private sealed class CounterRepo(Counter counter) : ICounterRepository { public Task<Counter?> FindByCodeAsync(BranchCode b, CounterCode c, CancellationToken t = default) => Task.FromResult<Counter?>(b == counter.BranchCode && c == counter.Code ? counter : null); public Task<IReadOnlyCollection<Counter>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Counter>>(b == counter.BranchCode ? [counter] : []); public Task SaveAsync(Counter c, CancellationToken t = default) => Task.CompletedTask; }
-    private sealed class StaffRepo(Func<IReadOnlyCollection<StaffMember>> staff) : IStaffMemberRepository { public Task<StaffMember?> FindByIdAsync(StaffId id, CancellationToken t = default) => Task.FromResult(staff().FirstOrDefault(x => x.Id == id)); public Task<IReadOnlyCollection<StaffMember>> GetAllAsync(CancellationToken t = default) => Task.FromResult(staff()); public Task SaveAsync(StaffMember s, CancellationToken t = default) => Task.CompletedTask; }
-    private sealed class ProductRepo(Product product) : IProductRepository { public Task<Product?> FindByIdAsync(ProductId id, CancellationToken t = default) => Task.FromResult<Product?>(id == product.Id ? product : null); public Task<IReadOnlyCollection<Product>> GetAllAsync(CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Product>>([product]); public Task SaveAsync(Product p, CancellationToken t = default) => Task.CompletedTask; }
+    private sealed class BranchRepo(Branch branch) : IBranchRepository { public Task<Branch?> FindByCodeAsync(BranchCode code, CancellationToken t = default) => Task.FromResult<Branch?>(code == branch.Code ? branch : null); public Task<IReadOnlyCollection<Branch>> GetAllAsync(CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Branch>>([branch]); public void Add(Branch b) { } public void Update(Branch b) { } }
+    private sealed class CounterRepo(Counter counter) : ICounterRepository { public Task<Counter?> FindByCodeAsync(BranchCode b, CounterCode c, CancellationToken t = default) => Task.FromResult<Counter?>(b == counter.BranchCode && c == counter.Code ? counter : null); public Task<IReadOnlyCollection<Counter>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Counter>>(b == counter.BranchCode ? [counter] : []); public void Add(Counter c) { } }
+    private sealed class StaffRepo(Func<IReadOnlyCollection<StaffMember>> staff) : IStaffMemberRepository { public Task<StaffMember?> FindByIdAsync(StaffId id, CancellationToken t = default) => Task.FromResult(staff().FirstOrDefault(x => x.Id == id)); public Task<IReadOnlyCollection<StaffMember>> GetAllAsync(CancellationToken t = default) => Task.FromResult(staff()); public void Add(StaffMember s) { } public void Update(StaffMember s) { } }
+    private sealed class ProductRepo(Product product) : IProductRepository { public Task<Product?> FindByIdAsync(ProductId id, CancellationToken t = default) => Task.FromResult<Product?>(id == product.Id ? product : null); public Task<IReadOnlyCollection<Product>> GetAllAsync(CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Product>>([product]); }
     private sealed class RateProvider(IReadOnlyCollection<ShippingRate> rates) : IShippingRateProvider { public ValueTask<IReadOnlyCollection<ShippingRate>> GetRatesAsync(CancellationToken t = default) => ValueTask.FromResult(rates); }
-    private sealed class MemoryShipmentRepository : IShipmentRepository { public List<Shipment> Items { get; } = []; public Task<Shipment?> FindByIdAsync(ShipmentId id, CancellationToken t = default) => Task.FromResult(Items.FirstOrDefault(x => x.Id == id)); public Task<IReadOnlyCollection<Shipment>> FindByOriginBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Shipment>>(Items.Where(x => x.OriginBranchCode == b).ToArray()); public Task SaveAsync(Shipment s, CancellationToken t = default) { Items.Add(s); return Task.CompletedTask; } }
-    private sealed class MemoryMoneyOrderRepository : IMoneyOrderRepository { public MoneyOrder? Order { get; set; } public Task<MoneyOrder?> FindByIdAsync(MoneyOrderId id, CancellationToken t = default) => Task.FromResult(Order?.Id == id ? Order : null); public Task<IReadOnlyCollection<MoneyOrder>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<MoneyOrder>>(Order is not null && Order.BranchCode == b ? [Order] : []); public Task SaveAsync(MoneyOrder m, CancellationToken t = default) { Order = m; return Task.CompletedTask; } }
-    private sealed class MemoryTransactionRepository : ICounterTransactionRepository { private readonly Dictionary<string, CounterTransaction> _items = []; public Exception? SaveException { get; init; } public CancellationTokenSource? CancellationOnSave { get; init; } public Task<CounterTransaction?> FindByIdAsync(CounterTransactionId id, CancellationToken t = default) => Task.FromResult(_items.GetValueOrDefault(id.Value)); public Task<IReadOnlyCollection<CounterTransaction>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<CounterTransaction>>(_items.Values.Where(x => x.BranchCode == b).ToArray()); public Task SaveAsync(CounterTransaction tx, CancellationToken t = default) { if (SaveException is not null) throw SaveException; CancellationOnSave?.Cancel(); t.ThrowIfCancellationRequested(); _items[tx.Id.Value] = tx; return Task.CompletedTask; } }
-    private sealed class MemoryInventoryRepository(BranchInventoryItem item) : IInventoryRepository { private readonly SemaphoreSlim _gate = new(1, 1); public int Quantity => item.Quantity; public Task<BranchInventoryItem?> FindAsync(BranchCode b, ProductId p, CancellationToken t = default) => Task.FromResult<BranchInventoryItem?>(item); public Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<BranchInventoryItem>>(item.BranchCode == b ? [item] : []); public Task SaveAsync(BranchInventoryItem i, CancellationToken t = default) => Task.CompletedTask; public async Task<T> UpdateAsync<T>(BranchCode b, ProductId p, Func<BranchInventoryItem, T> update, CancellationToken t = default) { await _gate.WaitAsync(t); try { return update(item); } finally { _gate.Release(); } } }
+    private sealed class MemoryShipmentRepository : IShipmentRepository { public List<Shipment> Items { get; } = []; public Task<Shipment?> FindByIdAsync(ShipmentId id, CancellationToken t = default) => Task.FromResult(Items.FirstOrDefault(x => x.Id == id)); public Task<IReadOnlyCollection<Shipment>> FindByOriginBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<Shipment>>(Items.Where(x => x.OriginBranchCode == b).ToArray()); public void Add(Shipment s) => Items.Add(s); }
+    private sealed class MemoryMoneyOrderRepository : IMoneyOrderRepository { public MoneyOrder? Order { get; set; } public Task<MoneyOrder?> FindByIdAsync(MoneyOrderId id, CancellationToken t = default) => Task.FromResult(Order?.Id == id ? Order : null); public Task<IReadOnlyCollection<MoneyOrder>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<MoneyOrder>>(Order is not null && Order.BranchCode == b ? [Order] : []); public void Add(MoneyOrder m) => Order = m; public void Update(MoneyOrder m) => Order = m; }
+    private sealed class MemoryTransactionRepository : ICounterTransactionRepository { private readonly Dictionary<string, CounterTransaction> _items = []; public Task<CounterTransaction?> FindByIdAsync(CounterTransactionId id, CancellationToken t = default) => Task.FromResult(_items.GetValueOrDefault(id.Value)); public Task<IReadOnlyCollection<CounterTransaction>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<CounterTransaction>>(_items.Values.Where(x => x.BranchCode == b).ToArray()); public void Add(CounterTransaction tx) => _items[tx.Id.Value] = tx; public void Update(CounterTransaction tx) => _items[tx.Id.Value] = tx; }
+    private sealed class MemoryInventoryRepository(BranchInventoryItem item) : IInventoryRepository { public int Quantity => item.Quantity; public Task<BranchInventoryItem?> FindAsync(BranchCode b, ProductId p, CancellationToken t = default) => Task.FromResult<BranchInventoryItem?>(item); public Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode b, CancellationToken t = default) => Task.FromResult<IReadOnlyCollection<BranchInventoryItem>>(item.BranchCode == b ? [item] : []); public void Add(BranchInventoryItem i) { } public void Update(BranchInventoryItem i) { } }
     private sealed class RecordingNotificationSender : INotificationSender { public List<NotificationMessage> Messages { get; } = []; public Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default) { Messages.Add(message); return Task.CompletedTask; } }
     private sealed class FailingNotificationSender : INotificationSender { public Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default) => Task.FromException(new IOException("simulated notification failure")); }
     private sealed class RecordingObserver : IEventObserver { public List<ApexPostEvent> Events { get; } = []; public Task OnEventAsync(ApexPostEvent applicationEvent, CancellationToken cancellationToken = default) { Events.Add(applicationEvent); return Task.CompletedTask; } }

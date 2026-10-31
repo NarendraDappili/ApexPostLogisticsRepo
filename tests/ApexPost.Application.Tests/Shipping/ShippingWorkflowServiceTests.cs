@@ -74,8 +74,8 @@ public sealed class ShippingWorkflowServiceTests
     [Fact]
     public async Task Create_propagates_persistence_failures_after_pricing()
     {
-        var shipments = new InMemoryShipmentRepository { SaveException = new IOException("Disk unavailable") };
-        var service = CreateService(shipments, [Rate(ShipmentType.Parcel, ShippingServiceLevel.Standard, "ZONE-A", 10m, 5m)]);
+        var shipments = new InMemoryShipmentRepository();
+        var service = CreateService(shipments, [Rate(ShipmentType.Parcel, ShippingServiceLevel.Standard, "ZONE-A", 10m, 5m)], new SpyUnitOfWork { FailWith = new IOException("Disk unavailable") });
 
         await Assert.ThrowsAsync<IOException>(() => service.CreateAsync(Request("SHIP-1", ShipmentType.Parcel, ShippingServiceLevel.Standard, "ZONE-A", 1m)));
     }
@@ -94,14 +94,14 @@ public sealed class ShippingWorkflowServiceTests
     public async Task Missing_origin_or_shipment_is_distinctly_reported()
     {
         var missingBranch = new InMemoryBranchRepository();
-        var service = new ShippingWorkflowService(missingBranch, new InMemoryShipmentRepository(), new InMemoryRateProvider([]));
+        var service = new ShippingWorkflowService(missingBranch, new InMemoryShipmentRepository(), new InMemoryRateProvider([]), new SpyUnitOfWork());
 
         await Assert.ThrowsAsync<OriginBranchNotFoundException>(() => service.CreateAsync(Request("SHIP-1", ShipmentType.Parcel, ShippingServiceLevel.Standard, "ZONE-A", 1m)));
         await Assert.ThrowsAsync<ShipmentNotFoundException>(() => service.GetAsync(new("NOT-THERE")));
     }
 
-    private static ShippingWorkflowService CreateService(InMemoryShipmentRepository shipments, IReadOnlyCollection<ShippingRate> rates) =>
-        new(new InMemoryBranchRepository(new Branch(new("BR-A"), "Branch A")), shipments, new InMemoryRateProvider(rates));
+    private static ShippingWorkflowService CreateService(InMemoryShipmentRepository shipments, IReadOnlyCollection<ShippingRate> rates, SpyUnitOfWork? unitOfWork = null) =>
+        new(new InMemoryBranchRepository(new Branch(new("BR-A"), "Branch A")), shipments, new InMemoryRateProvider(rates), unitOfWork ?? new SpyUnitOfWork());
 
     private static ShipmentCreationRequest Request(string id, ShipmentType type, ShippingServiceLevel service, string zone, decimal weight, decimal length = 10m, decimal width = 10m, decimal height = 1m) =>
         new(id, "BR-A", zone, type, service, weight, length, width, height);
@@ -128,13 +128,13 @@ public sealed class ShippingWorkflowServiceTests
             return Task.FromResult(branch);
         }
         public Task<IReadOnlyCollection<Branch>> GetAllAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<Branch>>(_branches.Values.ToArray());
-        public Task SaveAsync(Branch branch, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void Add(Branch branch) => _branches[branch.Code.Value] = branch;
+        public void Update(Branch branch) => _branches[branch.Code.Value] = branch;
     }
 
     private sealed class InMemoryShipmentRepository : IShipmentRepository
     {
         private readonly Dictionary<string, Shipment> _shipments = [];
-        public Exception? SaveException { get; init; }
         public Task<Shipment?> FindByIdAsync(ShipmentId id, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -143,12 +143,6 @@ public sealed class ShippingWorkflowServiceTests
         }
         public Task<IReadOnlyCollection<Shipment>> FindByOriginBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyCollection<Shipment>>(_shipments.Values.Where(shipment => shipment.OriginBranchCode == branchCode).ToArray());
-        public Task SaveAsync(Shipment shipment, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (SaveException is not null) throw SaveException;
-            _shipments[shipment.Id.Value] = shipment;
-            return Task.CompletedTask;
-        }
+        public void Add(Shipment shipment) => _shipments[shipment.Id.Value] = shipment;
     }
 }

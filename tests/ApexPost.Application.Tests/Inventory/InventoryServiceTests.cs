@@ -99,8 +99,32 @@ public sealed class InventoryServiceTests
         Assert.Equal(0, (await service.GetAvailableStockAsync(new("BR-A"), new("P-1"))).Quantity);
     }
 
-    private static InventoryService CreateService(InMemoryInventoryRepository repository, INotificationSender? notifications = null, int threshold = 2) =>
-        new(repository, new InventoryServiceOptions { LowStockThreshold = threshold },
+    [Fact]
+    public async Task Each_stock_change_commits_once_and_a_rejected_change_never_commits()
+    {
+        var unitOfWork = new SpyUnitOfWork();
+        var service = CreateService(new InMemoryInventoryRepository(new BranchInventoryItem(new("BR-A"), new("P-1"), 2)), unitOfWork: unitOfWork);
+
+        await service.AddStockAsync(new("BR-A"), new("P-1"), 1);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.RemoveStockAsync(new("BR-A"), new("P-1"), 10));
+
+        Assert.Equal((1, 1), (unitOfWork.Attempts, unitOfWork.Commits));
+    }
+
+    [Fact]
+    public async Task Stock_staged_for_a_sale_is_committed_by_the_caller_not_by_the_inventory_service()
+    {
+        var unitOfWork = new SpyUnitOfWork();
+        var service = CreateService(new InMemoryInventoryRepository(new BranchInventoryItem(new("BR-A"), new("P-1"), 5)), unitOfWork: unitOfWork);
+
+        var movement = await service.RemoveStockForSaleAsync(new("BR-A"), new("P-1"), 2);
+
+        Assert.Equal((5, 3), (movement.Before, movement.After));
+        Assert.Equal(0, unitOfWork.Attempts);
+    }
+
+    private static InventoryService CreateService(InMemoryInventoryRepository repository, INotificationSender? notifications = null, int threshold = 2, SpyUnitOfWork? unitOfWork = null) =>
+        new(repository, unitOfWork ?? new SpyUnitOfWork(), new InventoryServiceOptions { LowStockThreshold = threshold },
             notifications is null ? null : new EventPublisher([new NotificationEventObserver(notifications, new NotificationRecipients { Inventory = "inventory-alerts@example.test" })]));
 
     private sealed class RecordingNotificationSender : INotificationSender
@@ -116,7 +140,6 @@ public sealed class InventoryServiceTests
     private sealed class InMemoryInventoryRepository : IInventoryRepository
     {
         private readonly Dictionary<(string Branch, string Product), BranchInventoryItem> _items;
-        private readonly SemaphoreSlim _gate = new(1, 1);
 
         public InMemoryInventoryRepository(params BranchInventoryItem[] items) =>
             _items = items.ToDictionary(item => (item.BranchCode.Value, item.ProductId.Value));
@@ -130,25 +153,10 @@ public sealed class InventoryServiceTests
         public Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyCollection<BranchInventoryItem>>(_items.Values.Where(item => item.BranchCode == branchCode).ToArray());
 
-        public Task SaveAsync(BranchInventoryItem inventoryItem, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        public void Add(BranchInventoryItem inventoryItem) =>
             _items[(inventoryItem.BranchCode.Value, inventoryItem.ProductId.Value)] = inventoryItem;
-            return Task.CompletedTask;
-        }
 
-        public async Task<TResult> UpdateAsync<TResult>(BranchCode branchCode, ProductId productId, Func<BranchInventoryItem, TResult> update, CancellationToken cancellationToken = default)
-        {
-            await _gate.WaitAsync(cancellationToken);
-            try
-            {
-                if (!_items.TryGetValue((branchCode.Value, productId.Value), out var item)) throw new InvalidOperationException("No inventory item exists for the branch and product.");
-                return update(item);
-            }
-            finally
-            {
-                _gate.Release();
-            }
-        }
+        public void Update(BranchInventoryItem inventoryItem) =>
+            _items[(inventoryItem.BranchCode.Value, inventoryItem.ProductId.Value)] = inventoryItem;
     }
 }

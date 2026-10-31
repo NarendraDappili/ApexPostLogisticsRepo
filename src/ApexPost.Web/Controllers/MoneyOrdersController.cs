@@ -38,6 +38,7 @@ public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders)
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
+            this.UseConflictStatus(exception);
             ModelState.AddModelError(string.Empty, exception.Message);
             return View(input);
         }
@@ -72,6 +73,7 @@ public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders)
         catch (MoneyOrderNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
+            this.UseConflictStatus(exception);
             // Never echo the raw document number back to the browser.
             input.DocumentNumber = string.Empty;
             ModelState.Remove(nameof(input.DocumentNumber));

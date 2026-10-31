@@ -207,6 +207,7 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
 {
     public const string PartnerOrigin = "https://tracking-widget.partner.example";
     private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "ApexPost-SecurityTests", Guid.NewGuid().ToString("N"));
+    private readonly TestDatabase _database = new();
     private readonly bool _maintenance;
     private readonly string? _apiKey;
     private readonly string _allowedIp;
@@ -225,6 +226,7 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
         // Program.cs reads these before Build(), which only UseSetting reaches.
         builder.UseSetting("ApexPost:DataDirectory", _dataDirectory);
         builder.UseSetting("ApexPost:RateLimiting:IntegrationPermitLimit", _integrationPermitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        _database.Attach(builder);
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ApexPost:DemoSeed:Enabled"] = "false",
@@ -252,6 +254,12 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
     }
 
     public new HttpClient CreateClient() => base.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        await _database.DropAsync();
+    }
 
     protected override void Dispose(bool disposing)
     {

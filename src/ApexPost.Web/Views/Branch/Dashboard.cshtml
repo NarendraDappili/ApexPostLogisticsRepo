@@ -6,10 +6,23 @@
     <div class="col-sm-2 align-self-end"><button class="btn btn-primary" type="submit">View branch</button></div>
 </form>
 @if (Model.Message is not null) { <p class="text-muted" role="status">@Model.Message</p> }
-@if (Model.BranchName is not null)
+@if (Model.Dashboard is { } branch)
 {
     <section aria-labelledby="branch-details-heading">
         <h2 id="branch-details-heading">Branch details</h2>
-        <dl><dt>Name</dt><dd>@Model.BranchName</dd><dt>Status</dt><dd>@(Model.IsOpen == true ? "Open" : "Closed")</dd></dl>
+        <dl>
+            <dt>Name</dt><dd>@branch.Name</dd>
+            <dt>Status</dt><dd>@(branch.IsOpen ? "Open" : "Closed")</dd>
+            <dt>Region</dt><dd>@branch.Region</dd>
+            <dt>Opening hours</dt><dd>@branch.OpeningHours</dd>
+        </dl>
+    </section>
+    <section aria-labelledby="branch-today-heading">
+        <h2 id="branch-today-heading">Today (UTC)</h2>
+        <dl>
+            <dt>Open counters</dt><dd>@branch.OpenCounters</dd>
+            <dt>Paid transactions</dt><dd>@branch.PaidTransactionsToday</dd>
+            <dt>Products at or below the low-stock threshold</dt><dd>@branch.LowStockProducts</dd>
+        </dl>
     </section>
 }

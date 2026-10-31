@@ -1,4 +1,4 @@
-@model IReadOnlyCollection<ApexPost.Domain.Entities.Branch>
+@model IReadOnlyList<ApexPost.Application.Queries.BranchListItem>
 @{ ViewData["Title"] = "Branches"; }
 <h1>Branches</h1>
 @if (TempData["Notice"] is string notice) { <div class="alert alert-success" role="status" aria-live="polite">@notice</div> }
@@ -11,14 +11,14 @@
         @foreach (var branch in Model)
         {
             <tr>
-                <th scope="row">@branch.Code.Value</th>
+                <th scope="row">@branch.BranchCode</th>
                 <td>@branch.Name</td>
                 <td>@branch.Region</td>
                 <td>@branch.OpeningHours</td>
                 <td>@(branch.IsOpen ? "Open" : "Closed")</td>
                 <td class="d-flex gap-2">
-                    <a class="btn btn-sm btn-outline-primary" asp-action="Edit" asp-route-id="@branch.Code.Value">Edit</a>
-                    <form method="post" asp-action="@(branch.IsOpen ? "Close" : "Open")" asp-route-id="@branch.Code.Value">
+                    <a class="btn btn-sm btn-outline-primary" asp-action="Edit" asp-route-id="@branch.BranchCode">Edit</a>
+                    <form method="post" asp-action="@(branch.IsOpen ? "Close" : "Open")" asp-route-id="@branch.BranchCode">
                         <button class="btn btn-sm @(branch.IsOpen ? "btn-outline-danger" : "btn-outline-success")" type="submit">@(branch.IsOpen ? "Close" : "Reopen")</button>
                     </form>
                 </td>

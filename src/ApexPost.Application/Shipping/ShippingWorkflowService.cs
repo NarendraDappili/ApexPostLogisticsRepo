@@ -1,3 +1,4 @@
+using ApexPost.Application.Abstractions;
 using ApexPost.Application.Pricing;
 using ApexPost.Application.Repositories;
 using ApexPost.Application.Validation;
@@ -13,15 +14,18 @@ public sealed class ShippingWorkflowService
     private readonly IBranchRepository _branches;
     private readonly IShipmentRepository _shipments;
     private readonly IShippingRateProvider _rates;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public ShippingWorkflowService(IBranchRepository branches, IShipmentRepository shipments, IShippingRateProvider rates)
+    public ShippingWorkflowService(IBranchRepository branches, IShipmentRepository shipments, IShippingRateProvider rates, IUnitOfWork unitOfWork)
     {
         ArgumentNullException.ThrowIfNull(branches);
         ArgumentNullException.ThrowIfNull(shipments);
         ArgumentNullException.ThrowIfNull(rates);
+        ArgumentNullException.ThrowIfNull(unitOfWork);
         _branches = branches;
         _shipments = shipments;
         _rates = rates;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task<ShipmentCreationResult> CreateAsync(ShipmentCreationRequest request, CancellationToken cancellationToken = default)
@@ -43,7 +47,8 @@ public sealed class ShippingWorkflowService
 
         var rates = await _rates.GetRatesAsync(cancellationToken).ConfigureAwait(false);
         var price = ShippingPriceCalculator.Calculate(new ShippingPricingRequest(shipment, request.ShipmentType, request.ServiceLevel), rates);
-        await _shipments.SaveAsync(shipment, cancellationToken).ConfigureAwait(false);
+        _shipments.Add(shipment);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return new ShipmentCreationResult(shipment, request.ShipmentType, request.ServiceLevel, price);
     }
 

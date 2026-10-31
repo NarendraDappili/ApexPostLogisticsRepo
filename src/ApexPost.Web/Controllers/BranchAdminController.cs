@@ -1,4 +1,5 @@
 using ApexPost.Application.BranchManagement;
+using ApexPost.Application.Queries;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Web.Models;
 using ApexPost.Web.Security;
@@ -9,11 +10,11 @@ namespace ApexPost.Web.Controllers;
 
 /// <summary>Branch administration. Administrator-only and, as an admin endpoint, limited to the configured IP allowlist.</summary>
 [Authorize(Roles = "Administrator"), RequireIpAllowlist]
-public sealed class BranchAdminController(BranchManagementService branchManagement) : Controller
+public sealed class BranchAdminController(BranchManagementService branchManagement, IBranchQueries branchQueries) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index(CancellationToken cancellationToken) =>
-        View(await branchManagement.GetAllAsync(cancellationToken));
+        View(await branchQueries.GetBranchesAsync(cancellationToken));
 
     [HttpGet]
     public IActionResult Create() => View(new BranchFormViewModel());
@@ -31,6 +32,7 @@ public sealed class BranchAdminController(BranchManagementService branchManageme
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
+            this.UseConflictStatus(exception);
             ModelState.AddModelError(string.Empty, exception.Message);
             return View(input);
         }
@@ -63,6 +65,7 @@ public sealed class BranchAdminController(BranchManagementService branchManageme
         catch (BranchNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
+            this.UseConflictStatus(exception);
             ModelState.AddModelError(string.Empty, exception.Message);
             return View(input);
         }

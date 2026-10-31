@@ -7,7 +7,7 @@ public interface IStaffMemberRepository
 {
     Task<StaffMember?> FindByIdAsync(StaffId id, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyCollection<StaffMember>> GetAllAsync(CancellationToken cancellationToken = default);
+    void Add(StaffMember staffMember);
 
-    Task SaveAsync(StaffMember staffMember, CancellationToken cancellationToken = default);
+    void Update(StaffMember staffMember);
 }

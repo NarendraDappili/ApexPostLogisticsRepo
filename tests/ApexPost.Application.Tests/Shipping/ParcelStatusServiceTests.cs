@@ -68,6 +68,6 @@ public sealed class ParcelStatusServiceTests
         private readonly Shipment _shipment = new(new("SHP-1"), new("BR-A"), new("ZONE-A"), new(1m), new(1m, 1m, 1m), ShipmentType.Parcel, ShippingServiceLevel.Standard);
         public Task<Shipment?> FindByIdAsync(ShipmentId id, CancellationToken cancellationToken = default) => Task.FromResult(id == _shipment.Id ? _shipment : null);
         public Task<IReadOnlyCollection<Shipment>> FindByOriginBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<Shipment>>([_shipment]);
-        public Task SaveAsync(Shipment shipment, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void Add(Shipment shipment) { }
     }
 }

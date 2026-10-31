@@ -18,18 +18,24 @@ public sealed class ProblemDetailsExceptionMiddleware(RequestDelegate next, ILog
         catch (Exception exception) when (!context.Response.HasStarted)
         {
             var correlationId = CorrelationIdMiddleware.Get(context);
-            logger.LogError("Unhandled request failure {CorrelationId} ({ExceptionType})", correlationId, exception.GetType().Name);
+            var mapping = ExceptionProblemMapping.Map(exception);
+            if (mapping is null) logger.LogError("Unhandled request failure {CorrelationId} ({ExceptionType})", correlationId, exception.GetType().Name);
+            else logger.LogWarning("Request rejected with {StatusCode} {CorrelationId} ({ExceptionType})", mapping.Status, correlationId, exception.GetType().Name);
+
+            var status = mapping?.Status ?? StatusCodes.Status500InternalServerError;
             context.Response.Clear();
-            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            context.Response.StatusCode = status;
             var problem = new ProblemDetails
             {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "An unexpected server error occurred.",
-                Type = "https://httpstatuses.com/500"
+                Status = status,
+                Title = mapping?.Title ?? "An unexpected server error occurred.",
+                // Only business messages written for the user are returned; a 500 never carries exception text.
+                Detail = mapping?.Detail,
+                Type = $"https://httpstatuses.com/{status}"
             };
             problem.Extensions["traceId"] = context.TraceIdentifier;
             problem.Extensions["correlationId"] = correlationId;
-            await context.Response.WriteAsJsonAsync(problem, cancellationToken: context.RequestAborted).ConfigureAwait(false);
+            await context.Response.WriteAsJsonAsync(problem, options: null, contentType: "application/problem+json", cancellationToken: context.RequestAborted).ConfigureAwait(false);
         }
     }
 }

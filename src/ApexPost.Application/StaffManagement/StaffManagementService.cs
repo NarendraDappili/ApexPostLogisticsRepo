@@ -14,7 +14,7 @@ public sealed record StaffDetailsRequest(
     StaffRole Role,
     [property: NotBlank(48)] string BranchCode);
 
-public sealed class StaffMemberNotFoundException(string message) : InvalidOperationException(message);
+public sealed class StaffMemberNotFoundException(string message) : NotFoundException(message);
 
 /// <summary>Adds, updates, deactivates and reactivates staff. Passwords are hashed before they reach the repository.</summary>
 public sealed class StaffManagementService
@@ -23,16 +23,15 @@ public sealed class StaffManagementService
     private readonly IStaffMemberRepository _staff;
     private readonly IBranchRepository _branches;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public StaffManagementService(IStaffMemberRepository staff, IBranchRepository branches, IPasswordHasher passwordHasher)
+    public StaffManagementService(IStaffMemberRepository staff, IBranchRepository branches, IPasswordHasher passwordHasher, IUnitOfWork unitOfWork)
     {
         _staff = staff ?? throw new ArgumentNullException(nameof(staff));
         _branches = branches ?? throw new ArgumentNullException(nameof(branches));
         _passwordHasher = passwordHasher ?? throw new ArgumentNullException(nameof(passwordHasher));
+        _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
     }
-
-    public async Task<IReadOnlyCollection<StaffMember>> GetAllAsync(CancellationToken cancellationToken = default) =>
-        (await _staff.GetAllAsync(cancellationToken).ConfigureAwait(false)).OrderBy(member => member.Id.Value, StringComparer.Ordinal).ToArray();
 
     public async Task<StaffMember> GetAsync(StaffId staffId, CancellationToken cancellationToken = default)
     {
@@ -55,7 +54,8 @@ public sealed class StaffManagementService
 
         var member = new StaffMember(id, request.Name, request.Role, branchCode, request.Email);
         member.SetPasswordHash(_passwordHasher.Hash(initialPassword));
-        await _staff.SaveAsync(member, cancellationToken).ConfigureAwait(false);
+        _staff.Add(member);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return member;
     }
 
@@ -70,7 +70,8 @@ public sealed class StaffManagementService
 
         member.UpdateDetails(request.Name, request.Email, request.Role, branchCode);
         if (!string.IsNullOrEmpty(newPassword)) member.SetPasswordHash(_passwordHasher.Hash(newPassword));
-        await _staff.SaveAsync(member, cancellationToken).ConfigureAwait(false);
+        _staff.Update(member);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return member;
     }
 
@@ -80,7 +81,8 @@ public sealed class StaffManagementService
         if (!active && staffId == actingStaffId) throw new InvalidOperationException("You cannot deactivate your own account.");
         var member = await GetAsync(staffId, cancellationToken).ConfigureAwait(false);
         if (active) member.Activate(); else member.Deactivate();
-        await _staff.SaveAsync(member, cancellationToken).ConfigureAwait(false);
+        _staff.Update(member);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return member;
     }
 

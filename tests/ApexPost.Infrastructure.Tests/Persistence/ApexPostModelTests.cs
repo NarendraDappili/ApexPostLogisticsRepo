@@ -93,7 +93,10 @@ public sealed class ApexPostModelTests
     {
         var product = Model.FindEntityType(typeof(Product))!;
 
-        Assert.Equal("decimal(18,2)", product.FindProperty(nameof(Product.UnitPrice))!.GetColumnType());
+        // The catalogue price is a complex property (so prices can be revised set-based) on the same decimal(18,2) column.
+        var price = product.FindComplexProperty(nameof(Product.UnitPrice))!.ComplexType.FindProperty(nameof(Money.Amount))!;
+        Assert.Equal(("decimal(18,2)", "UnitPrice"), (price.GetColumnType(), price.GetColumnName()));
+        Assert.Equal("decimal(18,2)", Model.FindEntityType(typeof(CounterTransaction))!.FindProperty(nameof(CounterTransaction.Subtotal))!.GetColumnType());
         Assert.Equal("varchar(32)", product.FindProperty(nameof(Product.Sku))!.GetColumnType());
         Assert.Equal("nvarchar(160)", product.FindProperty(nameof(Product.Name))!.GetColumnType());
     }

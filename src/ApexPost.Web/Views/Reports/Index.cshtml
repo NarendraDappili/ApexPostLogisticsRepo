@@ -9,7 +9,7 @@ else {
 @if (Model.DailySales.PaidTransactionCount == 0) { <p role="status">No paid transactions were recorded for this branch on this day.</p> }
 <h2>Low stock (threshold: @Model.LowStock.Threshold)</h2>
 @if (Model.LowStock.Items.Count == 0) { <p role="status">No products are at or below the low-stock threshold.</p> }
-else { <ul>@foreach (var item in Model.LowStock.Items) { <li>@item.ProductId.Value: @item.Quantity units</li> }</ul> }
+else { <ul>@foreach (var item in Model.LowStock.Items) { <li>@item.ProductId.Value - @item.Name: @item.Quantity units</li> }</ul> }
 <h2>Shipping volume</h2>
 @if (Model.Shipping.Items.Count == 0) { <p role="status">No shipments are recorded for this branch.</p> }
 else { <ul>@foreach (var item in Model.Shipping.Items) { <li>@item.DestinationZoneCode.Value / @item.ServiceLevel: @item.Count</li> }</ul> }

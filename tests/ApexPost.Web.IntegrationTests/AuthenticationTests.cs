@@ -6,11 +6,15 @@ using ApexPost.Application.Repositories;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
+using ApexPost.Infrastructure.Persistence;
+using ApexPost.Infrastructure.Persistence.Entities;
+using ApexPost.Infrastructure.Repositories;
 using ApexPost.Infrastructure.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -44,7 +48,9 @@ public sealed class AuthenticationTests
         Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/Branch/Dashboard", response.Headers.Location?.OriginalString);
         Assert.Contains(response.Headers.GetValues("Set-Cookie"), header => header.Contains("httponly", StringComparison.OrdinalIgnoreCase) && header.Contains("samesite=strict", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(AuthWebApplicationFactory.TestPassword, await factory.ReadDataFileAsync("staff-members.json"), StringComparison.Ordinal);
+        var storedStaff = await factory.ReadStoredStaffAsync();
+        Assert.Contains("PBKDF2-SHA256$", storedStaff, StringComparison.Ordinal);
+        Assert.DoesNotContain(AuthWebApplicationFactory.TestPassword, storedStaff, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -138,6 +144,223 @@ public sealed class AuthenticationTests
 
         Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
         Assert.StartsWith("/Account/AccessDenied", response.Headers.Location?.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task A_sale_posted_through_the_counter_screen_is_stored_with_lines_payment_and_audit_columns()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+
+        var response = await CheckoutAsync(client, "TX-WEB-STORED", [("PRD-001", 3)]);
+
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
+        var stored = await factory.ReadStoredSaleAsync("TX-WEB-STORED");
+        Assert.Equal(("Paid", "BR-NORTH", "C-01", "STF-CLERK-01", 30.00m), (stored.Status, stored.BranchCode, stored.CounterCode, stored.ClerkStaffCode, stored.Subtotal));
+        Assert.Equal((1, 3, "Cash", 30.00m), (stored.LineCount, stored.UnitsSold, stored.PaymentMethod, stored.PaymentAmount));
+        // The audit column records the signed-in clerk, taken from the cookie and never from the form.
+        Assert.Equal("STF-CLERK-01", stored.CreatedBy);
+        Assert.Equal(97, await factory.GetNorthBranchStockAsync());
+    }
+
+    [Fact]
+    public async Task Two_clerks_selling_the_last_unit_leave_one_sale_and_the_other_gets_a_409()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await using var racingFactory = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IInventoryRepository>();
+            services.AddScoped<IInventoryRepository>(provider => new StockSoldByAnotherClerkMeanwhile(
+                new EfInventoryRepository(provider.GetRequiredService<ApexPostDbContext>()), factory.DatabaseConnectionString));
+        }));
+        await factory.SeedAsync();
+        await factory.SetNorthBranchStockAsync(1);
+        using var client = racingFactory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+
+        var response = await CheckoutAsync(client, "TX-WEB-LAST-UNIT", [("PRD-001", 1)]);
+
+        Assert.Equal(System.Net.HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("Someone else changed this data", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        // The other clerk's sale took the last unit; this one stored nothing and stock never went below zero.
+        Assert.Equal(0, await factory.GetNorthBranchStockAsync());
+        Assert.False(await factory.SaleExistsAsync("TX-WEB-LAST-UNIT"));
+    }
+
+    [Fact]
+    public async Task Void_errors_are_problem_details_with_404_for_a_missing_sale_and_400_for_a_broken_rule()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var clerk = factory.CreateClient();
+        await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await CheckoutAsync(clerk, "TX-WEB-TWICE", [("PRD-001", 1)])).StatusCode);
+        using var manager = factory.CreateClient();
+        await SignInAsync(manager, "STF-MANAGER-01", AuthWebApplicationFactory.TestPassword);
+
+        var missing = await VoidAsync(manager, "TX-WEB-NOWHERE");
+        var first = await VoidAsync(manager, "TX-WEB-TWICE");
+        var second = await VoidAsync(manager, "TX-WEB-TWICE");
+
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal("application/problem+json", missing.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("\"correlationId\"", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, first.StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, second.StatusCode);
+        Assert.Equal("application/problem+json", second.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("Only an open or paid transaction can be voided.", await second.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_staff_email_that_is_already_in_use_is_a_409_conflict_on_the_form()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var admin = factory.CreateClient();
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+        var token = await GetAntiforgeryTokenAsync(admin, "/StaffAdmin/Create");
+
+        // admin@example.test already belongs to STF-ADMIN-01; only the unique index on Staff.Email knows that.
+        var response = await admin.PostAsync("/StaffAdmin/Create", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("StaffId", "STF-DUP-EMAIL"), new("Name", "Duplicate Email"),
+            new("Email", "ADMIN@example.test"), new("Role", "0"), new("BranchCode", "BR-NORTH"), new("Password", "duplicate-email-password") ]));
+
+        Assert.Equal(System.Net.HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("A record with the same identifier already exists.", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Reports_show_the_days_retail_and_service_totals_from_the_database()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var clerk = factory.CreateClient();
+        await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await CheckoutAsync(clerk, "TX-RPT-1", [("PRD-001", 3)])).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await CreateShipmentAsync(clerk, "SHP-RPT", "TX-RPT-2", weight: "4")).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await CheckoutAsync(clerk, "TX-RPT-2", [], shipmentIds: "SHP-RPT")).StatusCode);
+
+        using var manager = factory.CreateClient();
+        await SignInAsync(manager, "STF-MANAGER-01", AuthWebApplicationFactory.TestPassword);
+        var page = await manager.GetStringAsync("/Reports");
+
+        Assert.Contains("Retail</dt><dd class=\"col-sm-9\">30.00</dd>", page, StringComparison.Ordinal);
+        Assert.Contains("Services</dt><dd class=\"col-sm-9\">12.00</dd>", page, StringComparison.Ordinal);
+        Assert.Contains("Paid transactions</dt><dd class=\"col-sm-9\">2</dd>", page, StringComparison.Ordinal);
+        Assert.Contains("ZONE-01 / Standard: 1", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Over_posted_status_identity_and_audit_fields_have_no_effect_on_a_sale()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var clerk = factory.CreateClient();
+        await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        var token = await GetAntiforgeryTokenAsync(clerk, "/CounterTransactions/New");
+
+        var response = await clerk.PostAsync("/CounterTransactions/New", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("TransactionId", "TX-WEB-OVERPOST"), new("BranchCode", "BR-NORTH"),
+            new("CounterCode", "C-01"), new("PaymentMethod", "0"), new("RetailLines[0].ProductId", "PRD-001"), new("RetailLines[0].Quantity", "1"),
+            // None of these exist on the input model, so the binder ignores them; the command is built only from the clerk's claims and the basket.
+            new("Status", "Voided"), new("Subtotal", "0.01"), new("Total", "0.01"), new("Tax", "0"), new("Id", "TX-HIJACK"),
+            new("ClerkId", "STF-MANAGER-01"), new("AuthorizedBy", "STF-MANAGER-01"), new("StatusReason", "forged"),
+            new("CreatedBy", "attacker"), new("CreatedAtUtc", "2000-01-01"), new("RowVersion", "AAAAAAAAAAA=") ]));
+
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
+        var stored = await factory.ReadStoredSaleAsync("TX-WEB-OVERPOST");
+        Assert.Equal(("Paid", "STF-CLERK-01", 10.00m, "STF-CLERK-01"), (stored.Status, stored.ClerkStaffCode, stored.Subtotal, stored.CreatedBy));
+        Assert.False(await factory.SaleExistsAsync("TX-HIJACK"));
+    }
+
+    [Fact]
+    public async Task Over_posted_activity_password_and_audit_fields_have_no_effect_on_a_staff_edit()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var admin = factory.CreateClient();
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+        var token = await GetAntiforgeryTokenAsync(admin, "/StaffAdmin/Edit/STF-CLERK-01");
+
+        var response = await admin.PostAsync("/StaffAdmin/Edit/STF-CLERK-01", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("StaffId", "STF-CLERK-01"), new("Name", "Renamed Clerk"),
+            new("Email", "renamed.clerk@example.test"), new("Role", "0"), new("BranchCode", "BR-NORTH"),
+            // IsActive is on the form model for display only; deactivation has its own action. The rest are not bindable at all.
+            new("IsActive", "false"), new("PasswordHash", "PBKDF2-SHA256$1$forged$forged"), new("CreatedBy", "attacker"), new("StaffMemberId", "999") ]));
+
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
+        var stored = await factory.ReadStoredStaffAsync();
+        Assert.Contains("Renamed Clerk", stored, StringComparison.Ordinal);
+        Assert.DoesNotContain("forged", stored, StringComparison.Ordinal);
+        Assert.DoesNotContain("attacker", stored, StringComparison.Ordinal);
+        using var clerk = factory.CreateClient();
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Administrator_revises_a_category_price_set_based_and_other_roles_are_refused()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var clerk = factory.CreateClient();
+        await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        var clerkToken = await GetAntiforgeryTokenAsync(clerk, "/CounterTransactions/New");
+        var refused = await clerk.PostAsync("/Catalogue/RevisePrices", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", clerkToken), new("CategoryCode", "GENERAL"), new("Percentage", "10") ]));
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, refused.StatusCode);
+
+        using var admin = factory.CreateClient();
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+        var token = await GetAntiforgeryTokenAsync(admin, "/Catalogue");
+        var revised = await admin.PostAsync("/Catalogue/RevisePrices", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("CategoryCode", "GENERAL"), new("Percentage", "10") ]));
+
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, revised.StatusCode);
+        var catalogue = WebUtility.HtmlDecode(await admin.GetStringAsync("/Catalogue"));
+        Assert.Contains("1 product(s) in GENERAL were repriced by +10%.", catalogue, StringComparison.Ordinal);
+        Assert.Contains("<td>11.00</td>", catalogue, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Branch_manager_adjusts_stock_through_the_procedure_and_a_refused_adjustment_is_explained()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var clerk = factory.CreateClient();
+        await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        var clerkToken = await GetAntiforgeryTokenAsync(clerk, "/CounterTransactions/New");
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, (await clerk.PostAsync("/Catalogue/AdjustStock", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", clerkToken), new("ProductId", "PRD-001"), new("Delta", "5"), new("Reason", "Not allowed") ]))).StatusCode);
+
+        using var manager = factory.CreateClient();
+        await SignInAsync(manager, "STF-MANAGER-01", AuthWebApplicationFactory.TestPassword);
+        var adjusted = await AdjustStockAsync(manager, "-5", "Damaged in transit");
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, adjusted.StatusCode);
+        Assert.Equal("/Catalogue?branchCode=BR-NORTH", adjusted.Headers.Location?.OriginalString);
+        Assert.Contains("Stock of PRD-001 at BR-NORTH is now 95 (-5).", WebUtility.HtmlDecode(await manager.GetStringAsync(adjusted.Headers.Location!)), StringComparison.Ordinal);
+
+        var refused = await AdjustStockAsync(manager, "-1000", "Count error");
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, refused.StatusCode);
+        Assert.Contains("Stock cannot be reduced below zero.", await manager.GetStringAsync(refused.Headers.Location!), StringComparison.Ordinal);
+        Assert.Equal(95, await factory.GetNorthBranchStockAsync());
+    }
+
+    [Fact]
+    public async Task An_invalid_price_revision_is_a_400_validation_problem_not_a_server_error()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var admin = factory.CreateClient();
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+        var token = await GetAntiforgeryTokenAsync(admin, "/Catalogue");
+
+        var response = await admin.PostAsync("/Catalogue/RevisePrices", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("CategoryCode", "GENERAL"), new("Percentage", "500") ]));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("Percentage", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -265,7 +488,9 @@ public sealed class AuthenticationTests
         Assert.Equal(IdentityVerificationOutcome.Verified, saved.IdentityVerificationOutcome);
         Assert.Equal("****1234", saved.IdentityVerification?.MaskedDocumentReference.Value);
         Assert.Equal(17.50m, saved.Fee.Amount);
-        Assert.DoesNotContain("SYNTH1234", await factory.ReadDataFileAsync("money-orders.json"), StringComparison.Ordinal);
+        var storedMoneyOrders = await factory.ReadStoredMoneyOrdersAsync();
+        Assert.Contains("****1234", storedMoneyOrders, StringComparison.Ordinal);
+        Assert.DoesNotContain("SYNTH1234", storedMoneyOrders, StringComparison.Ordinal);
 
         var checkout = await CheckoutAsync(client, transactionId, [], moneyOrderIds: orderId);
         Assert.Equal(System.Net.HttpStatusCode.Redirect, checkout.StatusCode);
@@ -430,6 +655,26 @@ public sealed class AuthenticationTests
     }
 
     [Fact]
+    public async Task An_audit_store_failure_is_logged_and_never_breaks_a_committed_sale()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await using var failingAudit = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IAuditStore>();
+            services.AddScoped<IAuditStore, UnavailableAuditStore>();
+        }));
+        await factory.SeedAsync();
+        using var client = failingAudit.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+
+        var response = await CheckoutAsync(client, "TX-WEB-AUDIT-DOWN", [("PRD-001", 1)]);
+
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, response.StatusCode);
+        Assert.True(await factory.SaleExistsAsync("TX-WEB-AUDIT-DOWN"));
+        Assert.Contains(factory.LogMessages, message => message.Contains("Unable to append MVC audit record for CounterTransactions/New", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Audit_records_successful_authenticated_action_with_correlation_and_no_sensitive_input()
     {
         await using var factory = new AuthWebApplicationFactory();
@@ -493,6 +738,20 @@ public sealed class AuthenticationTests
         var token = await GetAntiforgeryTokenAsync(client);
         return await client.PostAsync("/Account/Login", new FormUrlEncodedContent([
             new("__RequestVerificationToken", token), new("StaffId", staffId), new("Password", password) ]));
+    }
+
+    private static async Task<HttpResponseMessage> AdjustStockAsync(HttpClient manager, string delta, string reason)
+    {
+        var token = await GetAntiforgeryTokenAsync(manager, "/Catalogue");
+        return await manager.PostAsync("/Catalogue/AdjustStock", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("ProductId", "PRD-001"), new("Delta", delta), new("Reason", reason) ]));
+    }
+
+    private static async Task<HttpResponseMessage> VoidAsync(HttpClient manager, string transactionId)
+    {
+        var token = await GetAntiforgeryTokenAsync(manager, "/CounterTransactions/Manage");
+        return await manager.PostAsync("/CounterTransactions/Void", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("TransactionId", transactionId), new("Reason", "Problem details check") ]));
     }
 
     private static async Task<HttpResponseMessage> CheckoutAsync(HttpClient client, string transactionId, IReadOnlyList<(string ProductId, int Quantity)> retailLines, string shipmentIds = "", string moneyOrderIds = "")
@@ -564,6 +823,7 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
 {
     public const string TestPassword = "test-only-password";
     private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "ApexPost-WebTests", Guid.NewGuid().ToString("N"));
+    private readonly TestDatabase _database = new();
     private readonly TestLoggerProvider _loggerProvider = new();
 
     public IReadOnlyCollection<string> LogMessages => _loggerProvider.Messages;
@@ -574,6 +834,7 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         // and without this the suite would write into the web project's own App_Data folder.
         builder.UseSetting("ApexPost:DataDirectory", _dataDirectory);
         builder.UseSetting("ApexPost:RateLimiting:LoginPermitLimit", "100");
+        _database.Attach(builder);
         builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["ApexPost:DemoSeed:Enabled"] = "false",
@@ -583,8 +844,6 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         builder.ConfigureTestServices(services =>
         {
             services.PostConfigure<IntegrationSecurityOptions>(options => options.AllowedIps = ["127.0.0.1", "::1"]);
-            services.RemoveAll<IShippingRateProvider>();
-            services.AddSingleton<IShippingRateProvider>(new TestShippingRateProvider());
             // A lower PBKDF2 work factor keeps the suite fast; production uses the default.
             services.RemoveAll<IPasswordHasher>();
             services.AddSingleton<IPasswordHasher>(new Pbkdf2PasswordHasher(10_000));
@@ -593,7 +852,23 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         });
     }
 
+    public string DatabaseConnectionString => _database.ConnectionString;
+
     public new HttpClient CreateClient() => base.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
+
+    public async Task SetNorthBranchStockAsync(int quantity)
+    {
+        using var scope = Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ApexPostDbContext>().Database
+            .ExecuteSqlAsync($"UPDATE BranchStock SET Quantity = {quantity} WHERE BranchCode = 'BR-NORTH' AND ProductCode = 'PRD-001'");
+    }
+
+    public async Task<bool> SaleExistsAsync(string transactionCode)
+    {
+        using var scope = Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<ApexPostDbContext>().CounterTransactions
+            .AnyAsync(transaction => transaction.Id == new CounterTransactionId(transactionCode));
+    }
 
     public async Task SeedAsync()
     {
@@ -601,35 +876,40 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         var branches = scope.ServiceProvider.GetRequiredService<IBranchRepository>();
         var counters = scope.ServiceProvider.GetRequiredService<ICounterRepository>();
         var staff = scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>();
-        var products = scope.ServiceProvider.GetRequiredService<IProductRepository>();
-        var inventory = scope.ServiceProvider.GetRequiredService<IInventoryRepository>();
         var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
-        await branches.SaveAsync(new Branch(new BranchCode("BR-NORTH"), "Demo North Branch"));
-        await counters.SaveAsync(new Counter(new CounterCode("C-01"), new BranchCode("BR-NORTH")));
-        await staff.SaveAsync(WithPassword(new StaffMember(new StaffId("STF-CLERK-01"), "Test Clerk", StaffRole.CounterClerk, new BranchCode("BR-NORTH")), hasher));
+        branches.Add(new Branch(new BranchCode("BR-NORTH"), "Demo North Branch"));
+        counters.Add(new Counter(new CounterCode("C-01"), new BranchCode("BR-NORTH")));
+        staff.Add(WithPassword(new StaffMember(new StaffId("STF-CLERK-01"), "Test Clerk", StaffRole.CounterClerk, new BranchCode("BR-NORTH")), hasher));
         var inactive = WithPassword(new StaffMember(new StaffId("STF-INACTIVE-01"), "Inactive Clerk", StaffRole.CounterClerk, new BranchCode("BR-NORTH")), hasher);
         inactive.Deactivate();
-        await staff.SaveAsync(inactive);
-        await staff.SaveAsync(WithPassword(new StaffMember(new StaffId("STF-MANAGER-01"), "Test Manager", StaffRole.BranchManager, new BranchCode("BR-NORTH")), hasher));
-        await staff.SaveAsync(WithPassword(new StaffMember(new StaffId("STF-ADMIN-01"), "Test Administrator", StaffRole.Administrator, new BranchCode("BR-NORTH"), "admin@example.test"), hasher));
-        await products.SaveAsync(new Product(new ProductId("PRD-001"), "Demo Retail Envelope", new Money(10m)));
-        await inventory.SaveAsync(new BranchInventoryItem(new BranchCode("BR-NORTH"), new ProductId("PRD-001"), 100));
+        staff.Add(inactive);
+        staff.Add(WithPassword(new StaffMember(new StaffId("STF-MANAGER-01"), "Test Manager", StaffRole.BranchManager, new BranchCode("BR-NORTH")), hasher));
+        staff.Add(WithPassword(new StaffMember(new StaffId("STF-ADMIN-01"), "Test Administrator", StaffRole.Administrator, new BranchCode("BR-NORTH"), "admin@example.test"), hasher));
+        // No use case creates catalogue, stock or rate rows, so their test data is added through the context directly.
+        var db = scope.ServiceProvider.GetRequiredService<ApexPostDbContext>();
+        db.Products.Add(new Product(new ProductId("PRD-001"), "Demo Retail Envelope", new Money(10m)));
+        db.BranchStock.Add(new BranchInventoryItem(new BranchCode("BR-NORTH"), new ProductId("PRD-001"), 100));
+        db.ShippingZones.Add(new ShippingZoneEntity { ZoneCode = new ZoneCode("ZONE-01"), Name = "Test Zone 01" });
+        db.ShippingRates.Add(new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, new ZoneCode("ZONE-01"), new Money(12m), new ParcelWeight(5m)));
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
     }
 
     public async Task SeedSouthBranchAsync()
     {
         using var scope = Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<IBranchRepository>()
-            .SaveAsync(new Branch(new BranchCode("BR-SOUTH"), "Demo South Branch"));
+        scope.ServiceProvider.GetRequiredService<IBranchRepository>()
+            .Add(new Branch(new BranchCode("BR-SOUTH"), "Demo South Branch"));
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
     }
 
     public async Task SeedEmptyReportBranchAsync()
     {
         using var scope = Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<IBranchRepository>()
-            .SaveAsync(new Branch(new BranchCode("BR-EMPTY"), "Empty Report Branch"));
-        await scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>()
-            .SaveAsync(WithPassword(new StaffMember(new StaffId("STF-EMPTY-MANAGER"), "Empty Report Manager", StaffRole.BranchManager, new BranchCode("BR-EMPTY")), scope.ServiceProvider.GetRequiredService<IPasswordHasher>()));
+        scope.ServiceProvider.GetRequiredService<IBranchRepository>()
+            .Add(new Branch(new BranchCode("BR-EMPTY"), "Empty Report Branch"));
+        scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>()
+            .Add(WithPassword(new StaffMember(new StaffId("STF-EMPTY-MANAGER"), "Empty Report Manager", StaffRole.BranchManager, new BranchCode("BR-EMPTY")), scope.ServiceProvider.GetRequiredService<IPasswordHasher>()));
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
     }
 
     public async Task<int> GetNorthBranchStockAsync()
@@ -654,7 +934,8 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         var staff = scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>();
         var clerk = await staff.FindByIdAsync(new StaffId("STF-CLERK-01")) ?? throw new InvalidOperationException("Test clerk was not seeded.");
         clerk.Deactivate();
-        await staff.SaveAsync(clerk);
+        staff.Update(clerk);
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
     }
 
     public async Task<IReadOnlyList<AuditRecord>> GetAuditRecordsAsync()
@@ -663,7 +944,37 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         return await scope.ServiceProvider.GetRequiredService<IAuditStore>().ReadAsync();
     }
 
-    public Task<string> ReadDataFileAsync(string fileName) => File.ReadAllTextAsync(Path.Combine(_dataDirectory, fileName));
+    /// <summary>Every stored staff row as JSON, to prove what the database holds.</summary>
+    public Task<string> ReadStoredStaffAsync() =>
+        ReadJsonAsync(db => db.Database.SqlQuery<string>($"SELECT (SELECT StaffCode, Name, Email, PasswordHash, IsActive, CreatedBy FROM Staff FOR JSON PATH) AS [Value]"));
+
+    /// <summary>Every stored money order and identity verification as JSON, to prove what the database holds.</summary>
+    public Task<string> ReadStoredMoneyOrdersAsync() =>
+        ReadJsonAsync(db => db.Database.SqlQuery<string>($"SELECT (SELECT m.*, v.DocumentType, v.MaskedDocumentReference, v.Outcome FROM MoneyOrders m LEFT JOIN IdentityVerifications v ON v.MoneyOrderId = m.MoneyOrderId FOR JSON PATH) AS [Value]"));
+
+    /// <summary>The stored rows of one sale, read with plain SQL so the check does not depend on the EF mapping.</summary>
+    public async Task<StoredSale> ReadStoredSaleAsync(string transactionCode)
+    {
+        using var scope = Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApexPostDbContext>();
+        return await db.Database.SqlQuery<StoredSale>($"""
+            SELECT t.Status, t.BranchCode, t.CounterCode, t.ClerkStaffCode, t.Subtotal, t.CreatedBy,
+                   (SELECT COUNT(*) FROM TransactionLines l WHERE l.CounterTransactionId = t.CounterTransactionId) AS LineCount,
+                   (SELECT SUM(l.Quantity) FROM TransactionLines l WHERE l.CounterTransactionId = t.CounterTransactionId AND l.ProductCode IS NOT NULL) AS UnitsSold,
+                   p.PaymentMethod, p.Amount AS PaymentAmount
+            FROM CounterTransactions t
+            JOIN Payments p ON p.CounterTransactionId = t.CounterTransactionId
+            WHERE t.TransactionCode = {transactionCode}
+            """).SingleAsync();
+    }
+
+    public sealed record StoredSale(string Status, string BranchCode, string CounterCode, string ClerkStaffCode, decimal Subtotal, string CreatedBy, int LineCount, int UnitsSold, string PaymentMethod, decimal PaymentAmount);
+
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        await _database.DropAsync();
+    }
 
     protected override void Dispose(bool disposing)
     {
@@ -671,18 +982,16 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         if (disposing && Directory.Exists(_dataDirectory)) Directory.Delete(_dataDirectory, recursive: true);
     }
 
+    private async Task<string> ReadJsonAsync(Func<ApexPostDbContext, IQueryable<string>> query)
+    {
+        using var scope = Services.CreateScope();
+        return await query(scope.ServiceProvider.GetRequiredService<ApexPostDbContext>()).SingleAsync() ?? "[]";
+    }
+
     private static StaffMember WithPassword(StaffMember member, IPasswordHasher hasher)
     {
         member.SetPasswordHash(hasher.Hash(TestPassword));
         return member;
-    }
-
-    private sealed class TestShippingRateProvider : IShippingRateProvider
-    {
-        public ValueTask<IReadOnlyCollection<ShippingRate>> GetRatesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyCollection<ShippingRate>>([
-                new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, new ZoneCode("ZONE-01"), new Money(12m), new ParcelWeight(5m))
-            ]);
     }
 
     private sealed class LoopbackClientStartupFilter : IStartupFilter
@@ -697,6 +1006,39 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
             next(app);
         };
     }
+}
+
+/// <summary>
+/// Test-only race: as soon as this request has read a stock row, another clerk's sale takes one unit from that row
+/// in its own connection, so this request commits against a stale rowversion.
+/// </summary>
+public sealed class StockSoldByAnotherClerkMeanwhile(IInventoryRepository inner, string connectionString) : IInventoryRepository
+{
+    public async Task<BranchInventoryItem?> FindAsync(BranchCode branchCode, ProductId productId, CancellationToken cancellationToken = default)
+    {
+        var item = await inner.FindAsync(branchCode, productId, cancellationToken);
+        if (item is not null)
+        {
+            await using var otherClerk = new ApexPostDbContext(new DbContextOptionsBuilder<ApexPostDbContext>().UseSqlServer(connectionString).Options);
+            await otherClerk.Database.ExecuteSqlAsync($"UPDATE BranchStock SET Quantity = Quantity - 1 WHERE BranchCode = {branchCode.Value} AND ProductCode = {productId.Value}", cancellationToken);
+        }
+
+        return item;
+    }
+
+    public void Add(BranchInventoryItem inventoryItem) => inner.Add(inventoryItem);
+
+    public void Update(BranchInventoryItem inventoryItem) => inner.Update(inventoryItem);
+}
+
+/// <summary>An audit store whose database is unavailable: every write fails.</summary>
+public sealed class UnavailableAuditStore : IAuditStore
+{
+    public Task AppendAsync(AuditRecord record, CancellationToken cancellationToken = default) =>
+        Task.FromException(new InvalidOperationException("Simulated audit database outage."));
+
+    public Task<IReadOnlyList<AuditRecord>> ReadAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<AuditRecord>>([]);
 }
 
 public sealed class TestLoggerProvider : ILoggerProvider

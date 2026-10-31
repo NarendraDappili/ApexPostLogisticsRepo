@@ -14,7 +14,7 @@ public sealed class ManagementServiceTests
     public async Task Staff_can_be_added_with_a_hashed_password_updated_and_deactivated()
     {
         var staff = new StaffRepo();
-        var service = new StaffManagementService(staff, new BranchRepo(new Branch(new("BR-A"), "A"), new Branch(new("BR-B"), "B")), new FakeHasher());
+        var service = new StaffManagementService(staff, new BranchRepo(new Branch(new("BR-A"), "A"), new Branch(new("BR-B"), "B")), new FakeHasher(), new SpyUnitOfWork());
 
         var created = await service.CreateAsync(new("stf-9", "New Clerk", "new.clerk@example.test", StaffRole.CounterClerk, "BR-A"), "initial-password");
         Assert.Equal("hashed:initial-password", created.PasswordHash);
@@ -32,7 +32,7 @@ public sealed class ManagementServiceTests
     public async Task Staff_rules_reject_duplicates_unknown_branches_weak_passwords_and_self_deactivation()
     {
         var staff = new StaffRepo();
-        var service = new StaffManagementService(staff, new BranchRepo(new Branch(new("BR-A"), "A")), new FakeHasher());
+        var service = new StaffManagementService(staff, new BranchRepo(new Branch(new("BR-A"), "A")), new FakeHasher(), new SpyUnitOfWork());
         await service.CreateAsync(new("STF-1", "Clerk", "clerk@example.test", StaffRole.CounterClerk, "BR-A"), "long-enough-password");
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateAsync(new("STF-1", "Again", "again@example.test", StaffRole.CounterClerk, "BR-A"), "long-enough-password"));
@@ -47,7 +47,7 @@ public sealed class ManagementServiceTests
     {
         var branches = new BranchRepo();
         var counters = new CounterRepo();
-        var service = new BranchManagementService(branches, counters);
+        var service = new BranchManagementService(branches, counters, new SpyUnitOfWork());
 
         var created = await service.CreateAsync(new("br-new", "New Branch", "Coast", "Mon-Fri 09:00-17:00"), counterCount: 3);
         Assert.Equal(["C-01", "C-02", "C-03"], counters.Items.Where(counter => counter.BranchCode == created.Code).Select(counter => counter.Code.Value));
@@ -72,7 +72,8 @@ public sealed class ManagementServiceTests
         private readonly Dictionary<string, StaffMember> _items = [];
         public Task<StaffMember?> FindByIdAsync(StaffId id, CancellationToken cancellationToken = default) => Task.FromResult(_items.GetValueOrDefault(id.Value));
         public Task<IReadOnlyCollection<StaffMember>> GetAllAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<StaffMember>>(_items.Values.ToArray());
-        public Task SaveAsync(StaffMember staffMember, CancellationToken cancellationToken = default) { _items[staffMember.Id.Value] = staffMember; return Task.CompletedTask; }
+        public void Add(StaffMember staffMember) => _items[staffMember.Id.Value] = staffMember;
+        public void Update(StaffMember staffMember) => _items[staffMember.Id.Value] = staffMember;
     }
 
     private sealed class BranchRepo(params Branch[] branches) : IBranchRepository
@@ -80,7 +81,8 @@ public sealed class ManagementServiceTests
         private readonly Dictionary<string, Branch> _items = branches.ToDictionary(branch => branch.Code.Value);
         public Task<Branch?> FindByCodeAsync(BranchCode code, CancellationToken cancellationToken = default) => Task.FromResult(_items.GetValueOrDefault(code.Value));
         public Task<IReadOnlyCollection<Branch>> GetAllAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<Branch>>(_items.Values.ToArray());
-        public Task SaveAsync(Branch branch, CancellationToken cancellationToken = default) { _items[branch.Code.Value] = branch; return Task.CompletedTask; }
+        public void Add(Branch branch) => _items[branch.Code.Value] = branch;
+        public void Update(Branch branch) => _items[branch.Code.Value] = branch;
     }
 
     private sealed class CounterRepo : ICounterRepository
@@ -88,6 +90,6 @@ public sealed class ManagementServiceTests
         public List<Counter> Items { get; } = [];
         public Task<Counter?> FindByCodeAsync(BranchCode branchCode, CounterCode counterCode, CancellationToken cancellationToken = default) => Task.FromResult(Items.FirstOrDefault(counter => counter.BranchCode == branchCode && counter.Code == counterCode));
         public Task<IReadOnlyCollection<Counter>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyCollection<Counter>>(Items.Where(counter => counter.BranchCode == branchCode).ToArray());
-        public Task SaveAsync(Counter counter, CancellationToken cancellationToken = default) { Items.Add(counter); return Task.CompletedTask; }
+        public void Add(Counter counter) => Items.Add(counter);
     }
 }
