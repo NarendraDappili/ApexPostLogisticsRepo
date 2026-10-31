@@ -32,6 +32,7 @@ public sealed class StaffAdminController(StaffManagementService staffManagement)
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
+            this.UseConflictStatus(exception);
             ModelState.AddModelError(string.Empty, exception.Message);
             return View(WithoutPassword(input));
         }
@@ -64,6 +65,7 @@ public sealed class StaffAdminController(StaffManagementService staffManagement)
         catch (StaffMemberNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
+            this.UseConflictStatus(exception);
             ModelState.AddModelError(string.Empty, exception.Message);
             return View(WithoutPassword(input));
         }
@@ -87,8 +89,6 @@ public sealed class StaffAdminController(StaffManagementService staffManagement)
             return RedirectToAction(nameof(Index));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
-        catch (StaffMemberNotFoundException) { return NotFound(); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { return BadRequest(exception.Message); }
     }
 
     private static StaffDetailsRequest ToRequest(StaffFormViewModel input) => new(input.StaffId, input.Name, input.Email, input.Role, input.BranchCode);

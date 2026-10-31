@@ -37,7 +37,7 @@ public sealed class CounterTransactionsController(CounterTransactionWorkflowServ
             return RedirectToAction(nameof(New));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { ModelState.AddModelError(string.Empty, exception.Message); return View(input.WithBlankRetailRows()); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { this.UseConflictStatus(exception); ModelState.AddModelError(string.Empty, exception.Message); return View(input.WithBlankRetailRows()); }
     }
 
     [Authorize(Policy = AuthorizationPolicies.BranchManagerOnly), HttpGet]
@@ -74,7 +74,6 @@ public sealed class CounterTransactionsController(CounterTransactionWorkflowServ
             return RedirectToAction(nameof(Manage));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { return BadRequest(exception.Message); }
     }
 
     private static string[] SplitIds(string? ids) =>

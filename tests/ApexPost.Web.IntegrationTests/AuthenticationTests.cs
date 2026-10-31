@@ -8,6 +8,7 @@ using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Infrastructure.Persistence;
 using ApexPost.Infrastructure.Persistence.Entities;
+using ApexPost.Infrastructure.Repositories;
 using ApexPost.Infrastructure.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -162,6 +163,72 @@ public sealed class AuthenticationTests
         // The audit column records the signed-in clerk, taken from the cookie and never from the form.
         Assert.Equal("STF-CLERK-01", stored.CreatedBy);
         Assert.Equal(97, await factory.GetNorthBranchStockAsync());
+    }
+
+    [Fact]
+    public async Task Two_clerks_selling_the_last_unit_leave_one_sale_and_the_other_gets_a_409()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await using var racingFactory = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IInventoryRepository>();
+            services.AddScoped<IInventoryRepository>(provider => new StockSoldByAnotherClerkMeanwhile(
+                new EfInventoryRepository(provider.GetRequiredService<ApexPostDbContext>()), factory.DatabaseConnectionString));
+        }));
+        await factory.SeedAsync();
+        await factory.SetNorthBranchStockAsync(1);
+        using var client = racingFactory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+
+        var response = await CheckoutAsync(client, "TX-WEB-LAST-UNIT", [("PRD-001", 1)]);
+
+        Assert.Equal(System.Net.HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("Someone else changed this data", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        // The other clerk's sale took the last unit; this one stored nothing and stock never went below zero.
+        Assert.Equal(0, await factory.GetNorthBranchStockAsync());
+        Assert.False(await factory.SaleExistsAsync("TX-WEB-LAST-UNIT"));
+    }
+
+    [Fact]
+    public async Task Void_errors_are_problem_details_with_404_for_a_missing_sale_and_400_for_a_broken_rule()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var clerk = factory.CreateClient();
+        await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await CheckoutAsync(clerk, "TX-WEB-TWICE", [("PRD-001", 1)])).StatusCode);
+        using var manager = factory.CreateClient();
+        await SignInAsync(manager, "STF-MANAGER-01", AuthWebApplicationFactory.TestPassword);
+
+        var missing = await VoidAsync(manager, "TX-WEB-NOWHERE");
+        var first = await VoidAsync(manager, "TX-WEB-TWICE");
+        var second = await VoidAsync(manager, "TX-WEB-TWICE");
+
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal("application/problem+json", missing.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("\"correlationId\"", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, first.StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, second.StatusCode);
+        Assert.Equal("application/problem+json", second.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("Only an open or paid transaction can be voided.", await second.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_staff_email_that_is_already_in_use_is_a_409_conflict_on_the_form()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var admin = factory.CreateClient();
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+        var token = await GetAntiforgeryTokenAsync(admin, "/StaffAdmin/Create");
+
+        // admin@example.test already belongs to STF-ADMIN-01; only the unique index on Staff.Email knows that.
+        var response = await admin.PostAsync("/StaffAdmin/Create", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("StaffId", "STF-DUP-EMAIL"), new("Name", "Duplicate Email"),
+            new("Email", "ADMIN@example.test"), new("Role", "0"), new("BranchCode", "BR-NORTH"), new("Password", "duplicate-email-password") ]));
+
+        Assert.Equal(System.Net.HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("A record with the same identifier already exists.", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -521,6 +588,13 @@ public sealed class AuthenticationTests
             new("__RequestVerificationToken", token), new("StaffId", staffId), new("Password", password) ]));
     }
 
+    private static async Task<HttpResponseMessage> VoidAsync(HttpClient manager, string transactionId)
+    {
+        var token = await GetAntiforgeryTokenAsync(manager, "/CounterTransactions/Manage");
+        return await manager.PostAsync("/CounterTransactions/Void", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("TransactionId", transactionId), new("Reason", "Problem details check") ]));
+    }
+
     private static async Task<HttpResponseMessage> CheckoutAsync(HttpClient client, string transactionId, IReadOnlyList<(string ProductId, int Quantity)> retailLines, string shipmentIds = "", string moneyOrderIds = "")
     {
         var token = await GetAntiforgeryTokenAsync(client, "/CounterTransactions/New");
@@ -619,7 +693,23 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         });
     }
 
+    public string DatabaseConnectionString => _database.ConnectionString;
+
     public new HttpClient CreateClient() => base.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
+
+    public async Task SetNorthBranchStockAsync(int quantity)
+    {
+        using var scope = Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ApexPostDbContext>().Database
+            .ExecuteSqlAsync($"UPDATE BranchStock SET Quantity = {quantity} WHERE BranchCode = 'BR-NORTH' AND ProductCode = 'PRD-001'");
+    }
+
+    public async Task<bool> SaleExistsAsync(string transactionCode)
+    {
+        using var scope = Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<ApexPostDbContext>().CounterTransactions
+            .AnyAsync(transaction => transaction.Id == new CounterTransactionId(transactionCode));
+    }
 
     public async Task SeedAsync()
     {
@@ -757,6 +847,30 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
             next(app);
         };
     }
+}
+
+/// <summary>
+/// Test-only race: as soon as this request has read a stock row, another clerk's sale takes one unit from that row
+/// in its own connection, so this request commits against a stale rowversion.
+/// </summary>
+public sealed class StockSoldByAnotherClerkMeanwhile(IInventoryRepository inner, string connectionString) : IInventoryRepository
+{
+    public async Task<BranchInventoryItem?> FindAsync(BranchCode branchCode, ProductId productId, CancellationToken cancellationToken = default)
+    {
+        var item = await inner.FindAsync(branchCode, productId, cancellationToken);
+        if (item is not null)
+        {
+            await using var otherClerk = new ApexPostDbContext(new DbContextOptionsBuilder<ApexPostDbContext>().UseSqlServer(connectionString).Options);
+            await otherClerk.Database.ExecuteSqlAsync($"UPDATE BranchStock SET Quantity = Quantity - 1 WHERE BranchCode = {branchCode.Value} AND ProductCode = {productId.Value}", cancellationToken);
+        }
+
+        return item;
+    }
+
+    public Task<IReadOnlyCollection<BranchInventoryItem>> FindByBranchAsync(BranchCode branchCode, CancellationToken cancellationToken = default) =>
+        inner.FindByBranchAsync(branchCode, cancellationToken);
+
+    public void Update(BranchInventoryItem inventoryItem) => inner.Update(inventoryItem);
 }
 
 public sealed class TestLoggerProvider : ILoggerProvider

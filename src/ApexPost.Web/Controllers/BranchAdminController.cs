@@ -31,6 +31,7 @@ public sealed class BranchAdminController(BranchManagementService branchManageme
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
+            this.UseConflictStatus(exception);
             ModelState.AddModelError(string.Empty, exception.Message);
             return View(input);
         }
@@ -63,6 +64,7 @@ public sealed class BranchAdminController(BranchManagementService branchManageme
         catch (BranchNotFoundException) { return NotFound(); }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
+            this.UseConflictStatus(exception);
             ModelState.AddModelError(string.Empty, exception.Message);
             return View(input);
         }
