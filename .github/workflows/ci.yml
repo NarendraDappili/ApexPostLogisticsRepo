@@ -26,6 +26,13 @@ jobs:
       - name: Build
         run: dotnet build ApexPost.slnx --no-restore --configuration Release -warnaserror
 
+      # Every change to the EF Core model must come with a migration. This needs no database: the design-time
+      # factory falls back to an offline connection string when no secret is set.
+      - name: Check for model changes without a migration
+        run: |
+          dotnet tool install dotnet-ef --version "10.0.*" --tool-path ./.tools
+          ./.tools/dotnet-ef migrations has-pending-model-changes --project src/ApexPost.Infrastructure --no-build --configuration Release
+
       # Integration tests create and drop their own databases on a real SQL Server. The container is thrown away
       # with the runner and gets a random password per run, so no credential is stored in the repository.
       - name: Start SQL Server

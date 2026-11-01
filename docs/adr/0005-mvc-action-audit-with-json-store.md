@@ -1,6 +1,6 @@
 # ADR 0005: Audit at the MVC action boundary with an append-only JSON Lines store
 
-Status: Accepted (storage format revised after the Week 2 review).
+Status: Partly superseded. The JSON Lines storage is replaced by the AuditEntries table (ADR 0011); the filter became a resource filter that records the status the client received (ADR 0011). The safe-metadata rules below still apply.
 
 ## Context
 

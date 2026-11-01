@@ -1,6 +1,6 @@
 # ADR 0006: Parallelize only independent checkout validation reads
 
-Status: Accepted.
+Status: Superseded by ADR 0017. One DbContext per request must not run queries in parallel, so the checkout reads are sequential.
 
 ## Context
 

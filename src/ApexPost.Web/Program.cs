@@ -38,7 +38,7 @@ using ApexPost.Web.Middleware;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews(options =>
 {
-    options.Filters.AddService<AuditActionFilter>();
+    options.Filters.AddService<AuditResourceFilter>();
     options.Filters.AddService<ValidationActionFilter>();
     options.Filters.AddService<PerformanceActionFilter>();
 });
@@ -113,7 +113,7 @@ builder.Services.AddScoped<IShippingRateProvider, EfShippingRateProvider>();
 builder.Services.AddScoped<DemoDataSeeder>();
 // Scoped so audit rows share the request's options (and CreatedBy stamping), but each append opens its own context.
 builder.Services.AddScoped<IAuditStore, EfAuditStore>();
-builder.Services.AddScoped<AuditActionFilter>();
+builder.Services.AddScoped<AuditResourceFilter>();
 builder.Services.AddScoped<ValidationActionFilter>();
 builder.Services.AddScoped<PerformanceActionFilter>();
 builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
