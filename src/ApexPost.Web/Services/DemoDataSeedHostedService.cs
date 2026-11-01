@@ -19,7 +19,8 @@ public sealed class DemoDataSeedHostedService(
         var demoPassword = configuration["ApexPost:DemoSeed:Password"];
         if (string.IsNullOrWhiteSpace(demoPassword))
         {
-            logger.LogWarning("Demo seeding is enabled but ApexPost:DemoSeed:Password is not configured; no data was seeded.");
+            // The password is a user-secret, never a committed setting; scripts/setup-dev.ps1 generates one.
+            logger.LogWarning("Demo seeding is enabled but ApexPost:DemoSeed:Password is not configured; no data was seeded. Run scripts/setup-dev.ps1, or: dotnet user-secrets set --project src/ApexPost.Web \"ApexPost:DemoSeed:Password\" \"<a password of at least 10 characters>\"");
             return;
         }
 

@@ -31,7 +31,7 @@ Most data access goes through EF Core: repositories plus the unit of work for wr
 
 - **What it does:** changes one branch stock row and writes the matching `StockAdjustments` history row, both or neither. It returns the new quantity.
 - **Why a procedure:**
-  - The rule "every manual correction has a history row, and stock never goes below zero" is enforced **in the database**. It therefore also holds for corrections that do not come through the web app, such as an operator script or a DBA fix.
+  - The rules "only an active Branch Manager of the branch adjusts its stock", "every manual correction has a history row" and "stock never goes below zero" are enforced **in the database**. They therefore also hold for corrections that do not come through the web app, such as an operator script or a DBA fix. The manager check (`THROW 50025`) joins `Staff` to `Roles` and compares the staff member's branch with `@BranchCode`, the same rule `StockAdjustmentService` applies; `StoredProcedureTests` shows a clerk, a manager of another branch and an inactive manager are all refused.
   - The quantity check is part of the `UPDATE` (`WHERE Quantity + @Delta >= 0`), so no concurrent change can slip between the check and the write.
   - The rowversion still changes, so a clerk's stale EF copy of that row is rejected at commit.
 - **Transaction handling:**
@@ -42,7 +42,8 @@ Most data access goes through EF Core: repositories plus the unit of work for wr
 
 ### Shared rules
 
-- **Deployment:** the procedures are `CREATE OR ALTER` scripts in `src/ApexPost.Infrastructure/Persistence/StoredProcedures/`, embedded in the assembly. The `AddStoredProcedures` migration deploys them through `EXEC(N'…')`, because `CREATE PROCEDURE` must start a batch and idempotent scripts wrap each migration in an `IF` block. The files, the migration and `database/ApexPostDb.idempotent.sql` therefore contain the same text.
+- **Deployment:** each migration that deploys a procedure keeps the exact `CREATE OR ALTER` text it shipped, as a constant in the migration class, and runs it through `EXEC(N'…')`. `CREATE PROCEDURE` must start a batch, and idempotent scripts wrap each migration in an `IF` block. Migrations never read the `.sql` files, so replaying one on a new database deploys the same body it deployed originally.
+- **Current version:** the `.sql` files in `src/ApexPost.Infrastructure/Persistence/StoredProcedures/` hold the current version of each procedure, for review and SSMS. `StoredProcedureTests` checks that a fully migrated database runs exactly those files, and `StoredProcedureMigrationTests` checks that the latest migration for each procedure carries that text.
 - **Validation:** each procedure starts with `SET NOCOUNT ON`, validates its parameters and raises errors with `THROW 500xx`.
 - **Calls from EF Core:** always parameterised (`SqlQuery<T>($"EXEC … @Name = {value}")` or `ExecuteSqlAsync`). The interpolated values become `DbParameter`s, never SQL text.
 - **Errors in the app:** `THROW` errors (50000–59999) become `RuleViolationException` and are shown as a business-rule message or a 400 Problem Details.
@@ -70,8 +71,8 @@ Verified on a throwaway database with a member of the role:
 
 - Report figures and stock corrections behave the same from the app, SSMS and scripts.
 - Procedure logic lives in T-SQL, so it is tested against a real database (`StoredProcedureTests`) rather than with fakes.
-- Changing a procedure means changing its script and adding a migration that redeploys it. `RedeployDailyBranchSales` is the pattern; it removed a cardinality misestimate found in `PERFORMANCE.md`:
-  - `Up` deploys the current script.
-  - `Down` carries the previous body verbatim, because the embedded file holds only the current version.
-  - Migrations read the script when they run. A fresh database therefore receives the current body from `AddStoredProcedures` already, and the regenerated idempotent script shows that body there too. The end state is the same either way.
+- Changing a procedure means changing its script and adding a migration that carries the new body. `RedeployDailyBranchSales` (a cardinality misestimate found in `PERFORMANCE.md`) and `AdjustStockRequiresBranchManager` follow the pattern:
+  - `Up` deploys the body kept in the new migration.
+  - `Down` deploys the body kept in the migration before it.
+  - A migration's text never changes after it ships. A fresh database therefore passes through each version in order, exactly as an existing one did, and `database/ApexPostDb.idempotent.sql` shows each version in the migration that deployed it.
 - Shipping volume and the money-order summary stay as LINQ projections; they have none of the needs above.

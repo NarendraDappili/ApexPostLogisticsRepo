@@ -47,7 +47,7 @@ internal sealed class SqlTestData
         db.Products.Add(new Product(data.Product, "Test Envelope", new Money(unitPrice)));
         db.BranchStock.Add(new BranchInventoryItem(data.Branch, data.Product, stock));
         db.ShippingZones.Add(new ShippingZoneEntity { ZoneCode = data.Zone, Name = "Test Zone" });
-        db.ShippingRates.Add(new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, data.Zone, new Money(8m), new ParcelWeight(5m)));
+        db.ShippingRates.Add(ShippingRateEntity.From(new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, data.Zone, new Money(8m), new ParcelWeight(5m))));
         await db.SaveChangesAsync();
         return data;
     }

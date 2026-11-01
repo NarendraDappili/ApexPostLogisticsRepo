@@ -1,4 +1,3 @@
-using ApexPost.Application.Pricing;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
@@ -20,9 +19,9 @@ internal sealed class ShippingZoneConfiguration : IEntityTypeConfiguration<Shipp
     }
 }
 
-internal sealed class ShippingRateConfiguration : IEntityTypeConfiguration<ShippingRate>
+internal sealed class ShippingRateConfiguration : IEntityTypeConfiguration<ShippingRateEntity>
 {
-    public void Configure(EntityTypeBuilder<ShippingRate> builder)
+    public void Configure(EntityTypeBuilder<ShippingRateEntity> builder)
     {
         builder.ToTable("ShippingRates", table =>
         {

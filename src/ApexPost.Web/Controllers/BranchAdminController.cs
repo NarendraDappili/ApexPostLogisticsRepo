@@ -1,6 +1,7 @@
 using ApexPost.Application.BranchManagement;
 using ApexPost.Application.Queries;
 using ApexPost.Domain.ValueObjects;
+using ApexPost.Web.Middleware;
 using ApexPost.Web.Models;
 using ApexPost.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -30,10 +31,10 @@ public sealed class BranchAdminController(BranchManagementService branchManageme
             return RedirectToAction(nameof(Index));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        catch (Exception exception) when (ExceptionProblemMapping.Map(exception) is { } problem)
         {
-            this.UseConflictStatus(exception);
-            ModelState.AddModelError(string.Empty, exception.Message);
+            this.UseConflictStatus(problem);
+            ModelState.AddModelError(string.Empty, problem.Detail);
             return View(input);
         }
     }
@@ -63,10 +64,10 @@ public sealed class BranchAdminController(BranchManagementService branchManageme
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
         catch (BranchNotFoundException) { return NotFound(); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        catch (Exception exception) when (ExceptionProblemMapping.Map(exception) is { } problem)
         {
-            this.UseConflictStatus(exception);
-            ModelState.AddModelError(string.Empty, exception.Message);
+            this.UseConflictStatus(problem);
+            ModelState.AddModelError(string.Empty, problem.Detail);
             return View(input);
         }
     }

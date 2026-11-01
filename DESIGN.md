@@ -217,7 +217,7 @@ erDiagram
     Payments {
         bigint CounterTransactionId PK "and FK CASCADE"
         varchar PaymentMethod "CHECK IN"
-        decimal Amount "CHECK >= 0"
+        decimal Amount "CHECK > 0"
     }
     MoneyOrders {
         int MoneyOrderId PK
@@ -293,9 +293,13 @@ The tables are in third normal form. Each fact is stored once, in the table whos
 | Migration | Contents |
 |---|---|
 | `InitialCreate` | 17 tables, keys, alternate keys, CHECK and DEFAULT constraints, FK indexes; roles and the `GENERAL` category seeded with `HasData` |
-| `AddStoredProcedures` | Deploys the three `CREATE OR ALTER` procedures from embedded `.sql` files ([ADR 0012](docs/adr/0012-stored-procedures-for-reports-and-stock-adjustment.md)) |
+| `AddStoredProcedures` | Deploys the three `CREATE OR ALTER` procedures, with the text they shipped kept in the migration ([ADR 0012](docs/adr/0012-stored-procedures-for-reports-and-stock-adjustment.md)) |
 | `AddWorkloadIndexes` | The five workload indexes, added after the baseline measurements ([ADR 0014](docs/adr/0014-index-choices-from-execution-plan-evidence.md)) |
 | `RedeployDailyBranchSales` | Fixes `usp_DailyBranchSales`'s cardinality misestimate; `Down` restores the previous body |
+| `RequirePositivePaymentAmount` | `CK_Payments_Amount` becomes `[Amount] > 0`, as the brief requires |
+| `AdjustStockRequiresBranchManager` | `usp_AdjustStock` accepts only an active Branch Manager of the branch; `Down` restores the previous body |
+
+- **Migrations are immutable snapshots.** A migration that deploys a procedure keeps the exact text it deployed, so replaying it on a new database always gives the same result. The `.sql` files hold the current version. `StoredProcedureMigrationTests` and `StoredProcedureTests` check both rules: the migrations keep their shipped text, and the migrated database runs exactly the files in source control.
 
 - **Review before applying.** Every migration was reviewed before it was applied. `database/ApexPostDb.idempotent.sql` is regenerated each time and verified by running it twice on an empty database.
 - **The application never creates or migrates the schema.** There is no `EnsureCreated()`; see the README for `dotnet ef database update`.
@@ -317,13 +321,15 @@ The tables are in third normal form. Each fact is stored once, in the table whos
 
 ### Queries: projection-based read models
 
-- **Interfaces in Application, implementations in Infrastructure.** Dashboard, catalogue, transaction list, staff list and reports go through `IBranchQueries`, `ICatalogueQueries`, `ITransactionQueries`, `IStaffQueries` and `IBranchReportQueries`. The implementations in Infrastructure read the `DbContext` directly.
+- **Interfaces in Application, implementations in Infrastructure.** Dashboard, catalogue, transaction list, staff list, shipping label, money-order verification and reports go through `IBranchQueries`, `ICatalogueQueries`, `ITransactionQueries`, `IStaffQueries`, `IShippingQueries`, `IMoneyOrderQueries`, `IBranchReportQueries` and `IBranchReportPageQueries`. The implementations in Infrastructure read the `DbContext` directly.
 - **How they read:** `AsNoTracking()` projections into read-model records, one SQL statement per screen query, aggregation in SQL Server, or one of the stored procedures.
+- **The shipping label and money-order verification screens** read through `IShippingQueries` and `IMoneyOrderQueries`. Each is one no-tracking projection (the verification is a `LEFT JOIN`), not a repository load of the aggregate.
+- **The reports page runs its four reports in parallel** with `Task.WhenAll`, each on its own short-lived context from `IDbContextFactory<ApexPostDbContext>` ([ADR 0021](docs/adr/0021-parallel-report-reads-with-separate-contexts.md)). The request's scoped context is never shared between threads.
 - **Command logging** is on in Development (`Microsoft.EntityFrameworkCore.Database.Command`). Tests count the commands per screen to prove there is no N+1.
 - **No `Include` or split queries on read screens.** Projections select exactly the columns shown and never load the owned lines of a list of sales, so nothing needs `Include` or `AsSplitQuery`. Tracked aggregates with their lines are loaded only on the write side, where the domain needs them.
 - **`Include` and `AsSplitQuery` on the write side.**
   - `Include` is used once, by `EfMoneyOrderRepository`, to load the tracked money order with its verification for an update.
-  - `AsSplitQuery` is not used, because no query can multiply rows. A cartesian explosion needs two or more collection navigations in one query, and no aggregate has two.
+  - `AsSplitQuery` is not used, because no query can multiply rows. A cartesian explosion needs two or more collection navigations in one query, and no aggregate has two. [ADR 0020](docs/adr/0020-single-or-split-queries.md) measures both forms for a branch's sales with their lines: the single query made 1 round trip and 383 logical reads; the split query made 2 round trips and 471 logical reads. Any future query with two collections must use `AsSplitQuery()`.
   - The sale has one owned collection (its lines) plus a one-to-one payment, and a money order has at most one verification. One joined query therefore returns one row per line at most.
 
 **Query/command separation uses one database.** Reads and writes are separated in code: query services versus repositories plus the unit of work. Both use the same SQL Server database. There is **no separate read database** and no replication; none is needed, and a screen must show what was just committed.
@@ -372,7 +378,7 @@ flowchart LR
 - `NotFoundException` → 404.
 - `RuleViolationException`, and `ArgumentException`/`InvalidOperationException` thrown by Domain or Application code → 400, with the business message.
 - Anything else → 500, with no detail.
-- MVC forms show the message on the form, with status 409 for conflicts.
+- MVC forms catch only the exceptions this mapping recognises and show its message, with status 409 for conflicts. Framework `InvalidOperationException`s are never shown. A refused void or refund redisplays the Manage page with the reason and its status code.
 
 **Audit** ([ADR 0011](docs/adr/0011-audit-store-outside-the-unit-of-work.md)):
 - **What is recorded:** `AuditResourceFilter` records every MVC request: staff, role, branch, controller and action, allow-listed route IDs, status, duration, correlation ID and outcome. It never records bodies, arguments or headers.
@@ -515,7 +521,7 @@ A guard refuses to run tests against any database whose name is not a test datab
 | [0003](docs/adr/0003-local-cookie-authentication.md) | Local cookie authentication | Accepted |
 | [0004](docs/adr/0004-order-security-middleware-before-endpoints.md) | Security middleware order | Accepted |
 | [0005](docs/adr/0005-mvc-action-audit-with-json-store.md) | MVC audit with a JSON store | Partly superseded by 0011 |
-| [0006](docs/adr/0006-parallelize-only-independent-checkout-reads.md) | Parallel checkout reads | Superseded by 0017 |
+| [0006](docs/adr/0006-parallelize-only-independent-checkout-reads.md) | Parallel checkout reads | Superseded by 0017; parallel reads return for reports in 0021 |
 | [0007](docs/adr/0007-complete-compensation-after-cancellation.md) | Compensation after cancellation | Superseded by 0017 |
 | [0008](docs/adr/0008-greenfield-solution-instead-of-week-one-refactor.md) | New solution instead of refactoring Week 1 | Accepted |
 | [0009](docs/adr/0009-server-side-pricing-and-separate-identity-verification.md) | Server-side pricing, separate identity verification | Accepted |
@@ -529,8 +535,11 @@ A guard refuses to run tests against any database whose name is not a test datab
 | [0017](docs/adr/0017-optimistic-concurrency-for-stock-and-transactions.md) | **Concurrency strategy for stock and transactions** | Accepted |
 | [0018](docs/adr/0018-exceptions-to-problem-details-status-codes.md) | Exceptions to 409/404/400 Problem Details | Accepted |
 | [0019](docs/adr/0019-security-pin-for-a-transitive-package.md) | Security pin for a transitive package outside the allowed list | Needs trainer approval |
+| [0020](docs/adr/0020-single-or-split-queries.md) | Single queries by default; split queries only for several collections (measured) | Accepted |
+| [0021](docs/adr/0021-parallel-report-reads-with-separate-contexts.md) | Parallel report reads with `Task.WhenAll`, one `DbContext` per report | Accepted |
+| [0022](docs/adr/0022-week-2-business-rule-tests-in-week-3.md) | How the Week 2 business-rule tests carry into Week 3 | Accepted |
 
-Week 3 added nine ADRs (0011–0019). The seven the brief requires are in bold.
+Week 3 added twelve ADRs (0011–0022). The seven the brief requires are in bold.
 
 ## Known limitations
 
@@ -538,4 +547,3 @@ Week 3 added nine ADRs (0011–0019). The seven the brief requires are in bold.
 - **Simulated services.** Notifications are log entries. Identity verification and courier tracking are simulated. There is no payment processing, MFA, account lockout or password rotation.
 - **IP allowlist and proxies.** The allowlist uses the direct connection address. Behind a reverse proxy, trusted forwarded headers must be configured first.
 - **Applying the index migration.** It blocks writes on the indexed tables while the indexes build. Apply it in a quiet period, or with online index creation where the edition supports it (PERFORMANCE.md).
-- **CI has not yet run on GitHub.** The workflow starts a SQL Server container for the database tests.

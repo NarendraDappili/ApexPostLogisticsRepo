@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Text.RegularExpressions;
 using ApexPost.Application.Abstractions;
 using ApexPost.Application.Inventory;
 using ApexPost.Domain.Entities;
@@ -77,6 +78,48 @@ public sealed class StoredProcedureTests(SqlServerTestDatabase database)
         Assert.Equal(2, (await db.BranchStock.AsNoTracking().SingleAsync(item => item.BranchCode == data.Branch)).Quantity);
         Assert.False(await db.StockAdjustments.AnyAsync(adjustment => adjustment.BranchCode == data.Branch));
     }
+
+    [Fact]
+    public async Task Adjust_stock_is_refused_unless_an_active_branch_manager_of_the_branch_makes_it()
+    {
+        var data = await SqlTestData.SeedAsync(database, stock: 5);
+        var otherBranch = await SqlTestData.SeedAsync(database, stock: 5);
+        var inactiveManager = new StaffId($"OFF-{data.Branch.Value[3..]}");
+        await using var db = database.CreateContext();
+        var inactive = new StaffMember(inactiveManager, "Former Manager", Domain.Enums.StaffRole.BranchManager, data.Branch);
+        inactive.Deactivate();
+        db.Staff.Add(inactive);
+        await db.SaveChangesAsync();
+
+        // The rule StockAdjustmentService applies also holds for a call that does not come through the app.
+        foreach (var changedBy in new[] { data.Clerk, otherBranch.Manager, inactiveManager })
+        {
+            var refused = await Assert.ThrowsAsync<SqlException>(() => db.Database.ExecuteSqlAsync(
+                $"EXEC dbo.usp_AdjustStock @BranchCode = {data.Branch.Value}, @Sku = {data.Product.Value}, @Delta = {1}, @Reason = {"Count"}, @ChangedBy = {changedBy.Value}"));
+            Assert.Equal((50025, "A Branch Manager assigned to the branch must make stock adjustments."), (refused.Number, refused.Message));
+        }
+
+        Assert.Equal(5, (await db.BranchStock.AsNoTracking().SingleAsync(item => item.BranchCode == data.Branch)).Quantity);
+        Assert.False(await db.StockAdjustments.AnyAsync(adjustment => adjustment.BranchCode == data.Branch));
+    }
+
+    [Theory]
+    [InlineData(StoredProcedureScripts.DailyBranchSales)]
+    [InlineData(StoredProcedureScripts.LowStockReport)]
+    [InlineData(StoredProcedureScripts.AdjustStock)]
+    public async Task The_migrated_database_runs_the_procedure_script_in_source_control(string procedure)
+    {
+        await using var db = database.CreateContext();
+
+        var deployed = await db.Database.SqlQuery<string>($"SELECT OBJECT_DEFINITION(OBJECT_ID({"dbo." + procedure})) AS [Value]").SingleAsync();
+
+        Assert.Equal(Normalize(StoredProcedureScripts.Read(procedure)), Normalize(deployed));
+    }
+
+    // SQL Server stores CREATE OR ALTER as "CREATE   PROCEDURE" (the two words become spaces); the rest is kept verbatim.
+    private static string Normalize(string script) =>
+        Regex.Replace(script.ReplaceLineEndings("\n").Trim(), @"^CREATE\s+(OR\s+ALTER\s+)?PROCEDURE", "CREATE PROCEDURE",
+            RegexOptions.Multiline);
 
     [Fact]
     public async Task A_procedure_change_invalidates_an_ef_tracked_copy_through_the_rowversion()

@@ -16,7 +16,7 @@
 |---|---|
 | `ConnectionStrings:ApexPostDb` | User-secrets in Development (`dotnet user-secrets set --project src/ApexPost.Web …`); the deployment's secret store or the `ConnectionStrings__ApexPostDb` environment variable elsewhere. The app refuses to start without it. `dotnet ef` reads the same user-secret through `ApexPostDesignTimeDbContextFactory`. |
 | `ApexPost:Security:Integration:ApiKey` | User-secrets or the deployment secret store. Compared in constant time and never logged. |
-| Development demo password | `appsettings.Development.json` (`ApexPost:DemoSeed:Password`). It protects fictional data in local Development runs only and can be overridden with user-secrets. Each staff row stores its own PBKDF2 hash, never the password. |
+| Development demo password | User-secrets only (`ApexPost:DemoSeed:Password`); nothing is committed. `scripts/setup-dev.ps1` generates a random one when none is set. Without it the seeder seeds nothing and logs how to set it. Each staff row stores its own PBKDF2 hash, never the password. |
 | CI database password | Generated per run (`openssl rand`), masked in the log, and gone with the throwaway container. |
 | Data-protection keys | Generated locally under `App_Data/data-protection-keys` and ignored by Git, so a clone or deployment gets its own key ring. |
 
@@ -45,7 +45,7 @@ This was verified by impersonating a member of the role ([ADR 0012](adr/0012-sto
 - **EF Core LINQ** sends parameters for every value. Code parameters are typed `varchar(48)` like their columns.
 - **Raw SQL** uses only `SqlQuery`/`ExecuteSql` with interpolated strings, which EF Core turns into `DbParameter`s. Examples: `EXEC dbo.usp_DailyBranchSales @BranchCode = {code}, @Date = {day}` and `usp_AdjustStock`.
 - **The procedures** use static SQL only.
-- **The migrations** deploy procedure bodies from embedded files with `EXEC(N'…')`. That text is fixed at build time and contains no user input.
+- **The migrations** deploy procedure bodies held as constants in each migration, with `EXEC(N'…')`. That text is fixed in source control and contains no user input.
 - **The scripts in `/sql` and `database/perf`** take their inputs as T-SQL variables.
 
 ### Tests never touch the development database

@@ -31,6 +31,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Threading.RateLimiting;
 using ApexPost.Web.Middleware;
@@ -99,6 +100,14 @@ builder.Services.AddScoped<AuditColumnsInterceptor>();
 builder.Services.AddDbContext<ApexPostDbContext>((services, options) => options
     .UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure())
     .AddInterceptors(services.GetRequiredService<AuditColumnsInterceptor>()));
+// Short-lived contexts for read-only work that runs in parallel (the reports page, ADR 0021). They never write, so
+// they need no audit interceptor, and the request's scoped context above is never shared between threads.
+builder.Services.AddSingleton<IDbContextFactory<ApexPostDbContext>>(services => new PooledDbContextFactory<ApexPostDbContext>(
+    new DbContextOptionsBuilder<ApexPostDbContext>()
+        .UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure())
+        .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
+        .UseLoggerFactory(services.GetRequiredService<ILoggerFactory>())
+        .Options));
 builder.Services.AddScoped<IUnitOfWork, EfUnitOfWork>();
 builder.Services.AddScoped<IBranchRepository, EfBranchRepository>();
 builder.Services.AddScoped<ICounterRepository, EfCounterRepository>();
@@ -144,10 +153,13 @@ builder.Services.AddScoped<ParcelStatusService>();
 builder.Services.AddScoped<MoneyOrderWorkflowService>();
 builder.Services.AddScoped<CounterTransactionWorkflowService>();
 builder.Services.AddScoped<IBranchReportQueries, EfBranchReportQueries>();
+builder.Services.AddScoped<IBranchReportPageQueries, ParallelBranchReportPageQueries>();
 builder.Services.AddScoped<IBranchQueries, EfBranchQueries>();
 builder.Services.AddScoped<ICatalogueQueries, EfCatalogueQueries>();
 builder.Services.AddScoped<ITransactionQueries, EfTransactionQueries>();
 builder.Services.AddScoped<IStaffQueries, EfStaffQueries>();
+builder.Services.AddScoped<IShippingQueries, EfShippingQueries>();
+builder.Services.AddScoped<IMoneyOrderQueries, EfMoneyOrderQueries>();
 builder.Services.AddScoped<ICatalogueBulkUpdates, EfCatalogueBulkUpdates>();
 builder.Services.AddScoped<PriceRevisionService>();
 builder.Services.AddScoped<IStockAdjustments, EfStockAdjustments>();

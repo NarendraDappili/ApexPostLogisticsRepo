@@ -57,6 +57,24 @@ public sealed class CheckoutPersistenceTests(SqlServerTestDatabase database)
     }
 
     [Fact]
+    public async Task The_database_rejects_a_payment_that_is_not_greater_than_zero()
+    {
+        var data = await SqlTestData.SeedAsync(database, stock: 5);
+        await using (var db = database.CreateContext())
+        {
+            await SqlTestData.CheckoutService(db).CheckoutAsync(data.Sale("TX-ZERO-PAYMENT", quantity: 1));
+        }
+
+        // Writes that bypass the domain, such as a manual correction, still meet CK_Payments_Amount.
+        await using var check = database.CreateContext();
+        var violation = await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => check.Database.ExecuteSqlAsync(
+            $"UPDATE p SET Amount = 0 FROM Payments p JOIN CounterTransactions t ON t.CounterTransactionId = p.CounterTransactionId WHERE t.TransactionCode = 'TX-ZERO-PAYMENT'"));
+
+        Assert.Equal(547, violation.Number);
+        Assert.Contains("CK_Payments_Amount", violation.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Two_clerks_selling_the_last_unit_cannot_drive_stock_negative()
     {
         var data = await SqlTestData.SeedAsync(database, stock: 1);

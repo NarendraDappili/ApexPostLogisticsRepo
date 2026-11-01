@@ -1,8 +1,9 @@
 using ApexPost.Application.Queries;
 using ApexPost.Application.Transactions;
 using ApexPost.Domain.ValueObjects;
-using ApexPost.Web.Models;
 using ApexPost.Web.Filters;
+using ApexPost.Web.Middleware;
+using ApexPost.Web.Models;
 using ApexPost.Web.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -37,7 +38,7 @@ public sealed class CounterTransactionsController(CounterTransactionWorkflowServ
             return RedirectToAction(nameof(New));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { this.UseConflictStatus(exception); ModelState.AddModelError(string.Empty, exception.Message); return View(input.WithBlankRetailRows()); }
+        catch (Exception exception) when (ExceptionProblemMapping.Map(exception) is { } problem) { this.UseConflictStatus(problem); ModelState.AddModelError(string.Empty, problem.Detail); return View(input.WithBlankRetailRows()); }
     }
 
     [Authorize(Policy = AuthorizationPolicies.BranchManagerOnly), HttpGet]
@@ -45,33 +46,58 @@ public sealed class CounterTransactionsController(CounterTransactionWorkflowServ
     {
         var branchCode = User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value;
         if (string.IsNullOrWhiteSpace(branchCode)) return Forbid();
-        var history = await transactionHistory.GetRecentAsync(new BranchCode(branchCode), 50, cancellationToken);
-        return View(new TransactionListViewModel(branchCode, history
-            .Select(transaction => new TransactionSummaryViewModel(transaction.TransactionId, transaction.OccurredAtUtc, transaction.CounterCode, transaction.ClerkId, transaction.Total, transaction.Status, transaction.StatusReason))
-            .ToArray()));
+        return View(await ManageModelAsync(branchCode, cancellationToken));
     }
 
     // Void and refund are counter operations at the manager's own branch. The workflow enforces an active Branch
     // Manager of the transaction's branch, so they are not restricted to the admin/integration IP allowlist.
-    [Authorize(Policy = AuthorizationPolicies.BranchManagerOnly), HttpPost, ValidateAntiForgeryToken, InvalidModelResponse]
+    [Authorize(Policy = AuthorizationPolicies.BranchManagerOnly), HttpPost, ValidateAntiForgeryToken, HandlesInvalidModel]
     public Task<IActionResult> Void(TransactionReversalViewModel input, CancellationToken cancellationToken) => ReverseAsync(input, refund: false, cancellationToken);
 
-    [Authorize(Policy = AuthorizationPolicies.BranchManagerOnly), HttpPost, ValidateAntiForgeryToken, InvalidModelResponse]
+    [Authorize(Policy = AuthorizationPolicies.BranchManagerOnly), HttpPost, ValidateAntiForgeryToken, HandlesInvalidModel]
     public Task<IActionResult> Refund(TransactionReversalViewModel input, CancellationToken cancellationToken) => ReverseAsync(input, refund: true, cancellationToken);
 
+    // A refused void or refund redisplays the Manage page with the reason, keeping the status code (400, 404 or 409)
+    // so the audit trail and API clients still see the failure.
     private async Task<IActionResult> ReverseAsync(TransactionReversalViewModel input, bool refund, CancellationToken cancellationToken)
     {
-        if (!ModelState.IsValid) return BadRequest();
         var managerId = User.FindFirst(ApexPostClaimTypes.StaffId)?.Value;
-        if (string.IsNullOrWhiteSpace(managerId)) return Forbid();
+        var branchCode = User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value;
+        if (string.IsNullOrWhiteSpace(managerId) || string.IsNullOrWhiteSpace(branchCode)) return Forbid();
+        var action = refund ? "refunded" : "voided";
+        if (!ModelState.IsValid)
+        {
+            return await ManageWithErrorAsync(branchCode, StatusCodes.Status400BadRequest, $"The transaction was not {action}: enter the transaction and a reason of at most 500 characters.", cancellationToken);
+        }
+
         try
         {
             if (refund) await transactions.RefundAsync(new CounterTransactionId(input.TransactionId), new ManagerTransactionActionRequest(managerId, input.Reason), cancellationToken).ConfigureAwait(false);
             else await transactions.VoidAsync(new CounterTransactionId(input.TransactionId), new ManagerTransactionActionRequest(managerId, input.Reason), cancellationToken).ConfigureAwait(false);
-            TempData["Notice"] = refund ? $"Transaction {input.TransactionId} refunded." : $"Transaction {input.TransactionId} voided.";
+            TempData["Notice"] = $"Transaction {input.TransactionId} {action}.";
             return RedirectToAction(nameof(Manage));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
+        catch (Exception exception) when (ExceptionProblemMapping.Map(exception) is { } problem)
+        {
+            return await ManageWithErrorAsync(branchCode, problem.Status, $"Transaction {input.TransactionId} was not {action}: {problem.Detail}", cancellationToken);
+        }
+    }
+
+    private async Task<IActionResult> ManageWithErrorAsync(string branchCode, int status, string error, CancellationToken cancellationToken)
+    {
+        var model = await ManageModelAsync(branchCode, cancellationToken);
+        Response.StatusCode = status;
+        ViewData["Error"] = error;
+        return View(nameof(Manage), model);
+    }
+
+    private async Task<TransactionListViewModel> ManageModelAsync(string branchCode, CancellationToken cancellationToken)
+    {
+        var history = await transactionHistory.GetRecentAsync(new BranchCode(branchCode), 50, cancellationToken);
+        return new TransactionListViewModel(branchCode, history
+            .Select(transaction => new TransactionSummaryViewModel(transaction.TransactionId, transaction.OccurredAtUtc, transaction.CounterCode, transaction.ClerkId, transaction.Total, transaction.Status, transaction.StatusReason))
+            .ToArray());
     }
 
     private static string[] SplitIds(string? ids) =>

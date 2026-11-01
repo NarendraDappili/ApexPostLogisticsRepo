@@ -12,7 +12,7 @@ public sealed class ValidationActionFilter : IAsyncActionFilter, IOrderedFilter
     {
         ArgumentNullException.ThrowIfNull(context);
         ArgumentNullException.ThrowIfNull(next);
-        if (context.ModelState.IsValid)
+        if (context.ModelState.IsValid || context.ActionDescriptor.EndpointMetadata.OfType<HandlesInvalidModelAttribute>().Any())
         {
             await next().ConfigureAwait(false);
             return;

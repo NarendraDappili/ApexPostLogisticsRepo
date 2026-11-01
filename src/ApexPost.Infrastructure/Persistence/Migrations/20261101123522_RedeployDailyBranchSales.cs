@@ -8,12 +8,12 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
     /// <summary>
     /// Redeploys usp_DailyBranchSales with the day range written as expressions of @Date instead of local variables,
     /// so the optimizer estimates the day's sales from the statistics (PERFORMANCE.md, "Estimated vs actual rows").
-    /// Up deploys the current embedded script; Down restores the body that AddStoredProcedures deployed before this
-    /// change, kept here verbatim because the embedded file only holds the current version.
+    /// Up deploys the body kept below; Down restores the body AddStoredProcedures shipped.
     /// </summary>
     public partial class RedeployDailyBranchSales : Migration
     {
-        private const string PreviousDailyBranchSales = """
+        /// <summary>usp_DailyBranchSales as this migration shipped it.</summary>
+        internal const string DailyBranchSales = """
             -- Paid sales of one branch on one UTC day, split into retail (catalogue products) and services
             -- (shipments and money orders). Refunded and voided sales are excluded.
             CREATE OR ALTER PROCEDURE dbo.usp_DailyBranchSales
@@ -31,17 +31,17 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
                     THROW 50003, 'usp_DailyBranchSales: the branch does not exist.', 1;
 
                 -- A half-open range keeps the predicate on OccurredAtUtc SARGable (no function applied to the column).
-                DECLARE @From datetime2(3) = CAST(@Date AS datetime2(3));
-                DECLARE @To datetime2(3) = DATEADD(DAY, 1, @From);
-
+                -- The bounds are written as expressions of @Date rather than local variables: the optimizer cannot see a local
+                -- variable's value, so it guessed thousands of sales for a day that has about a hundred and scanned every line
+                -- (PERFORMANCE.md, "Estimated vs actual rows").
                 WITH PaidSales AS
                 (
                     SELECT t.CounterTransactionId, t.Tax
                     FROM dbo.CounterTransactions AS t
                     WHERE t.BranchCode = @BranchCode
                       AND t.Status = 'Paid'
-                      AND t.OccurredAtUtc >= @From
-                      AND t.OccurredAtUtc < @To
+                      AND t.OccurredAtUtc >= CAST(@Date AS datetime2(3))
+                      AND t.OccurredAtUtc < DATEADD(DAY, 1, CAST(@Date AS datetime2(3)))
                 ),
                 LineTotals AS
                 (
@@ -65,13 +65,13 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql(StoredProcedureScripts.ReadAsExec(StoredProcedureScripts.DailyBranchSales));
+            migrationBuilder.Sql(StoredProcedureScripts.AsExec(DailyBranchSales));
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql($"EXEC(N'{PreviousDailyBranchSales.Replace("'", "''", StringComparison.Ordinal)}');");
+            migrationBuilder.Sql(StoredProcedureScripts.AsExec(AddStoredProcedures.DailyBranchSales));
         }
     }
 }

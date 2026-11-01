@@ -76,7 +76,7 @@ internal sealed class CounterTransactionConfiguration : IEntityTypeConfiguration
         {
             payment.ToTable("Payments", table =>
             {
-                table.HasCheckConstraint("CK_Payments_Amount", "[Amount] >= 0");
+                table.HasCheckConstraint("CK_Payments_Amount", "[Amount] > 0");
                 table.HasCheckConstraint("CK_Payments_PaymentMethod", InEnum<PaymentMethod>("PaymentMethod"));
             });
             payment.WithOwner().HasForeignKey("CounterTransactionId");

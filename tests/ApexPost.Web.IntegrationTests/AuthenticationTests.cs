@@ -190,7 +190,7 @@ public sealed class AuthenticationTests
     }
 
     [Fact]
-    public async Task Void_errors_are_problem_details_with_404_for_a_missing_sale_and_400_for_a_broken_rule()
+    public async Task Void_errors_are_shown_on_the_manage_page_with_404_for_a_missing_sale_and_400_for_a_broken_rule()
     {
         await using var factory = new AuthWebApplicationFactory();
         await factory.SeedAsync();
@@ -204,13 +204,53 @@ public sealed class AuthenticationTests
         var first = await VoidAsync(manager, "TX-WEB-TWICE");
         var second = await VoidAsync(manager, "TX-WEB-TWICE");
 
+        // The manager stays on the Manage page and reads why; the status code still reports the failure.
         Assert.Equal(System.Net.HttpStatusCode.NotFound, missing.StatusCode);
-        Assert.Equal("application/problem+json", missing.Content.Headers.ContentType?.MediaType);
-        Assert.Contains("\"correlationId\"", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal("text/html", missing.Content.Headers.ContentType?.MediaType);
+        var missingPage = await missing.Content.ReadAsStringAsync();
+        Assert.Contains("Transaction TX-WEB-NOWHERE was not voided:", missingPage, StringComparison.Ordinal);
+        Assert.Contains("<h1>Branch transactions</h1>", missingPage, StringComparison.Ordinal);
         Assert.Equal(System.Net.HttpStatusCode.Redirect, first.StatusCode);
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, second.StatusCode);
-        Assert.Equal("application/problem+json", second.Content.Headers.ContentType?.MediaType);
-        Assert.Contains("Only an open or paid transaction can be voided.", await second.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal("text/html", second.Content.Headers.ContentType?.MediaType);
+        Assert.Contains("Transaction TX-WEB-TWICE was not voided: Only an open or paid transaction can be voided.", await second.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_refund_without_a_reason_is_refused_on_the_manage_page()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var manager = factory.CreateClient();
+        await SignInAsync(manager, "STF-MANAGER-01", AuthWebApplicationFactory.TestPassword);
+        var token = await GetAntiforgeryTokenAsync(manager, "/CounterTransactions/Manage");
+
+        var response = await manager.PostAsync("/CounterTransactions/Refund", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("TransactionId", "TX-WEB-NO-REASON"), new("Reason", "") ]));
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("The transaction was not refunded: enter the transaction and a reason", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_framework_invalid_operation_is_never_shown_on_a_form()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await using var failingLibrary = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IInventoryRepository>();
+            services.AddScoped<IInventoryRepository, LibraryFailureInventoryRepository>();
+        }));
+        await factory.SeedAsync();
+        using var client = failingLibrary.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false, HandleCookies = true });
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+
+        var response = await CheckoutAsync(client, "TX-WEB-LIBRARY-FAILURE", [("PRD-001", 1)]);
+
+        // An InvalidOperationException from library code is not a business rule: it is a 500 and its text stays private.
+        Assert.Equal(System.Net.HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.DoesNotContain(LibraryFailureInventoryRepository.Message, await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.False(await factory.SaleExistsAsync("TX-WEB-LIBRARY-FAILURE"));
     }
 
     [Fact]
@@ -922,7 +962,7 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         db.Products.Add(new Product(new ProductId("PRD-001"), "Demo Retail Envelope", new Money(10m)));
         db.BranchStock.Add(new BranchInventoryItem(new BranchCode("BR-NORTH"), new ProductId("PRD-001"), 100));
         db.ShippingZones.Add(new ShippingZoneEntity { ZoneCode = new ZoneCode("ZONE-01"), Name = "Test Zone 01" });
-        db.ShippingRates.Add(new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, new ZoneCode("ZONE-01"), new Money(12m), new ParcelWeight(5m)));
+        db.ShippingRates.Add(ShippingRateEntity.From(new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, new ZoneCode("ZONE-01"), new Money(12m), new ParcelWeight(5m))));
         await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
     }
 
@@ -1061,6 +1101,19 @@ public sealed class StockSoldByAnotherClerkMeanwhile(IInventoryRepository inner,
     public void Add(BranchInventoryItem inventoryItem) => inner.Add(inventoryItem);
 
     public void Update(BranchInventoryItem inventoryItem) => inner.Update(inventoryItem);
+}
+
+/// <summary>Stock reads fail inside library code (System.Linq), the way an EF Core or framework error would.</summary>
+public sealed class LibraryFailureInventoryRepository : IInventoryRepository
+{
+    public const string Message = "Sequence contains no elements";
+
+    public Task<BranchInventoryItem?> FindAsync(BranchCode branchCode, ProductId productId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<BranchInventoryItem?>(Array.Empty<BranchInventoryItem>().First());
+
+    public void Add(BranchInventoryItem inventoryItem) => throw new NotSupportedException();
+
+    public void Update(BranchInventoryItem inventoryItem) => throw new NotSupportedException();
 }
 
 /// <summary>An audit store whose database is unavailable: every write fails.</summary>

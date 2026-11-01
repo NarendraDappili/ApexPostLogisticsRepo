@@ -35,3 +35,15 @@ public interface IStaffQueries
 {
     Task<IReadOnlyList<StaffListItem>> GetStaffAsync(CancellationToken cancellationToken = default);
 }
+
+public interface IShippingQueries
+{
+    /// <summary>What the shipping label shows; null when the shipment does not exist.</summary>
+    Task<ShipmentLabel?> GetLabelAsync(ShipmentId shipmentId, CancellationToken cancellationToken = default);
+}
+
+public interface IMoneyOrderQueries
+{
+    /// <summary>The order and its verification status for the verification screen; null when the order does not exist.</summary>
+    Task<MoneyOrderSummary?> GetSummaryAsync(MoneyOrderId moneyOrderId, CancellationToken cancellationToken = default);
+}

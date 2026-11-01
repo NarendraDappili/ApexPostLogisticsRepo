@@ -80,7 +80,7 @@ public sealed class ShipmentFormViewModel
     [Range(typeof(decimal), "0.001", "100000")] public decimal HeightCentimetres { get; set; }
 }
 
-public sealed record ShippingLabelViewModel(Shipment Shipment, decimal? Charge = null);
+public sealed record ShippingLabelViewModel(ShipmentLabel Label, decimal? Charge = null);
 
 public sealed class MoneyOrderFormViewModel
 {

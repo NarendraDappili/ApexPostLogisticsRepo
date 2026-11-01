@@ -54,10 +54,14 @@ public sealed class MoneyOrder : IEquatable<MoneyOrder>
     public IdentityVerificationRecord? IdentityVerification { get; private set; }
 
     /// <summary>A money order above the high-value threshold needs a verified customer identity before it can be paid.</summary>
-    public bool RequiresVerification(Money highValueThreshold)
+    public bool RequiresVerification(Money highValueThreshold) => IsHighValue(Amount, highValueThreshold);
+
+    /// <summary>The high-value rule on its own, for screens that show an order from a read model rather than the aggregate.</summary>
+    public static bool IsHighValue(Money amount, Money highValueThreshold)
     {
+        ArgumentNullException.ThrowIfNull(amount);
         ArgumentNullException.ThrowIfNull(highValueThreshold);
-        return Amount.Amount > highValueThreshold.Amount;
+        return amount.Amount > highValueThreshold.Amount;
     }
 
     /// <summary>True when the order can be added to a basket: it is low value or its identity check passed.</summary>

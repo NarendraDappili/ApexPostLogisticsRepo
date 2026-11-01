@@ -7,6 +7,8 @@ Each critical rule is enforced in the domain or application layer, and, where th
 | Stock never becomes negative | `BranchInventoryItem.RemoveStock`/`Adjust`; a stale stock read is refused with 409 (rowversion) | `CK_BranchStock_Quantity` (`>= 0`); `usp_AdjustStock` checks inside its `UPDATE` |
 | Two clerks cannot both sell the last unit | One `SaveChangesAsync` per checkout; `rowversion` on `BranchStock` | The `UPDATE … WHERE RowVersion = @original` affects no row for the second clerk |
 | Every stock correction has a history row with a reason and a staff member | `StockAdjustment` (domain); `StockAdjustmentService` | `usp_AdjustStock` writes stock and history in one transaction; the app role has no direct access to `StockAdjustments` |
+| Only an active Branch Manager of the branch adjusts its stock | `StockAdjustmentService`; `BranchManagerOnly` policy | `usp_AdjustStock` refuses anyone else (`THROW 50025`) |
+| A sale is paid in full, for more than zero | `Payment` rejects an amount that is not positive; the payment is always the transaction total | `CK_Payments_Amount` (`> 0`) |
 | Inactive staff cannot transact or sign in | `StaffMember.CanProcessTransactionsAt`; the cookie is re-validated against `Staff` on every request | — |
 | Clerks work at their assigned branch | Checkout validates clerk and branch; `SameBranchOnly` policy; controllers compare the submitted branch with the cookie | — |
 | High-value money orders need a verified identity for the same transaction | Orders are issued Pending; the verifier decides the outcome; checkout refuses unverified high-value orders | `CK_MoneyOrders_Amount` (`> 0`), `CK_MoneyOrders_Fee` (`>= 0`), `CK_IdentityVerifications_Outcome` |

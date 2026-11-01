@@ -31,7 +31,7 @@ The decision is where each responsibility sits, and what the read side may do th
 
 ### Read side: query services may project from the DbContext
 
-- **Screens and reports go through query interfaces** in Application (`IBranchQueries`, `ICatalogueQueries`, `ITransactionQueries`, `IStaffQueries`, `IBranchReportQueries`) that return read models (records).
+- **Screens and reports go through query interfaces** in Application (`IBranchQueries`, `ICatalogueQueries`, `ITransactionQueries`, `IStaffQueries`, `IShippingQueries`, `IMoneyOrderQueries`, `IBranchReportQueries`, `IBranchReportPageQueries`) that return read models (records). Every screen that only displays data reads this way, including the shipping label and the money-order verification page; a repository loads an aggregate only to change it.
 - **The Infrastructure implementations read `ApexPostDbContext` directly** with `AsNoTracking()` projections, or call the stored procedures.
 - **This direct access is acceptable here and nowhere else**, under these rules:
   - **Read-only:** a query service never changes data and holds no business rule. Rules live in Domain and Application services.
@@ -41,7 +41,7 @@ The decision is where each responsibility sits, and what the read side may do th
 
 ### Query/command separation in one database
 
-Reads and writes are separated in code: query services versus repositories plus the unit of work. They use the **same** SQL Server database and the same scoped context type. No separate read database, replication or eventual consistency is needed: every query runs in milliseconds on 200,000 sales (`PERFORMANCE.md`), and a screen must show what was just committed.
+Reads and writes are separated in code: query services versus repositories plus the unit of work. They use the **same** SQL Server database and the same context type (the parallel reports page takes short-lived contexts from a factory, ADR 0021). No separate read database, replication or eventual consistency is needed: every query runs in milliseconds on 200,000 sales (`PERFORMANCE.md`), and a screen must show what was just committed.
 
 ## Options rejected
 

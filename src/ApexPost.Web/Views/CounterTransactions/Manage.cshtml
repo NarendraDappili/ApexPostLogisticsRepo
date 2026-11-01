@@ -2,6 +2,7 @@
 @{ ViewData["Title"] = "Branch transactions"; }
 <h1>Branch transactions</h1>
 @if (TempData["Notice"] is string notice) { <div class="alert alert-success" role="status" aria-live="polite">@notice</div> }
+@if (ViewData["Error"] is string error) { <div class="alert alert-danger" role="alert">@error</div> }
 <p class="text-muted">The 50 most recent transactions at @Model.BranchCode. Voiding or refunding a paid sale returns its retail items to stock and requires a reason.</p>
 @if (Model.Transactions.Count == 0)
 {

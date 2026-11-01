@@ -1,6 +1,10 @@
 namespace ApexPost.Infrastructure.Persistence.StoredProcedures;
 
-/// <summary>Reads the embedded CREATE OR ALTER scripts in this folder, so migrations deploy exactly the files in source control.</summary>
+/// <summary>
+/// The CREATE OR ALTER scripts in this folder are the current version of each procedure, for review and for SSMS.
+/// Migrations never read them: each migration keeps the exact text it deployed, so replaying it on a new database
+/// always deploys the same body. A test checks that the migrated database runs exactly the scripts in this folder.
+/// </summary>
 public static class StoredProcedureScripts
 {
     public const string DailyBranchSales = "usp_DailyBranchSales";
@@ -11,8 +15,13 @@ public static class StoredProcedureScripts
     /// The script wrapped in EXEC(N'...'). CREATE PROCEDURE must start its own batch, and an idempotent migration script
     /// puts each migration inside an IF block, so the statement has to run as dynamic SQL there. Quotes are doubled.
     /// </summary>
-    public static string ReadAsExec(string procedureName) => $"EXEC(N'{Read(procedureName).Replace("'", "''", StringComparison.Ordinal)}');";
+    public static string AsExec(string script)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(script);
+        return $"EXEC(N'{script.Replace("'", "''", StringComparison.Ordinal)}');";
+    }
 
+    /// <summary>The current script of a procedure in this folder.</summary>
     public static string Read(string procedureName)
     {
         var resource = $"{typeof(StoredProcedureScripts).Namespace}.{procedureName}.sql";

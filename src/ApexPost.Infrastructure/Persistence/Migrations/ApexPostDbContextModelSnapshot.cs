@@ -23,76 +23,6 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("ApexPost.Application.Pricing.ShippingRate", b =>
-                {
-                    b.Property<int>("ShippingRateId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ShippingRateId"));
-
-                    b.Property<decimal>("Charge")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
-
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2(3)")
-                        .HasDefaultValueSql("SYSUTCDATETIME()");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(48)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(48)")
-                        .HasDefaultValue("system");
-
-                    b.Property<string>("DestinationZoneCode")
-                        .IsRequired()
-                        .HasMaxLength(48)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(48)")
-                        .HasColumnName("ZoneCode");
-
-                    b.Property<decimal>("MaximumWeight")
-                        .HasPrecision(9, 3)
-                        .HasColumnType("decimal(9,3)")
-                        .HasColumnName("MaximumWeightKg");
-
-                    b.Property<DateTime?>("ModifiedAtUtc")
-                        .HasColumnType("datetime2(3)");
-
-                    b.Property<string>("ServiceLevel")
-                        .IsRequired()
-                        .HasMaxLength(12)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(12)");
-
-                    b.Property<string>("ShipmentType")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(10)");
-
-                    b.HasKey("ShippingRateId");
-
-                    b.HasIndex("DestinationZoneCode", "ShipmentType", "ServiceLevel", "MaximumWeight")
-                        .IsUnique()
-                        .HasDatabaseName("UX_ShippingRates_Band");
-
-                    b.ToTable("ShippingRates", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_ShippingRates_Charge", "[Charge] > 0");
-
-                            t.HasCheckConstraint("CK_ShippingRates_MaximumWeightKg", "[MaximumWeightKg] > 0 AND [MaximumWeightKg] <= 30");
-
-                            t.HasCheckConstraint("CK_ShippingRates_ServiceLevel", "[ServiceLevel] IN ('Standard', 'Express', 'Registered')");
-
-                            t.HasCheckConstraint("CK_ShippingRates_ShipmentType", "[ShipmentType] IN ('Letter', 'Parcel')");
-                        });
-                });
-
             modelBuilder.Entity("ApexPost.Domain.Entities.Branch", b =>
                 {
                     b.Property<int>("BranchId")
@@ -1032,6 +962,76 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("ApexPost.Infrastructure.Persistence.Entities.ShippingRateEntity", b =>
+                {
+                    b.Property<int>("ShippingRateId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ShippingRateId"));
+
+                    b.Property<decimal>("Charge")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(48)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(48)")
+                        .HasDefaultValue("system");
+
+                    b.Property<string>("DestinationZoneCode")
+                        .IsRequired()
+                        .HasMaxLength(48)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(48)")
+                        .HasColumnName("ZoneCode");
+
+                    b.Property<decimal>("MaximumWeight")
+                        .HasPrecision(9, 3)
+                        .HasColumnType("decimal(9,3)")
+                        .HasColumnName("MaximumWeightKg");
+
+                    b.Property<DateTime?>("ModifiedAtUtc")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("ServiceLevel")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(12)");
+
+                    b.Property<string>("ShipmentType")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(10)");
+
+                    b.HasKey("ShippingRateId");
+
+                    b.HasIndex("DestinationZoneCode", "ShipmentType", "ServiceLevel", "MaximumWeight")
+                        .IsUnique()
+                        .HasDatabaseName("UX_ShippingRates_Band");
+
+                    b.ToTable("ShippingRates", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ShippingRates_Charge", "[Charge] > 0");
+
+                            t.HasCheckConstraint("CK_ShippingRates_MaximumWeightKg", "[MaximumWeightKg] > 0 AND [MaximumWeightKg] <= 30");
+
+                            t.HasCheckConstraint("CK_ShippingRates_ServiceLevel", "[ServiceLevel] IN ('Standard', 'Express', 'Registered')");
+
+                            t.HasCheckConstraint("CK_ShippingRates_ShipmentType", "[ShipmentType] IN ('Letter', 'Parcel')");
+                        });
+                });
+
             modelBuilder.Entity("ApexPost.Infrastructure.Persistence.Entities.ShippingZoneEntity", b =>
                 {
                     b.Property<int>("ShippingZoneId")
@@ -1073,16 +1073,6 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
                         .HasName("AK_ShippingZones_ZoneCode");
 
                     b.ToTable("ShippingZones", (string)null);
-                });
-
-            modelBuilder.Entity("ApexPost.Application.Pricing.ShippingRate", b =>
-                {
-                    b.HasOne("ApexPost.Infrastructure.Persistence.Entities.ShippingZoneEntity", null)
-                        .WithMany()
-                        .HasForeignKey("DestinationZoneCode")
-                        .HasPrincipalKey("ZoneCode")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("ApexPost.Domain.Entities.BranchInventoryItem", b =>
@@ -1242,7 +1232,7 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
 
                             b1.ToTable("Payments", null, t =>
                                 {
-                                    t.HasCheckConstraint("CK_Payments_Amount", "[Amount] >= 0");
+                                    t.HasCheckConstraint("CK_Payments_Amount", "[Amount] > 0");
 
                                     t.HasCheckConstraint("CK_Payments_PaymentMethod", "[PaymentMethod] IN ('Cash', 'Card', 'DigitalWallet')");
                                 });
@@ -1363,6 +1353,16 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("BranchCode")
                         .HasPrincipalKey("Code")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ApexPost.Infrastructure.Persistence.Entities.ShippingRateEntity", b =>
+                {
+                    b.HasOne("ApexPost.Infrastructure.Persistence.Entities.ShippingZoneEntity", null)
+                        .WithMany()
+                        .HasForeignKey("DestinationZoneCode")
+                        .HasPrincipalKey("ZoneCode")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

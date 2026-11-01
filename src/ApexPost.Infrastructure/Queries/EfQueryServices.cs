@@ -107,6 +107,34 @@ public sealed class EfStaffQueries(ApexPostDbContext db) : IStaffQueries
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 }
 
+public sealed class EfShippingQueries(ApexPostDbContext db) : IShippingQueries
+{
+    public Task<ShipmentLabel?> GetLabelAsync(ShipmentId shipmentId, CancellationToken cancellationToken = default) =>
+        LabelQuery(shipmentId).SingleOrDefaultAsync(cancellationToken);
+
+    internal IQueryable<ShipmentLabel> LabelQuery(ShipmentId shipmentId) =>
+        db.Shipments.AsNoTracking()
+            .Where(shipment => shipment.Id == shipmentId)
+            .Select(shipment => new ShipmentLabel(
+                shipment.Id.Value, shipment.OriginBranchCode.Value, shipment.DestinationZoneCode.Value, shipment.ServiceLevel,
+                shipment.ShipmentType, shipment.Weight.Kilograms, shipment.TransactionId == null ? null : shipment.TransactionId.Value));
+}
+
+public sealed class EfMoneyOrderQueries(ApexPostDbContext db) : IMoneyOrderQueries
+{
+    public Task<MoneyOrderSummary?> GetSummaryAsync(MoneyOrderId moneyOrderId, CancellationToken cancellationToken = default) =>
+        SummaryQuery(moneyOrderId).SingleOrDefaultAsync(cancellationToken);
+
+    // One statement with a LEFT JOIN to the verification; no aggregate is loaded or tracked just to be displayed.
+    internal IQueryable<MoneyOrderSummary> SummaryQuery(MoneyOrderId moneyOrderId) =>
+        db.MoneyOrders.AsNoTracking()
+            .Where(order => order.MoneyOrderCode == moneyOrderId)
+            .Select(order => new MoneyOrderSummary(
+                order.MoneyOrderCode.Value, order.BranchCode.Value, order.TransactionContextId.Value, order.Amount, order.Fee, order.Amount + order.Fee,
+                order.IdentityVerification == null ? IdentityVerificationOutcome.Pending : order.IdentityVerification.Outcome,
+                order.IdentityVerification == null ? null : order.IdentityVerification.MaskedDocumentReference));
+}
+
 /// <summary>A UTC calendar day as a half-open range, so date filters stay SARGable on the datetime2 column.</summary>
 internal static class UtcDay
 {

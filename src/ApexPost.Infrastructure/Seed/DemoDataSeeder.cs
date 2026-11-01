@@ -50,7 +50,7 @@ public sealed class DemoDataSeeder(ApexPostDbContext db, IPasswordHasher passwor
         db.Staff.AddRange(data.Staff);
         db.Products.AddRange(data.Products);
         db.BranchStock.AddRange(data.Inventory);
-        db.ShippingRates.AddRange(data.Rates);
+        db.ShippingRates.AddRange(data.Rates.Select(ShippingRateEntity.From));
         db.Shipments.AddRange(data.Shipments);
         db.MoneyOrders.AddRange(data.MoneyOrders.Select(MoneyOrderMapper.ToEntity));
         db.CounterTransactions.AddRange(data.Transactions);

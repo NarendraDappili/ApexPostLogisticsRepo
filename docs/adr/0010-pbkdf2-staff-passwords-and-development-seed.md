@@ -1,6 +1,6 @@
 # ADR 0010: Store PBKDF2 password hashes on staff records and seed demo data in Development
 
-Status: Accepted. Since Week 3 the seed fills an empty, migrated ApexPostDb in one transaction instead of writing JSON files (`DemoDataSeeder`, see DESIGN.md); the password decision is unchanged.
+Status: Accepted. Since Week 3 the seed fills an empty, migrated ApexPostDb in one transaction instead of writing JSON files (`DemoDataSeeder`, see DESIGN.md). The hashing decision is unchanged. The demo password is no longer committed: it is a user-secret that `scripts/setup-dev.ps1` generates (see Consequences).
 
 ## Context
 
@@ -19,7 +19,12 @@ The review found that the app could not be demonstrated from a fresh clone: ther
 
 ## Consequences
 
-- `dotnet run` on a fresh clone gives a working demo with documented logins; no user-secrets step is needed to sign in.
-- The demo password lives in `appsettings.Development.json`. It protects synthetic data in a local Development run only; the seeder never runs in other environments, and the value can be overridden with user secrets.
+- `scripts/setup-dev.ps1` followed by `dotnet run` gives a working demo on a fresh clone.
+- **The demo password is not in source control.** It is the user-secret `ApexPost:DemoSeed:Password`.
+  - `scripts/setup-dev.ps1` generates a random one when none is set, and prints it once.
+  - A developer can also set their own with `dotnet user-secrets set`.
+  - Without it, the seeder logs how to set it and seeds nothing.
+  - It was in `appsettings.Development.json` until the Week 3 review; that rule now holds for fictional data too.
+  - The seeder never runs outside Development.
 - Administrators set and reset passwords through the staff screens; only hashes are persisted.
 - Integration tests also exposed that `WebApplicationFactory` configuration added through `ConfigureAppConfiguration` is not visible to settings `Program.cs` reads before `Build()`, so the tests had been writing into `App_Data`. They now pass the data directory with `UseSetting`.

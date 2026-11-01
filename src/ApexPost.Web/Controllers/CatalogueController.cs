@@ -3,6 +3,7 @@ using ApexPost.Application.Inventory;
 using ApexPost.Application.Queries;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Web.Filters;
+using ApexPost.Web.Middleware;
 using ApexPost.Web.Models;
 using ApexPost.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -53,7 +54,7 @@ public sealed class CatalogueController(ICatalogueQueries catalogue) : Controlle
             TempData["Notice"] = $"{repriced} product(s) in {input.CategoryCode.Trim().ToUpperInvariant()} were repriced by {input.Percentage.ToString("+0.##;-0.##", System.Globalization.CultureInfo.InvariantCulture)}%.";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
-        catch (ArgumentException exception) { TempData["Error"] = exception.Message; }
+        catch (Exception exception) when (ExceptionProblemMapping.Map(exception) is { } problem) { TempData["Error"] = problem.Detail; }
 
         return RedirectToAction(nameof(Index));
     }
@@ -71,10 +72,10 @@ public sealed class CatalogueController(ICatalogueQueries catalogue) : Controlle
             TempData["Notice"] = $"Stock of {level.ProductId.Value} at {level.BranchCode.Value} is now {level.Quantity} ({input.Delta.ToString("+0;-0", System.Globalization.CultureInfo.InvariantCulture)}).";
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        catch (Exception exception) when (ExceptionProblemMapping.Map(exception) is { } problem)
         {
-            this.UseConflictStatus(exception);
-            TempData["Error"] = exception.Message;
+            this.UseConflictStatus(problem);
+            TempData["Error"] = problem.Detail;
         }
 
         return RedirectToAction(nameof(Index), new { branchCode });

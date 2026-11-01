@@ -84,6 +84,9 @@ public sealed class MoneyOrderWorkflowService
         return moneyOrder.RequiresVerification(_policy.HighValueThreshold);
     }
 
+    /// <summary>Whether an order of this amount needs a verified identity; for screens that read a summary, not the aggregate.</summary>
+    public bool RequiresVerification(Money amount) => MoneyOrder.IsHighValue(amount, _policy.HighValueThreshold);
+
     /// <summary>Asks the identity verifier for an outcome and records it, masked, against the order's transaction context.</summary>
     public async Task<MoneyOrder> VerifyIdentityAsync(MoneyOrderId moneyOrderId, BranchCode branchCode, IdentityVerificationRequest request, CancellationToken cancellationToken = default)
     {

@@ -33,3 +33,16 @@ public sealed record ShippingVolumeReport(BranchCode BranchCode, IReadOnlyCollec
 public sealed record ShippingVolumeItem(ZoneCode DestinationZoneCode, ShippingServiceLevel ServiceLevel, int Count);
 
 public sealed record MoneyOrderVerificationReport(BranchCode BranchCode, int TotalCount, int VerifiedCount, int FailedCount, int PendingCount);
+
+/// <summary>The four reports the reports page shows together.</summary>
+public sealed record BranchReportPage(
+    DailyBranchSalesReport DailySales, LowStockReport LowStock, ShippingVolumeReport ShippingVolume, MoneyOrderVerificationReport MoneyOrders);
+
+/// <summary>
+/// Reads the four branch reports at once. They are independent, read-only queries, so an implementation may run them
+/// in parallel, provided each one has its own database context (ADR 0021).
+/// </summary>
+public interface IBranchReportPageQueries
+{
+    Task<BranchReportPage> GetAsync(BranchCode branchCode, DateOnly day, int lowStockThreshold, CancellationToken cancellationToken = default);
+}

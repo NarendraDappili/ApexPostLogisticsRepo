@@ -1,6 +1,7 @@
 using ApexPost.Application.Queries;
 using ApexPost.Application.StaffManagement;
 using ApexPost.Domain.ValueObjects;
+using ApexPost.Web.Middleware;
 using ApexPost.Web.Models;
 using ApexPost.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -31,10 +32,10 @@ public sealed class StaffAdminController(StaffManagementService staffManagement,
             return RedirectToAction(nameof(Index));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        catch (Exception exception) when (ExceptionProblemMapping.Map(exception) is { } problem)
         {
-            this.UseConflictStatus(exception);
-            ModelState.AddModelError(string.Empty, exception.Message);
+            this.UseConflictStatus(problem);
+            ModelState.AddModelError(string.Empty, problem.Detail);
             return View(WithoutPassword(input));
         }
     }
@@ -64,10 +65,10 @@ public sealed class StaffAdminController(StaffManagementService staffManagement,
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
         catch (StaffMemberNotFoundException) { return NotFound(); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        catch (Exception exception) when (ExceptionProblemMapping.Map(exception) is { } problem)
         {
-            this.UseConflictStatus(exception);
-            ModelState.AddModelError(string.Empty, exception.Message);
+            this.UseConflictStatus(problem);
+            ModelState.AddModelError(string.Empty, problem.Detail);
             return View(WithoutPassword(input));
         }
     }

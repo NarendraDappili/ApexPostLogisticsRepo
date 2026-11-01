@@ -31,7 +31,7 @@ public sealed class ApexPostDbContext(DbContextOptions<ApexPostDbContext> option
 
     public DbSet<ShippingZoneEntity> ShippingZones => Set<ShippingZoneEntity>();
 
-    public DbSet<Application.Pricing.ShippingRate> ShippingRates => Set<Application.Pricing.ShippingRate>();
+    public DbSet<ShippingRateEntity> ShippingRates => Set<ShippingRateEntity>();
 
     public DbSet<Shipment> Shipments => Set<Shipment>();
 

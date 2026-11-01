@@ -63,6 +63,16 @@ public class PersistenceReadyDomainTests
     }
 
     [Fact]
+    public void A_payment_must_be_greater_than_zero()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Payment(PaymentMethod.Cash, new Money(0m)));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CounterTransaction(
+            new("TX-FREE"), new("BR-1"), new("C-01"), new("STF-1"),
+            [new CounterTransactionLine(new ProductId("P-1"), "Free leaflet", 1, new Money(0m))],
+            new Money(0m), new Money(0m), PaymentMethod.Cash));
+    }
+
+    [Fact]
     public void Stock_adjustment_changes_quantity_and_returns_its_history_entry()
     {
         var item = new BranchInventoryItem(new BranchCode("BR-1"), new ProductId("P-1"), 5);

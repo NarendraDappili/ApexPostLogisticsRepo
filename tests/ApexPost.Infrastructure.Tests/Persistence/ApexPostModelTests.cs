@@ -90,13 +90,23 @@ public sealed class ApexPostModelTests
 
     [Theory]
     [InlineData(typeof(Shipment), "CK_Shipments_WeightKg", "[WeightKg] > 0 AND [WeightKg] <= 30")]
-    [InlineData(typeof(Application.Pricing.ShippingRate), "CK_ShippingRates_MaximumWeightKg", "[MaximumWeightKg] > 0 AND [MaximumWeightKg] <= 30")]
+    [InlineData(typeof(ShippingRateEntity), "CK_ShippingRates_MaximumWeightKg", "[MaximumWeightKg] > 0 AND [MaximumWeightKg] <= 30")]
     public void Weight_limits_mirror_the_domain_acceptance_limit(Type entity, string name, string sql)
     {
         var check = Assert.Single(Model.FindEntityType(entity)!.GetCheckConstraints(), constraint => constraint.Name == name);
 
         Assert.Equal(sql, check.Sql);
         Assert.Equal(30, ParcelWeight.MaximumKilograms);
+    }
+
+    [Fact]
+    public void Application_types_are_never_mapped_as_entities()
+    {
+        // Entities are domain types or Infrastructure persistence types; Application records stay free of mapping.
+        var applicationAssembly = typeof(Application.Abstractions.IUnitOfWork).Assembly;
+
+        Assert.DoesNotContain(Model.GetEntityTypes(), type => type.ClrType.Assembly == applicationAssembly);
+        Assert.Equal("ShippingRates", Model.FindEntityType(typeof(ShippingRateEntity))!.GetTableName());
     }
 
     [Fact]

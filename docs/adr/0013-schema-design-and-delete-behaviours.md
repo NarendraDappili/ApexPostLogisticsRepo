@@ -47,7 +47,7 @@ The domain identifies everything by a business code (`BranchCode`, `ProductId`, 
 **CHECK constraints** (26 in total) mirror domain rules:
 - `Quantity >= 0` on stock;
 - quantity and unit price on lines;
-- `Amount > 0` and `Fee >= 0` on money orders;
+- `Amount > 0` and `Fee >= 0` on money orders, and `Amount > 0` on payments;
 - allowed status, service-level, shipment-type, payment-method and outcome values;
 - a voided or refunded sale must name the authorising manager and a reason, and an open or paid sale must not;
 - weights `> 0 AND <= 30` (the domain's `ParcelWeight.MaximumKilograms`);

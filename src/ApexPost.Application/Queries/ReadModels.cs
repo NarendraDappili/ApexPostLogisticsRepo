@@ -22,3 +22,12 @@ public sealed record TransactionSummary(
     decimal Total, CounterTransactionStatus Status, string? StatusReason);
 
 public sealed record StaffListItem(string StaffId, string Name, string? Email, StaffRole Role, string BranchCode, bool IsActive);
+
+public sealed record ShipmentLabel(
+    string ShipmentId, string OriginBranchCode, string DestinationZoneCode, ShippingServiceLevel ServiceLevel,
+    ShipmentType ShipmentType, decimal WeightKilograms, string? TransactionId);
+
+/// <summary>A money order as the verification screen shows it. Only the masked document reference is ever read.</summary>
+public sealed record MoneyOrderSummary(
+    string MoneyOrderId, string BranchCode, string TransactionId, decimal Amount, decimal Fee, decimal Total,
+    IdentityVerificationOutcome Outcome, string? MaskedDocumentReference);

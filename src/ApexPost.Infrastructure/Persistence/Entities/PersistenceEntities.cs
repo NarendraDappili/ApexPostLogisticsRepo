@@ -22,6 +22,39 @@ public sealed class ShippingZoneEntity
     public string Name { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// A row of the shipping rate table. The Application's <see cref="Application.Pricing.ShippingRate"/> stays a pure
+/// pricing type with no persistence concerns; <c>EfShippingRateProvider</c> maps rows to it, and <see cref="From"/> maps back.
+/// </summary>
+public sealed class ShippingRateEntity
+{
+    public ShipmentType ShipmentType { get; set; }
+
+    public ShippingServiceLevel ServiceLevel { get; set; }
+
+    public ZoneCode DestinationZoneCode { get; set; } = null!;
+
+    public Money Charge { get; set; } = null!;
+
+    public ParcelWeight MaximumWeight { get; set; } = null!;
+
+    public static ShippingRateEntity From(Application.Pricing.ShippingRate rate)
+    {
+        ArgumentNullException.ThrowIfNull(rate);
+        return new ShippingRateEntity
+        {
+            ShipmentType = rate.ShipmentType,
+            ServiceLevel = rate.ServiceLevel,
+            DestinationZoneCode = rate.DestinationZoneCode,
+            Charge = rate.Charge,
+            MaximumWeight = rate.MaximumWeight,
+        };
+    }
+
+    /// <summary>The validated pricing rate; the constructor re-checks the stored enum values.</summary>
+    public Application.Pricing.ShippingRate ToRate() => new(ShipmentType, ServiceLevel, DestinationZoneCode, Charge, MaximumWeight);
+}
+
 /// <summary>Stored shape of the <see cref="Domain.Entities.MoneyOrder"/> aggregate root.</summary>
 public sealed class MoneyOrderEntity
 {

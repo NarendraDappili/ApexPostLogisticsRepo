@@ -20,7 +20,7 @@ The EF Core command-line tool (`dotnet-ef` 10.0.13) is pinned in [`dotnet-tools.
 ## Quick start
 
 ```powershell
-.\scripts\setup-dev.ps1                      # tool restore, connection-string secret, create and migrate ApexPostDb
+.\scripts\setup-dev.ps1                      # tool restore, connection string and demo password in user-secrets, create and migrate ApexPostDb
 dotnet run --project src/ApexPost.Web        # seeds the demo data on the first start
 ```
 
@@ -99,7 +99,11 @@ dotnet ef database update --project src/ApexPost.Infrastructure
 
 ## Demo accounts
 
-Every seeded account uses the Development password **`ApexPost-Demo-2026`**. It is set in `appsettings.Development.json` as `ApexPost:DemoSeed:Password`; only per-user PBKDF2 hashes are stored. The data is fictional, and the password is never used outside Development.
+Every seeded account uses the Development demo password: the user-secret `ApexPost:DemoSeed:Password`. No password is committed.
+- `scripts/setup-dev.ps1` generates a random one and prints it. See it again with `dotnet user-secrets list --project src/ApexPost.Web`.
+- Or choose your own before the first run: `dotnet user-secrets set --project src/ApexPost.Web "ApexPost:DemoSeed:Password" "<at least 10 characters>"`.
+
+Only per-user PBKDF2 hashes are stored. The data is fictional, and the seeder never runs outside Development.
 
 | Role | Staff ID | Home branch |
 |---|---|---|
@@ -140,9 +144,9 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 261 tests passing (Domain 66, Application 86, Infrastructure 59, Web integration 50) and a zero-warning build.
+**Results:** the latest run had 278 tests passing (Domain 67, Application 86, Infrastructure 73, Web integration 52) and a zero-warning build.
 
-**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors, checks that every model change has a migration, starts a throwaway SQL Server container with a random password, and runs every test on each push and pull request to `master`.
+**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors, checks that every model change has a migration, starts a throwaway SQL Server container with a random password, and runs every test on each push and pull request to `master`. Every run on GitHub Actions so far has passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
 
 ## Database artifacts
 
@@ -162,7 +166,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 
 | Setting | Purpose |
 |---|---|
-| `DemoSeed:Enabled`, `DemoSeed:Password` | Development seeding (on in `appsettings.Development.json`) |
+| `DemoSeed:Enabled`, `DemoSeed:Password` | Development seeding (on in `appsettings.Development.json`); the password is a user-secret only |
 | `Inventory:LowStockThreshold`, `Inventory:LowStockRecipient` | Low-stock alerts and reports |
 | `MoneyOrders:HighValueThreshold`, `FlatFee`, `FeeRate` | Identity-verification threshold and fee |
 | `Transactions:TaxRate` | Tax on sales |

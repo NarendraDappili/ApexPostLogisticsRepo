@@ -28,7 +28,9 @@ public sealed class EfShippingRateProvider(ApexPostDbContext db, ShippingRateCac
 
     private async Task<IReadOnlyCollection<ShippingRate>> LoadAsync(CancellationToken cancellationToken)
     {
-        IReadOnlyCollection<ShippingRate> rates = await db.ShippingRates.AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
+        // Rows are read as persistence entities and mapped to the Application's pricing record.
+        var rows = await db.ShippingRates.AsNoTracking().ToListAsync(cancellationToken).ConfigureAwait(false);
+        IReadOnlyCollection<ShippingRate> rates = [.. rows.Select(row => row.ToRate())];
         if (rates.Count > 0) cache.Rates = rates;
         return rates;
     }

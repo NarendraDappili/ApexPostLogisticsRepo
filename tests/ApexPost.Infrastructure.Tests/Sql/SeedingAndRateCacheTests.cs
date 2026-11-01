@@ -60,7 +60,7 @@ public sealed class SeedingAndRateCacheTests : IAsyncLifetime
         {
             Assert.Empty(await new EfShippingRateProvider(db, cache).GetRatesAsync());
             db.ShippingZones.Add(new ShippingZoneEntity { ZoneCode = new ZoneCode("ZONE-CACHE"), Name = "Cache Zone" });
-            db.ShippingRates.Add(new ShippingRate(ShipmentType.Letter, ShippingServiceLevel.Standard, new ZoneCode("ZONE-CACHE"), new Money(5m), new ParcelWeight(1m)));
+            db.ShippingRates.Add(ShippingRateEntity.From(new ShippingRate(ShipmentType.Letter, ShippingServiceLevel.Standard, new ZoneCode("ZONE-CACHE"), new Money(5m), new ParcelWeight(1m))));
             await db.SaveChangesAsync();
             Assert.Single(await new EfShippingRateProvider(db, cache).GetRatesAsync());
         }

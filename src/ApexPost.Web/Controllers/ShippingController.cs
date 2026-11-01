@@ -1,5 +1,7 @@
+using ApexPost.Application.Queries;
 using ApexPost.Application.Shipping;
 using ApexPost.Domain.ValueObjects;
+using ApexPost.Web.Middleware;
 using ApexPost.Web.Models;
 using ApexPost.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -8,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace ApexPost.Web.Controllers;
 
 [Authorize(Roles = "CounterClerk")]
-public sealed class ShippingController(ShippingWorkflowService shipping) : Controller
+public sealed class ShippingController(ShippingWorkflowService shipping, IShippingQueries shipments) : Controller
 {
     [HttpGet]
     public IActionResult Create() => View(new ShipmentFormViewModel
@@ -28,7 +30,7 @@ public sealed class ShippingController(ShippingWorkflowService shipping) : Contr
             return RedirectToAction(nameof(Label), new { id = result.Shipment.Id.Value });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { this.UseConflictStatus(exception); ModelState.AddModelError(string.Empty, exception.Message); return View(input); }
+        catch (Exception exception) when (ExceptionProblemMapping.Map(exception) is { } problem) { this.UseConflictStatus(problem); ModelState.AddModelError(string.Empty, problem.Detail); return View(input); }
     }
 
     [HttpGet]
@@ -37,11 +39,12 @@ public sealed class ShippingController(ShippingWorkflowService shipping) : Contr
         if (string.IsNullOrWhiteSpace(id)) return BadRequest();
         try
         {
-            var shipment = await shipping.GetAsync(new ShipmentId(id), cancellationToken);
+            // Read side: a no-tracking projection of the label columns, not the Shipment aggregate.
+            var label = await shipments.GetLabelAsync(new ShipmentId(id), cancellationToken);
+            if (label is null) return NotFound();
             decimal? charge = decimal.TryParse(TempData["Charge"] as string, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
-            return View(new ShippingLabelViewModel(shipment, charge));
+            return View(new ShippingLabelViewModel(label, charge));
         }
-        catch (ShipmentNotFoundException) { return NotFound(); }
         catch (ArgumentException) { return BadRequest(); }
     }
 }

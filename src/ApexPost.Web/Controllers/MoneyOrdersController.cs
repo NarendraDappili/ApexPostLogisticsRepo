@@ -1,6 +1,7 @@
 using ApexPost.Application.MoneyOrders;
-using ApexPost.Domain.Entities;
+using ApexPost.Application.Queries;
 using ApexPost.Domain.ValueObjects;
+using ApexPost.Web.Middleware;
 using ApexPost.Web.Models;
 using ApexPost.Web.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace ApexPost.Web.Controllers;
 
 [Authorize(Roles = "CounterClerk")]
-public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders) : Controller
+public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders, IMoneyOrderQueries moneyOrderQueries) : Controller
 {
     [HttpGet]
     public IActionResult Create() => View(new MoneyOrderFormViewModel
@@ -36,10 +37,10 @@ public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders)
             return RedirectToAction(nameof(Create));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        catch (Exception exception) when (ExceptionProblemMapping.Map(exception) is { } problem)
         {
-            this.UseConflictStatus(exception);
-            ModelState.AddModelError(string.Empty, exception.Message);
+            this.UseConflictStatus(problem);
+            ModelState.AddModelError(string.Empty, problem.Detail);
             return View(input);
         }
     }
@@ -50,11 +51,12 @@ public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders)
         if (string.IsNullOrWhiteSpace(id)) return BadRequest();
         try
         {
-            var order = await moneyOrders.GetAsync(new MoneyOrderId(id), cancellationToken);
+            // Read side: a no-tracking projection with the verification joined, not the tracked aggregate.
+            var order = await moneyOrderQueries.GetSummaryAsync(new MoneyOrderId(id), cancellationToken);
+            if (order is null) return NotFound();
             if (!IsOwnBranch(order)) return Forbid();
-            return View(new MoneyOrderVerificationViewModel { MoneyOrderId = order.Id.Value, Summary = Summarize(order) });
+            return View(new MoneyOrderVerificationViewModel { MoneyOrderId = order.MoneyOrderId, Summary = Summarize(order) });
         }
-        catch (MoneyOrderNotFoundException) { return NotFound(); }
         catch (ArgumentException) { return BadRequest(); }
     }
 
@@ -71,21 +73,33 @@ public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders)
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }
         catch (MoneyOrderNotFoundException) { return NotFound(); }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        catch (Exception exception) when (ExceptionProblemMapping.Map(exception) is { } problem)
         {
-            this.UseConflictStatus(exception);
+            this.UseConflictStatus(problem);
             // Never echo the raw document number back to the browser.
             input.DocumentNumber = string.Empty;
             ModelState.Remove(nameof(input.DocumentNumber));
-            ModelState.AddModelError(string.Empty, exception.Message);
+            ModelState.AddModelError(string.Empty, problem.Detail);
+            input.Summary = await OwnSummaryAsync(input.MoneyOrderId);
             return View(input);
         }
     }
 
-    private bool IsOwnBranch(MoneyOrder order) =>
-        string.Equals(User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value, order.BranchCode.Value, StringComparison.OrdinalIgnoreCase);
+    // The order details for a redisplayed form; none when the ID is malformed, unknown or another branch's.
+    private async Task<MoneyOrderSummaryViewModel?> OwnSummaryAsync(string moneyOrderId)
+    {
+        MoneyOrderId id;
+        try { id = new MoneyOrderId(moneyOrderId); }
+        catch (ArgumentException) { return null; }
 
-    private MoneyOrderSummaryViewModel Summarize(MoneyOrder order) => new(
-        order.TransactionContextId.Value, order.Amount.Amount, order.Fee.Amount, order.Total.Amount,
-        moneyOrders.RequiresVerification(order), order.IdentityVerificationOutcome, order.IdentityVerification?.MaskedDocumentReference.Value);
+        var order = await moneyOrderQueries.GetSummaryAsync(id, CancellationToken.None);
+        return order is not null && IsOwnBranch(order) ? Summarize(order) : null;
+    }
+
+    private bool IsOwnBranch(MoneyOrderSummary order) =>
+        string.Equals(User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value, order.BranchCode, StringComparison.OrdinalIgnoreCase);
+
+    private MoneyOrderSummaryViewModel Summarize(MoneyOrderSummary order) => new(
+        order.TransactionId, order.Amount, order.Fee, order.Total,
+        moneyOrders.RequiresVerification(new Money(order.Amount)), order.Outcome, order.MaskedDocumentReference);
 }

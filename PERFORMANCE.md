@@ -358,6 +358,27 @@ WHERE [m].[BranchCode] = @branchCode
 GROUP BY [i].[Outcome]
 ```
 
+## Single vs split query
+
+The brief lists split queries. [ADR 0020](docs/adr/0020-single-or-split-queries.md) records the decision, and the full generated SQL for both forms.
+
+- **What was compared:** a branch's sales loaded with their owned lines and payment. This is the only collection navigation in the model.
+- **How:** EF Core's default single query against `AsSplitQuery()`. `GeneratedSqlTests` captures the SQL and checks that both return the same aggregates. [`database/perf/05-single-vs-split-query.sql`](database/perf/05-single-vs-split-query.sql) runs the exact statements with `STATISTICS IO`.
+- **Where:** `ApexPostDb`, BR-NORTH: 50 sales, 88 lines, warm cache.
+
+| | Single query | Split query |
+|---|---|---|
+| Round trips | **1** | 2 |
+| Rows returned | 88 | 138 (50 + 88) |
+| Values returned (rows × columns) | 2,640 | 2,018 |
+| Logical reads | **383** | 471 (12 + 459) |
+
+**Result.**
+- The split query avoids repeating the sale's 15 header columns on each line, so it returns 24% fewer values.
+- But its second statement finds the same sales and payments again, so it costs 23% more reads and a second round trip.
+- With fewer than two lines per sale, the single query is cheaper. It stays the default.
+- A split query pays off only when repetition grows: two or more collections in one query (row multiplication), or many wide child rows per parent. No aggregate has either today.
+
 ## Small data: why the demo database still scans
 
 On the demo database every table fits in 2–10 pages; for example, `BranchStock` is 150 rows in 4 pages. The same queries were run there with the indexes in place:

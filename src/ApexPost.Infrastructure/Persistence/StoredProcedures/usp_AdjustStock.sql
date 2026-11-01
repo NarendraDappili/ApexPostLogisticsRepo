@@ -1,5 +1,6 @@
 -- Manual stock correction: changes one branch stock row by @Delta and records who did it and why in
 -- StockAdjustments, both or neither. Returns the new quantity. Stock can never go below zero.
+-- Only an active Branch Manager of the branch may adjust its stock.
 -- Works on its own or inside a caller's transaction: it only starts and commits a transaction when none is open.
 CREATE OR ALTER PROCEDURE dbo.usp_AdjustStock
     @BranchCode varchar(48),
@@ -21,8 +22,15 @@ BEGIN
         THROW 50023, 'A stock adjustment cannot be zero.', 1;
     IF @Reason IS NULL OR LTRIM(RTRIM(@Reason)) = ''
         THROW 50024, 'An adjustment reason is required.', 1;
-    IF NOT EXISTS (SELECT 1 FROM dbo.Staff WHERE StaffCode = @ChangedBy AND IsActive = 1)
-        THROW 50025, 'The adjustment must be made by an active staff member.', 1;
+    -- The same rule as StockAdjustmentService, so a correction from SSMS or a script is held to it too.
+    IF NOT EXISTS (SELECT 1
+                   FROM dbo.Staff AS s
+                   INNER JOIN dbo.Roles AS r ON r.RoleId = s.RoleId
+                   WHERE s.StaffCode = @ChangedBy
+                     AND s.IsActive = 1
+                     AND r.Name = 'BranchManager'
+                     AND s.BranchCode = @BranchCode)
+        THROW 50025, 'A Branch Manager assigned to the branch must make stock adjustments.', 1;
 
     DECLARE @StartedTransaction bit = 0;
     BEGIN TRY

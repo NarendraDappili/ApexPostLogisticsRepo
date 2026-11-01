@@ -42,7 +42,10 @@ The difficulty is the last row. The domain signals broken rules with `ArgumentEx
 
 ### MVC forms
 
-MVC forms keep their Week 2 behaviour. A business error is shown on the form, and a conflict additionally sets status 409 (`ControllerErrorExtensions.UseConflictStatus`), so the status is correct for both browsers and tests.
+MVC forms show a business error on the form, and a conflict also sets status 409 (`ControllerErrorExtensions.UseConflictStatus`), so the status is correct for both browsers and tests.
+
+- **Forms use the same rule as the middleware.** A controller catches only what `ExceptionProblemMapping.Map` recognises, with `catch (Exception e) when (ExceptionProblemMapping.Map(e) is { } problem)`, and shows `problem.Detail`. It never catches every `ArgumentException` or `InvalidOperationException`. An EF Core or framework `InvalidOperationException` therefore reaches the middleware and becomes a 500 without its message, instead of being displayed. A web test proves this with a library exception thrown during checkout.
+- **Void and refund redisplay the Manage page.** A refused reversal (missing sale, wrong state, conflict, missing reason) shows the reason on the Manage page with its status code (404, 400 or 409), instead of returning raw Problem Details JSON to the manager's browser. The audit trail still records that status.
 
 ## Consequences
 

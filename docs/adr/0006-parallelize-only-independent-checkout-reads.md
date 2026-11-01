@@ -1,6 +1,6 @@
 # ADR 0006: Parallelize only independent checkout validation reads
 
-Status: Superseded by ADR 0017. One DbContext per request must not run queries in parallel, so the checkout reads are sequential.
+Status: Superseded by ADR 0017. One DbContext per request must not run queries in parallel, so the checkout reads are sequential. `Task.WhenAll` is used again for the independent reports, each with its own context (ADR 0021).
 
 ## Context
 
