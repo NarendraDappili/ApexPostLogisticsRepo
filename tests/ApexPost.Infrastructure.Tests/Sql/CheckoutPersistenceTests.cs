@@ -1,5 +1,7 @@
 using System.Data.Common;
+using System.Text.RegularExpressions;
 using ApexPost.Application.Abstractions;
+using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
@@ -101,6 +103,81 @@ public sealed class CheckoutPersistenceTests(SqlServerTestDatabase database)
         Assert.InRange(stock, 0, 3);
         Assert.Equal(outcomes.Count(sold => sold), stored);
         Assert.Equal(3 - stored, stock);
+    }
+
+    [Fact]
+    public async Task Sales_and_voids_update_their_stock_rows_in_key_order_before_they_write_the_sale_rows()
+    {
+        // The deadlock-avoidance rule in sql/README.md: every writer locks BranchStock rows first, in clustered-key order.
+        var data = await SqlTestData.SeedAsync(database, stock: 5);
+        var laterProduct = new ProductId($"{data.Product.Value}-B");
+        await using (var setup = database.CreateContext())
+        {
+            setup.Products.Add(new Product(laterProduct, "Test Stamp", new Money(1m)));
+            setup.BranchStock.Add(new BranchInventoryItem(data.Branch, laterProduct, 5));
+            await setup.SaveChangesAsync();
+        }
+
+        var stockIds = await StockIdsAsync(data.Branch);
+        var commands = new ParameterLog();
+        await using (var db = database.CreateContext(maxBatchSize: 1, interceptors: commands))
+        {
+            // The basket lists the product with the higher stock row id first.
+            var sale = data.Sale("TX-LOCK-ORDER", quantity: 1) with { RetailLines = [new(laterProduct.Value, 1), new(data.Product.Value, 1)] };
+            await SqlTestData.CheckoutService(db).CheckoutAsync(sale);
+        }
+
+        var saleWrites = commands.Writes.ToList();
+        commands.Writes.Clear();
+        await using (var db = database.CreateContext(maxBatchSize: 1, interceptors: commands))
+        {
+            await SqlTestData.CheckoutService(db).VoidAsync(new CounterTransactionId("TX-LOCK-ORDER"), new(data.Manager.Value, "Keyed at the wrong counter."));
+        }
+
+        Assert.Equal(["UPDATE [BranchStock]", "UPDATE [BranchStock]", "INSERT INTO [CounterTransactions]"], saleWrites.Take(3).Select(write => write.Statement));
+        Assert.Equal([stockIds[data.Product], stockIds[laterProduct]], saleWrites.Take(2).Select(write => write.BranchStockId));
+        Assert.Equal(["UPDATE [BranchStock]", "UPDATE [BranchStock]", "UPDATE [CounterTransactions]"], commands.Writes.Select(write => write.Statement));
+        Assert.Equal([stockIds[data.Product], stockIds[laterProduct]], commands.Writes.Take(2).Select(write => write.BranchStockId));
+    }
+
+    private async Task<Dictionary<ProductId, int>> StockIdsAsync(BranchCode branch)
+    {
+        await using var db = database.CreateContext();
+        return await db.BranchStock.Where(item => item.BranchCode == branch)
+            .Select(item => new { item.ProductId, Id = EF.Property<int>(item, "BranchStockId") })
+            .ToDictionaryAsync(item => item.ProductId, item => item.Id);
+    }
+
+    /// <summary>Records the write statements in the order they reach SQL Server, with the stock row each UPDATE targets.</summary>
+    private sealed class ParameterLog : DbCommandInterceptor
+    {
+        public List<(string Statement, int? BranchStockId)> Writes { get; } = [];
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken cancellationToken = default)
+        {
+            Record(command);
+            return ValueTask.FromResult(result);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            Record(command);
+            return ValueTask.FromResult(result);
+        }
+
+        private void Record(DbCommand command)
+        {
+            var text = command.CommandText;
+            if (text.Contains("UPDATE [BranchStock]", StringComparison.Ordinal))
+            {
+                var key = Regex.Match(text, @"WHERE \[BranchStockId\] = (@\w+)").Groups[1].Value;
+                Writes.Add(("UPDATE [BranchStock]", (int)command.Parameters[key].Value!));
+            }
+            else if (Regex.Match(text, @"(INSERT INTO|UPDATE) \[\w+\]") is { Success: true } write)
+            {
+                Writes.Add((write.Value, null));
+            }
+        }
     }
 
     /// <summary>Lets every command run until the matching one, then fails as a database error would.</summary>
