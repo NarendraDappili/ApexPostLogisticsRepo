@@ -13,15 +13,18 @@ Data lives in **Microsoft SQL Server** (`ApexPostDb`), accessed through **EF Cor
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 - SQL Server 2019 or later: Developer, Express or LocalDB. It was developed on SQL Server 2025, and CI uses the SQL Server 2022 container image.
-- The EF Core command-line tool:
-
-  ```powershell
-  dotnet tool install --global dotnet-ef --version 10.0.*
-  ```
-
 - Optional: `sqlcmd` or SQL Server Management Studio, to run the scripts in [`/sql`](sql/) and [`/database`](database/).
 
-Run all commands from the repository root.
+The EF Core command-line tool (`dotnet-ef` 10.0.13) is pinned in [`dotnet-tools.json`](dotnet-tools.json). `dotnet tool restore` installs exactly that version for this repository; no global install is needed. Run all commands from the repository root.
+
+## Quick start
+
+```powershell
+.\scripts\setup-dev.ps1                      # tool restore, connection-string secret, create and migrate ApexPostDb
+dotnet run --project src/ApexPost.Web        # seeds the demo data on the first start
+```
+
+[`scripts/setup-dev.ps1`](scripts/setup-dev.ps1) defaults to the local default instance with Windows authentication. For LocalDB, pass `-ConnectionString "Server=(localdb)\MSSQLLocalDB;Database=ApexPostDb;Trusted_Connection=True"`. It never overwrites a connection string you have already set. The steps below explain what it does, and how to do each one by hand.
 
 ## 1. Set the connection string (user-secrets)
 
@@ -48,6 +51,7 @@ Without it, `/integration/parcel-status` returns 500 ("not configured") by desig
 ## 2. Create ApexPostDb and apply the migrations
 
 ```powershell
+dotnet tool restore
 dotnet ef database update --project src/ApexPost.Infrastructure
 ```
 

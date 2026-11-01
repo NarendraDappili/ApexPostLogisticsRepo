@@ -8,6 +8,12 @@ The brief allows only `Microsoft.AspNetCore.*`, `Microsoft.Extensions.*`, `Micro
 
 `Microsoft.EntityFrameworkCore.SqlServer` 10.0.13 depends on `Microsoft.Data.SqlClient` 6.1.7, which depends on `System.Security.Cryptography.Pkcs`. Without intervention, NuGet resolves that package to 9.0.11, which has published advisories (GHSA-2fmv-rv2c-59x7, GHSA-846f-f764-76mx). The zero-warning build (`dotnet build -warnaserror`, as CI runs it) fails on the vulnerability warning (NU1903). Shipping a known-vulnerable dependency would be wrong anyway.
 
+The two advisories are .NET denial-of-service vulnerabilities, CVE-2026-70162 and CVE-2026-84008. Each affects `System.Security.Cryptography.Pkcs` 9.0.0–9.0.20 and 10.0.0–10.0.12; the patched versions are 9.0.21 and 10.0.13.
+
+**No allowed package avoids the pin.** As checked against nuget.org on 1 November 2026:
+- `Microsoft.Data.SqlClient` 6.1.7 still requests `Pkcs` 9.0.11 for .NET 9 and later.
+- The newest EF Core 10 patch, `Microsoft.EntityFrameworkCore.SqlServer` 10.0.14, still depends on SqlClient 6.1.7.
+
 ## Options
 
 1. **Pin the transitive package to the patched 10.0.13** with a direct `PackageReference` in `ApexPost.Infrastructure.csproj`.
