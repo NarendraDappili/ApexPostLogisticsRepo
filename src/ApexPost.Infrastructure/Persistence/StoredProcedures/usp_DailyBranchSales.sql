@@ -15,17 +15,17 @@ BEGIN
         THROW 50003, 'usp_DailyBranchSales: the branch does not exist.', 1;
 
     -- A half-open range keeps the predicate on OccurredAtUtc SARGable (no function applied to the column).
-    DECLARE @From datetime2(3) = CAST(@Date AS datetime2(3));
-    DECLARE @To datetime2(3) = DATEADD(DAY, 1, @From);
-
+    -- The bounds are written as expressions of @Date rather than local variables: the optimizer cannot see a local
+    -- variable's value, so it guessed thousands of sales for a day that has about a hundred and scanned every line
+    -- (PERFORMANCE.md, "Estimated vs actual rows").
     WITH PaidSales AS
     (
         SELECT t.CounterTransactionId, t.Tax
         FROM dbo.CounterTransactions AS t
         WHERE t.BranchCode = @BranchCode
           AND t.Status = 'Paid'
-          AND t.OccurredAtUtc >= @From
-          AND t.OccurredAtUtc < @To
+          AND t.OccurredAtUtc >= CAST(@Date AS datetime2(3))
+          AND t.OccurredAtUtc < DATEADD(DAY, 1, CAST(@Date AS datetime2(3)))
     ),
     LineTotals AS
     (

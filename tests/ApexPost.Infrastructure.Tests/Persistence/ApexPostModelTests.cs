@@ -63,6 +63,31 @@ public sealed class ApexPostModelTests
             $"{entity.Name} has no unique key or index named {name}.");
     }
 
+    // The workload indexes of PERFORMANCE.md: declared once, with the Fluent API, with this key order and INCLUDE list.
+    [Theory]
+    [InlineData("BranchStock", "IX_BranchStock_BranchCode_Quantity", "BranchCode,Quantity", "ProductCode")]
+    [InlineData("CounterTransactions", "IX_CounterTransactions_BranchCode_OccurredAtUtc", "BranchCode,OccurredAtUtc", "Status,Subtotal,Tax")]
+    [InlineData("TransactionLines", "IX_TransactionLines_CounterTransactionId", "CounterTransactionId", "ProductCode,Quantity,UnitPrice")]
+    [InlineData("Shipments", "IX_Shipments_OriginBranchCode_ZoneCode_ServiceLevel", "OriginBranchCode,ZoneCode,ServiceLevel", "")]
+    [InlineData("IdentityVerifications", "IX_IdentityVerifications_MoneyOrderId", "MoneyOrderId", "Outcome")]
+    public void Workload_indexes_have_the_measured_key_order_and_included_columns(string table, string name, string keys, string included)
+    {
+        var type = Model.GetEntityTypes().Single(entity => entity.GetTableName() == table && (entity.FindOwnership() is null || IsSeparateTable(entity)));
+        var storeObject = StoreObjectIdentifier.Table(table);
+        var index = Assert.Single(type.GetIndexes(), candidate => candidate.GetDatabaseName() == name);
+
+        Assert.Equal(keys, string.Join(',', index.Properties.Select(property => property.GetColumnName(storeObject))));
+        Assert.Equal(included, string.Join(',', (index.GetIncludeProperties() ?? []).Select(property => type.FindProperty(property)!.GetColumnName(storeObject))));
+    }
+
+    [Fact]
+    public void The_shipment_workload_index_replaces_the_single_column_branch_index()
+    {
+        var indexes = Model.FindEntityType(typeof(Shipment))!.GetIndexes();
+
+        Assert.DoesNotContain(indexes, index => index.Properties is [{ Name: nameof(Shipment.OriginBranchCode) }]);
+    }
+
     [Theory]
     [InlineData(typeof(Shipment), "CK_Shipments_WeightKg", "[WeightKg] > 0 AND [WeightKg] <= 30")]
     [InlineData(typeof(Application.Pricing.ShippingRate), "CK_ShippingRates_MaximumWeightKg", "[MaximumWeightKg] > 0 AND [MaximumWeightKg] <= 30")]

@@ -12,7 +12,11 @@ namespace ApexPost.Infrastructure.Queries;
 
 public sealed class EfBranchQueries(ApexPostDbContext db) : IBranchQueries
 {
-    public Task<BranchDashboard?> GetDashboardAsync(BranchCode branchCode, DateOnly day, int lowStockThreshold, CancellationToken cancellationToken = default)
+    public Task<BranchDashboard?> GetDashboardAsync(BranchCode branchCode, DateOnly day, int lowStockThreshold, CancellationToken cancellationToken = default) =>
+        DashboardQuery(branchCode, day, lowStockThreshold).SingleOrDefaultAsync(cancellationToken);
+
+    // Built here so tests can capture the SQL with ToQueryString (PERFORMANCE.md).
+    internal IQueryable<BranchDashboard> DashboardQuery(BranchCode branchCode, DateOnly day, int lowStockThreshold)
     {
         var (start, end) = UtcDay.Range(day);
         // One statement: the counts are correlated subqueries, not separate round trips.
@@ -23,8 +27,7 @@ public sealed class EfBranchQueries(ApexPostDbContext db) : IBranchQueries
                 db.Counters.Count(counter => counter.BranchCode == branchCode && counter.IsOpen),
                 db.CounterTransactions.Count(transaction => transaction.BranchCode == branchCode && transaction.Status == CounterTransactionStatus.Paid
                     && transaction.OccurredAtUtc >= start && transaction.OccurredAtUtc < end),
-                db.BranchStock.Count(item => item.BranchCode == branchCode && item.Quantity <= lowStockThreshold)))
-            .SingleOrDefaultAsync(cancellationToken);
+                db.BranchStock.Count(item => item.BranchCode == branchCode && item.Quantity <= lowStockThreshold)));
     }
 
     public async Task<IReadOnlyList<BranchListItem>> GetBranchesAsync(CancellationToken cancellationToken = default) =>

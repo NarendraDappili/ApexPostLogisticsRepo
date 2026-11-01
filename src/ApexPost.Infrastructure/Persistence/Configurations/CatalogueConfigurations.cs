@@ -57,6 +57,12 @@ internal sealed class BranchStockConfiguration : IEntityTypeConfiguration<Branch
         builder.HasOne<Branch>().WithMany().HasForeignKey(item => item.BranchCode).HasPrincipalKey(branch => branch.Code).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<Product>().WithMany().HasForeignKey(item => item.ProductId).HasPrincipalKey(product => product.Id).OnDelete(DeleteBehavior.Restrict);
         builder.Property(item => item.Quantity).HasDefaultValue(0).ValueGeneratedNever();
+        // Low-stock report and dashboard (PERFORMANCE.md, W1/W5): equality on the branch, then the range on Quantity,
+        // so one branch's low rows are a single short range. ProductCode is included to avoid a lookup per row.
+        // Not filtered on a fixed threshold: the threshold is configuration and reaches SQL as a parameter.
+        builder.HasIndex(item => new { item.BranchCode, item.Quantity })
+            .IncludeProperties(item => item.ProductId)
+            .HasDatabaseName("IX_BranchStock_BranchCode_Quantity");
         // Optimistic concurrency: two clerks selling the last unit cannot both save against the same version.
         builder.Property<byte[]>(ShadowColumns.RowVersion).IsRowVersion().IsRequired();
         builder.HasAuditColumns();

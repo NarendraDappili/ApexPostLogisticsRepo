@@ -40,6 +40,12 @@ internal sealed class CounterTransactionConfiguration : IEntityTypeConfiguration
         builder.HasOne<StaffMember>().WithMany().HasForeignKey(transaction => transaction.AuthorizedBy).HasPrincipalKey(staff => staff.Id).OnDelete(DeleteBehavior.Restrict);
         builder.Property(transaction => transaction.StatusReason).HasMaxLength(500);
         builder.Property<byte[]>(ShadowColumns.RowVersion).IsRowVersion().IsRequired();
+        // Daily sales, the dashboard count and the recent-transactions list (PERFORMANCE.md, W2/W5): equality on the
+        // branch first, then the date range. Status stays an INCLUDE column: 96% of rows are Paid, and keying on it
+        // would split the recent-transactions range into one seek per status. Subtotal and Tax cover the totals.
+        builder.HasIndex(transaction => new { transaction.BranchCode, transaction.OccurredAtUtc })
+            .IncludeProperties(transaction => new { transaction.Status, transaction.Subtotal, transaction.Tax })
+            .HasDatabaseName("IX_CounterTransactions_BranchCode_OccurredAtUtc");
 
         // Lines and the payment have no life outside their transaction: owned, stored in their own tables,
         // and deleted with the owner (cascade) if a transaction row is ever removed.
@@ -51,6 +57,10 @@ internal sealed class CounterTransactionConfiguration : IEntityTypeConfiguration
                 table.HasCheckConstraint("CK_TransactionLines_UnitPrice", "[UnitPrice] >= 0");
             });
             lines.WithOwner().HasForeignKey("CounterTransactionId");
+            // The FK index, made covering: daily sales reads a sale's lines without a lookup per line (PERFORMANCE.md, W2).
+            lines.HasIndex("CounterTransactionId")
+                .IncludeProperties(line => new { line.ProductId, line.Quantity, line.UnitPrice })
+                .HasDatabaseName("IX_TransactionLines_CounterTransactionId");
             lines.Property<long>("TransactionLineId").UseIdentityColumn();
             lines.HasKey("TransactionLineId");
             lines.Property(line => line.ProductId).HasColumnName("ProductCode");
@@ -115,6 +125,10 @@ internal sealed class IdentityVerificationConfiguration : IEntityTypeConfigurati
             table.HasCheckConstraint("CK_IdentityVerifications_Outcome", In("Outcome", [nameof(IdentityVerificationOutcome.Verified), nameof(IdentityVerificationOutcome.Failed)]));
         });
         builder.HasKey(verification => verification.IdentityVerificationId);
+        // The one-to-one FK index, made covering: the money-order report groups by Outcome without lookups (PERFORMANCE.md, W4).
+        builder.HasIndex(verification => verification.MoneyOrderId).IsUnique()
+            .IncludeProperties(verification => verification.Outcome)
+            .HasDatabaseName("IX_IdentityVerifications_MoneyOrderId");
         builder.Property(verification => verification.DocumentType).HasMaxLength(80).IsUnicode(false);
         builder.Property(verification => verification.MaskedDocumentReference).HasMaxLength(8).IsUnicode(false);
         builder.HasAuditColumns();
