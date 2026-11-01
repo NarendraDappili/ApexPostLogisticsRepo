@@ -1,6 +1,6 @@
 # ADR 0010: Store PBKDF2 password hashes on staff records and seed demo data in Development
 
-Status: Accepted.
+Status: Accepted. Since Week 3 the seed fills an empty, migrated ApexPostDb in one transaction instead of writing JSON files (`DemoDataSeeder`, see DESIGN.md); the password decision is unchanged.
 
 ## Context
 

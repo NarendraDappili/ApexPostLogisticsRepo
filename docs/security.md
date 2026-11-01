@@ -1,59 +1,138 @@
 # Security
 
-## Assignment requirements
+## Requirements
 
-- Do not store full identity-document numbers, passwords, API keys, or payment-card data in audit logs.
-- MVC form posts must use antiforgery protection.
-- Authorization must be enforced server-side; UI visibility alone is insufficient.
-- Critical business events must not rely on fire-and-forget work.
-- Real credentials and secrets must not be committed.
+- **No secrets in source control:** no real credentials, connection strings or API keys.
+- **Identity documents stay masked everywhere:** database, logs and audit entries.
+- **Audit records contain no passwords**, document numbers, API keys or payment-card data.
+- **No string-concatenated SQL:** EF Core LINQ, parameterised raw SQL and parameterised procedures only.
+- **Forms are protected:** every MVC form post uses antiforgery protection.
+- **The server authorises every request;** what the UI shows or hides is not a control.
+- **Fictional data only.**
 
-## Verified implementation
+## Secrets and configuration
 
-`MoneyOrder` retains sender, recipient, fee, transaction context, and an identity-verification record. The verification outcome is decided by `IIdentityVerifier` in a separate step, never chosen by the clerk. A full document number is accepted only as transient Application request input, immediately converted to a masked reference (`****` plus up to four trailing characters). Domain and Infrastructure JSON retain document type, result, context ID, and the masked reference; they do not retain a full document number. The configured data directory should use ordinary operating-system access controls. Cookie authentication, authorization policies, audit logging, and custom security middleware are implemented; payment processing and external identity-provider integration are not.
+| Secret | Where it lives |
+|---|---|
+| `ConnectionStrings:ApexPostDb` | User-secrets in Development (`dotnet user-secrets set --project src/ApexPost.Web …`); the deployment's secret store or the `ConnectionStrings__ApexPostDb` environment variable elsewhere. The app refuses to start without it. `dotnet ef` reads the same user-secret through `ApexPostDesignTimeDbContextFactory`. |
+| `ApexPost:Security:Integration:ApiKey` | User-secrets or the deployment secret store. Compared in constant time and never logged. |
+| Development demo password | `appsettings.Development.json` (`ApexPost:DemoSeed:Password`). It protects fictional data in local Development runs only and can be overridden with user-secrets. Each staff row stores its own PBKDF2 hash, never the password. |
+| CI database password | Generated per run (`openssl rand`), masked in the log, and gone with the throwaway container. |
+| Data-protection keys | Generated locally under `App_Data/data-protection-keys` and ignored by Git, so a clone or deployment gets its own key ring. |
 
-The repository tracks the JSON snapshots in `src/ApexPost.Web/App_Data/`, including audit and runtime business records; the checked-in data is synthetic. Running the application may update those tracked files. Review all such diffs before committing and do not publish real staff/customer information or production data. The `data-protection-keys/` subdirectory is explicitly excluded from Git: generated keys are sensitive local material and must never be committed, pushed, or copied into a shared repository. A separate clone or deployment generates its own key ring, so protected cookies are not portable between those environments.
+The committed configuration holds non-secret defaults only. Business data lives in SQL Server, not in the repository. `App_Data` holds only the local key ring.
 
-## MVC boundary
+## Database security
 
-All MVC POST actions use antiforgery validation and bind dedicated view models rather than Domain entities. The money-order form uses a password-type input for the transient document number and clears it before re-rendering an application error; the full number is not placed in TempData, logs, views after failure, or JSON. ASP.NET Core data-protection keys are generated locally below the configured data directory and excluded from source control. UI visibility is never treated as authorization.
+### Least privilege
 
-## Cookie authentication and authorization
+[database/security/apexpost-app-role.sql](../database/security/apexpost-app-role.sql) creates the role `apexpost_app` for the application's database user. The application login is not `db_owner` and is not in `db_datareader`/`db_datawriter`. Migrations and the Development seed run under a separate deployment or developer login.
 
-Cookie authentication uses only the built-in ASP.NET Core framework; ASP.NET Core Identity and third-party packages are not used. A successful local-demo sign-in issues claims for the staff ID, `StaffRole`, and assigned branch. The cookie is HttpOnly, SameSite=Strict, has an eight-hour sliding expiry, and uses `SameAsRequest` secure policy so local HTTP development remains usable while HTTPS requests receive a Secure cookie. Deployments must terminate or serve HTTPS.
+| Allowed | Not allowed |
+|---|---|
+| `SELECT`/`INSERT`/`UPDATE` only on the tables the use cases write | `DELETE` on any table (records are closed or deactivated, never deleted) |
+| `SELECT` on reference data | Any DDL |
+| `SELECT, INSERT` on `AuditEntries` (append-only for the app) | `UPDATE`/`DELETE` on `AuditEntries` |
+| `EXECUTE` on the three procedures | Any direct access to `StockAdjustments`: history is written only by `usp_AdjustStock`, through ownership chaining |
 
-Each staff record stores a PBKDF2-HMAC-SHA256 password hash (210,000 iterations, random 16-byte salt); no plain-text password is stored or configured per staff member. Verification is constant-time, an unknown staff ID costs the same hashing work as a wrong password, and login errors are deliberately generic. The only committed password is the Development demo-seed password in `appsettings.Development.json`, which protects synthetic data in local Development runs only. The staff record is loaded when signing in and on each authenticated request; missing, inactive, role-changed, or branch-changed staff records reject the cookie. This mitigates stale privilege after deactivation but does not provide central session revocation across separate application processes sharing JSON files.
+This was verified by impersonating a member of the role ([ADR 0012](adr/0012-stored-procedures-for-reports-and-stock-adjustment.md)):
+- **Allowed:** the reads, the price-revision `UPDATE`, the audit `INSERT` and the procedures.
+- **Refused with Msg 229 (no permission):** `UPDATE`/`DELETE` on audit rows, `DELETE` on sales, and direct access to `StockAdjustments`.
+- **Refused with Msg 262 (no DDL permission):** `CREATE TABLE`.
 
-Authorization is enforced at endpoints, not by navigation visibility: Counter Clerks are constrained to their claimed branch for checkout, shipping, and money orders; `SameBranchOnly` checks route/query branch access; `BranchManagerOnly` guards void/refund endpoints and the service still requires an active assigned manager plus a non-empty reason. The checkout form does not submit staff identity; the controller uses the StaffId claim for the Application request. Auditors and Administrators may view their own-branch report page but have no transaction authority. Rate limiting and JSON audit records are implemented; account lockout, password hashing/rotation, MFA, tamper-evident audit retention, TLS termination configuration, and production identity integration remain operational requirements.
+### No SQL injection surface
+
+- **EF Core LINQ** sends parameters for every value. Code parameters are typed `varchar(48)` like their columns.
+- **Raw SQL** uses only `SqlQuery`/`ExecuteSql` with interpolated strings, which EF Core turns into `DbParameter`s. Examples: `EXEC dbo.usp_DailyBranchSales @BranchCode = {code}, @Date = {day}` and `usp_AdjustStock`.
+- **The procedures** use static SQL only.
+- **The migrations** deploy procedure bodies from embedded files with `EXEC(N'…')`. That text is fixed at build time and contains no user input.
+- **The scripts in `/sql` and `database/perf`** take their inputs as T-SQL variables.
+
+### Tests never touch the development database
+
+Integration tests create `ApexPostDb_Test_<guid>` databases and drop them, and a guard refuses any database whose name lacks that prefix.
+
+## Identity documents
+
+A full document number is accepted only as transient request input on the verification step. It never leaves memory unmasked:
+
+- **Domain:** `MaskedIdentityDocumentReference.FromDocumentNumber` keeps `****` plus at most the last four characters. The domain has no type that can hold a full number.
+- **Mapping:** `MoneyOrderMapper` writes only the masked value. When reading, it rejects any stored value that is not masked (`FromMaskedValue`) ([ADR 0016](adr/0016-domain-and-persistence-model-separation.md)).
+- **Schema:** `IdentityVerifications.MaskedDocumentReference` is `varchar(8)`, so a full number cannot fit, and `CK_IdentityVerifications_Masked` requires the `****` prefix.
+- **Web:** the form uses a password-type input and clears it before re-rendering after an error. The number is never placed in TempData, views, logs or audit records. The audit filter does not read form values at all.
+- **Tests:**
+  - A SQL test checks that only the masked reference reaches the database.
+  - A model test pins the `varchar(8)` column, the CHECK constraint and the absence of any document-number property.
+  - A mapper test checks that unmasked storage is refused.
+  - Web tests check that a submitted document number and password are absent from logs and audit records.
+
+## Authentication and authorisation
+
+**Cookie authentication.** It uses only the built-in ASP.NET Core cookie handler; there is no ASP.NET Core Identity or third-party package.
+- A successful sign-in issues claims for the staff ID, role and home branch.
+- The cookie is HttpOnly and SameSite=Strict, with an eight-hour sliding expiry, and is Secure on HTTPS requests.
+
+**Passwords.**
+- Each `Staff` row stores a PBKDF2-HMAC-SHA256 hash: 210,000 iterations and a random 16-byte salt.
+- Verification is constant-time.
+- An unknown staff ID costs the same hashing work as a wrong password, and sign-in errors are generic.
+
+**Cookie re-validation.** Every authenticated request re-reads the staff row from SQL Server. A missing or inactive staff member, or a changed role or branch, invalidates the cookie, so deactivation takes effect at once on every server.
+
+**Authorisation.**
+- **Policies:** `BranchManagerOnly` guards void and refund. `SameBranchOnly` restricts Counter Clerks and Branch Managers to their home branch. Administrators and Auditors may view any branch.
+- **Controller checks:** controllers compare a submitted branch code with the cookie's branch, and return 403 (`Forbid`) if they differ.
+- **Application services** remain the final authority on manager assignment, active status, transaction transitions and reversal reasons.
+- **Identity comes from the cookie, never from the form.** Checkout, voids, refunds and stock adjustments take the acting staff member from the cookie.
+
+**Over-posting.** Input models contain no status, key or audit fields; integration tests prove that posting them has no effect.
 
 ## Pipeline controls
 
-Unhandled exceptions are logged server-side with a correlation ID and returned as a generic RFC 7807-style Problem Details response containing only `traceId` and `correlationId`; stack traces, internal exception messages, credentials, and sensitive business input are not returned. Request timing uses `try/finally`, so failed requests are timed and logged too. Valid `X-Correlation-Id` input is limited to 64 ASCII alphanumeric, hyphen, or underscore characters before reuse; other values are replaced.
+- **Errors:**
+  - Business errors become 409/404/400 Problem Details with a message written for the user ([ADR 0018](adr/0018-exceptions-to-problem-details-status-codes.md)).
+  - Every other exception becomes a 500 Problem Details carrying only `traceId` and `correlationId`. It never includes the exception message, stack trace or input.
+  - Server logs record the correlation ID and exception type, not the message.
+  - A client abort is recorded as an internal 499, and no response body is written.
+- **Correlation ID:** a valid `X-Correlation-Id` (at most 64 ASCII letters, digits, `-` or `_`) is reused; anything else is replaced.
+- **Headers:**
+  - CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy`.
+  - HSTS outside Development, and HTTPS redirection.
+  - The CSP still allows inline scripts and styles for the Razor/Bootstrap pages, and should be tightened with nonces when the front end is revised.
+- **Rate limits:** a fixed-window limit per IP on sign-in. Integration requests must pass the API key before they consume the shared integration limit, which ignores the caller-supplied `X-Partner-Id`.
+- **IP allowlist:** it applies to the admin screens and the integration endpoint. It is loopback-only in Development and empty (deny) elsewhere.
+  - It uses the direct connection address.
+  - Behind a reverse proxy, configure forwarded-header processing with explicit trusted proxies before relying on it. Accepting arbitrary `X-Forwarded-For` would let callers spoof their address.
+- **CORS** allows only the configured partner widget origin. It is not authentication.
+- **Maintenance mode** keeps `/health` available.
 
-Responses receive CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy: strict-origin-when-cross-origin` headers. HSTS is enabled outside Development and HTTPS redirection remains active. Maintenance mode is configuration-driven and preserves `/health` for infrastructure checks. The integration API key is compared in constant time and is never logged; missing/invalid keys return 401, while an absent required key configuration returns 500 so deployment faults are visible.
+## Audit data
 
-The branch dashboard, catalogue and reports let Administrators and Auditors choose any branch; Counter Clerks and Branch Managers are limited to their home branch, enforced by `SameBranchOnly` on the server, and their branch dropdown lists only that branch.
+`AuditResourceFilter` writes one record per MVC request. A record holds:
+- staff ID, role and branch;
+- controller and action;
+- allow-listed route IDs;
+- the status code the client received;
+- duration, correlation ID and outcome.
 
-IP allowlisting is endpoint metadata applied to the integration endpoint and the Administrator staff/branch screens; it is empty (deny) by default and allows loopback only in Development. Void and refund rely on the Branch Manager policy and the workflow's same-branch check instead. It uses the direct connection address and deliberately does not trust forwarded headers by default. Behind a reverse proxy, configure ASP.NET Core forwarded-header middleware with explicit known proxies/networks before relying on client IP restrictions; accepting arbitrary `X-Forwarded-For` would let callers spoof their address. The login uses a fixed-window per-IP limit. Integration requests must pass API-key validation before they consume the fixed-window aggregate integration limit; the limiter uses one constant partition and ignores caller-provided `X-Partner-Id`, avoiding unbounded attacker-controlled partition creation. The IP allowlist runs after that limiter, so a valid-key request from a blocked address still consumes an integration permit. CORS allows only the configured partner widget origin and is not a substitute for API-key authentication. The production CSP currently permits inline scripts/styles for Razor/bootstrap compatibility and should be tightened with nonces or hashes when the frontend is revised.
+The filter never reads action arguments, form values, headers, request bodies, models or exception details. Credentials and document numbers therefore cannot reach the audit trail, including from failed sign-ins and invalid forms.
 
-## Audit data handling
+Records are stored in the `AuditEntries` table ([ADR 0011](adr/0011-audit-store-outside-the-unit-of-work.md)):
 
-The global MVC audit filter records the authenticated staff ID, role, assigned branch, controller/action, safe identifier-only route values, result status, duration, outcome, and correlation ID. It never reads or serializes action arguments, form values, headers, request bodies, exception details, or view models. Therefore password, full identity-document, API-key, and payment-card fields cannot enter audit records through the filter. This includes failed validation and login attempts: the fact and outcome are recorded, not submitted credentials.
+- **Separate commit.** Each append uses its own short-lived `DbContext`, outside the request's unit of work. An audit write can neither commit a failed business change nor undo a committed one.
+- **Append-only for the application.** The least-privilege role grants only `SELECT, INSERT`, so the application cannot alter or delete audit rows. A database administrator still can. Where tamper evidence is required, use SQL Server Ledger tables, SQL Server Audit, or ship the records to an off-host, write-once store.
+- **Best-effort.** A failed append is logged with the controller and action and does not change the response. Monitor those log entries. A crash between the business commit and the audit insert loses that record; an outbox would be needed for guaranteed audit.
 
-`audit-records.jsonl` (JSON Lines, one record appended per line) is protected only by ordinary application/operating-system file access controls. Its append-only Application API is not tamper-proof: a principal with filesystem write access can alter or delete it, and the in-process lock does not coordinate separate hosts/processes. JSON audit data must not be represented as an immutable ledger. Production deployments need restricted filesystem access, retention/backups, monitoring, and an integrity-protected/off-host audit sink where tamper evidence or immutability is required.
+## Data integrity under concurrency
 
-The MVC audit filter currently treats persistence as best-effort: it logs append errors, including malformed audit JSON and I/O failures, but does not fail a business action that has already executed. This avoids presenting a failed action result after a successful mutation, but means audit completeness is not guaranteed. Monitor the logged failures and use a durable, integrity-protected audit service before production use.
+- **Concurrent changes are refused, not merged.** Stock and sales use `rowversion` optimistic concurrency, and each use case commits in one database transaction ([ADR 0017](adr/0017-optimistic-concurrency-for-stock-and-transactions.md)). A concurrent change is refused with 409 and nothing is half-saved.
+- **No reconciliation is needed.** The Week 2 compensation path, and the reconciliation it could require, no longer exist.
+- **Stock cannot go negative from any source.** The domain, a CHECK constraint and the stock procedure each refuse it.
 
-## Cancellation and persistence review
+## Deployment checklist
 
-When checkout has already removed stock, a later transaction-save failure triggers stock compensation using a non-cancelable token. Refund stock restoration likewise continues after its status has been persisted. This is an in-process consistency measure, not an atomic transaction: a process crash, filesystem failure, or failed compensation still requires reconciliation. The caller's cancellation token continues to govern validation and the original transaction operation; only the compensating inventory writes are allowed to finish independently.
-
-The JSON store writes a temporary file beside the target, serializes and flushes asynchronously, then replaces the target. Failed replacement attempts clean up the temporary file when possible and propagate the error; malformed or empty JSON is reported rather than silently replaced. Per-path semaphores coordinate only within the current process. There is no cross-process lock, database transaction, automatic corruption recovery, or guarantee across multiple files. Protect data files and backups with OS-level permissions and recovery procedures.
-
-Request-abort cancellation is not returned as a generic 500 Problem Details response; the server records an internal 499 status and informational event without attempting to write a body to the disconnected client. Other unexpected exceptions return generic Problem Details. Server logs record the correlation ID and exception type, but not the exception object, message, or stack trace, reducing the chance of sensitive values in exception details reaching application logs. Request duration logging runs in `finally`, including failed and aborted requests.
-
-IP allowlists use the direct remote connection address. No forwarded-header middleware or trusted proxy list is configured in this application, so deployments behind a proxy must not rely on the allowlist until they configure trusted proxies/networks and forwarded-header processing safely. CORS remains a browser policy, not authentication. API-key validation precedes the shared process-local integration limiter; allowlist rejection follows it, so a valid-key blocked request consumes a permit.
-
-## Delivery configuration boundary
-
-No API key or real credential is committed. `ApexPost:Security:Integration:ApiKey` belongs in user secrets or deployment secret storage. The Development demo-seed password is the only committed password; it can be overridden with user secrets and is never used outside Development. Runtime data under `App_Data` is ignored by Git. Deploy over TLS and configure trusted proxy/forwarded-header behavior before relying on direct-client IP allowlisting behind a reverse proxy. See the [README](../README.md) for commands and [DESIGN.md](../DESIGN.md) for threat/mitigation and deployment notes.
+- Supply the connection string and API key from a secret store, never from committed files.
+- Create a database user for the app in the `apexpost_app` role. Run migrations under a separate login.
+- Serve over TLS, and configure trusted proxies before relying on the IP allowlist behind a proxy.
+- Keep `ApexPost:DemoSeed:Enabled` off outside Development. The seeder runs only in Development regardless.
+- Monitor the logs for "Unable to append MVC audit record".

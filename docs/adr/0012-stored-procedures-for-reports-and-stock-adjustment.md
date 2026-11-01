@@ -69,5 +69,9 @@ Verified on a throwaway database with a member of the role:
 ## Consequences
 
 - Report figures and stock corrections behave the same from the app, SSMS and scripts.
-- Procedure logic lives in T-SQL, so it is tested against a real database (`StoredProcedureTests`) rather than with fakes. Changing a procedure means changing its script and adding a migration that redeploys it.
+- Procedure logic lives in T-SQL, so it is tested against a real database (`StoredProcedureTests`) rather than with fakes.
+- Changing a procedure means changing its script and adding a migration that redeploys it. `RedeployDailyBranchSales` is the pattern; it removed a cardinality misestimate found in `PERFORMANCE.md`:
+  - `Up` deploys the current script.
+  - `Down` carries the previous body verbatim, because the embedded file holds only the current version.
+  - Migrations read the script when they run. A fresh database therefore receives the current body from `AddStoredProcedures` already, and the regenerated idempotent script shows that body there too. The end state is the same either way.
 - Shipping volume and the money-order summary stay as LINQ projections; they have none of the needs above.

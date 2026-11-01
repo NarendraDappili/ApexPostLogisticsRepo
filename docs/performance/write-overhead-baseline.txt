@@ -1,0 +1,75 @@
+﻿== run 1
+TableName IndexName LeafInserts LeafUpdates LeafDeletes LeafPageAllocations
+--------- --------- ----------- ----------- ----------- -------------------
+BranchStock PK_BranchStock 0 2000 0 0
+CounterTransactions PK_CounterTransactions 1000 0 0 17
+CounterTransactions AK_CounterTransactions_TransactionCode 1000 0 0 6
+CounterTransactions IX_CounterTransactions_AuthorizedByStaffCode 1000 0 0 3
+CounterTransactions IX_CounterTransactions_BranchCode_CounterCode 1000 0 0 6
+CounterTransactions IX_CounterTransactions_ClerkStaffCode 1000 0 0 5
+IdentityVerifications PK_IdentityVerifications 200 0 0 2
+IdentityVerifications IX_IdentityVerifications_MoneyOrderId 200 0 0 0
+MoneyOrders PK_MoneyOrders 200 0 0 5
+MoneyOrders AK_MoneyOrders_MoneyOrderCode 200 0 0 1
+MoneyOrders IX_MoneyOrders_BranchCode 200 0 0 0
+Payments PK_Payments 1000 0 0 12
+Shipments PK_Shipments 500 0 0 8
+Shipments AK_Shipments_ShipmentCode 500 0 0 4
+Shipments IX_Shipments_OriginBranchCode 500 0 0 4
+Shipments IX_Shipments_ZoneCode 500 0 0 0
+TransactionLines PK_TransactionLines 2000 0 0 0
+TransactionLines IX_TransactionLines_CounterTransactionId 2000 0 0 11
+TransactionLines IX_TransactionLines_ProductCode 2000 0 0 10
+CpuMs LogicalReads PhysicalWrites LogRecords LogBytes
+----- ------------ -------------- ---------- --------
+238 74400 395 15276 2673292
+== run 2
+TableName IndexName LeafInserts LeafUpdates LeafDeletes LeafPageAllocations
+--------- --------- ----------- ----------- ----------- -------------------
+BranchStock PK_BranchStock 0 2000 0 0
+CounterTransactions PK_CounterTransactions 1000 0 0 17
+CounterTransactions AK_CounterTransactions_TransactionCode 1000 0 0 0
+CounterTransactions IX_CounterTransactions_AuthorizedByStaffCode 1000 0 0 3
+CounterTransactions IX_CounterTransactions_BranchCode_CounterCode 1000 0 0 5
+CounterTransactions IX_CounterTransactions_ClerkStaffCode 1000 0 0 5
+IdentityVerifications PK_IdentityVerifications 200 0 0 2
+IdentityVerifications IX_IdentityVerifications_MoneyOrderId 200 0 0 0
+MoneyOrders PK_MoneyOrders 200 0 0 4
+MoneyOrders AK_MoneyOrders_MoneyOrderCode 200 0 0 0
+MoneyOrders IX_MoneyOrders_BranchCode 200 0 0 0
+Payments PK_Payments 1000 0 0 11
+Shipments PK_Shipments 500 0 0 8
+Shipments AK_Shipments_ShipmentCode 500 0 0 0
+Shipments IX_Shipments_OriginBranchCode 500 0 0 2
+Shipments IX_Shipments_ZoneCode 500 0 0 0
+TransactionLines PK_TransactionLines 2000 0 0 0
+TransactionLines IX_TransactionLines_CounterTransactionId 2000 0 0 10
+TransactionLines IX_TransactionLines_ProductCode 2000 0 0 10
+CpuMs LogicalReads PhysicalWrites LogRecords LogBytes
+----- ------------ -------------- ---------- --------
+154 73240 123 15314 2619064
+== run 3
+TableName IndexName LeafInserts LeafUpdates LeafDeletes LeafPageAllocations
+--------- --------- ----------- ----------- ----------- -------------------
+BranchStock PK_BranchStock 0 2000 0 0
+CounterTransactions PK_CounterTransactions 1000 0 0 17
+CounterTransactions AK_CounterTransactions_TransactionCode 1000 0 0 0
+CounterTransactions IX_CounterTransactions_AuthorizedByStaffCode 1000 0 0 3
+CounterTransactions IX_CounterTransactions_BranchCode_CounterCode 1000 0 0 5
+CounterTransactions IX_CounterTransactions_ClerkStaffCode 1000 0 0 5
+IdentityVerifications PK_IdentityVerifications 200 0 0 2
+IdentityVerifications IX_IdentityVerifications_MoneyOrderId 200 0 0 0
+MoneyOrders PK_MoneyOrders 200 0 0 4
+MoneyOrders AK_MoneyOrders_MoneyOrderCode 200 0 0 0
+MoneyOrders IX_MoneyOrders_BranchCode 200 0 0 0
+Payments PK_Payments 1000 0 0 11
+Shipments PK_Shipments 500 0 0 8
+Shipments AK_Shipments_ShipmentCode 500 0 0 0
+Shipments IX_Shipments_OriginBranchCode 500 0 0 2
+Shipments IX_Shipments_ZoneCode 500 0 0 0
+TransactionLines PK_TransactionLines 2000 0 0 0
+TransactionLines IX_TransactionLines_CounterTransactionId 2000 0 0 10
+TransactionLines IX_TransactionLines_ProductCode 2000 0 0 10
+CpuMs LogicalReads PhysicalWrites LogRecords LogBytes
+----- ------------ -------------- ---------- --------
+162 73202 202 15314 2619272

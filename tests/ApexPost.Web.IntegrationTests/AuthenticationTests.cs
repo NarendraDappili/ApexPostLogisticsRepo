@@ -699,6 +699,38 @@ public sealed class AuthenticationTests
     }
 
     [Fact]
+    public async Task Audit_records_the_status_the_client_received_for_redirects_refusals_and_mapped_errors()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var clerk = factory.CreateClient();
+        var signIn = await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        var otherBranch = await CheckoutAsync(clerk, "TX-WEB-AUDIT-OTHER", [("PRD-001", 1)], branchCode: "BR-SOUTH");
+        using var manager = factory.CreateClient();
+        await SignInAsync(manager, "STF-MANAGER-01", AuthWebApplicationFactory.TestPassword);
+        var missing = await VoidAsync(manager, "TX-WEB-AUDIT-NOWHERE");
+        using var admin = factory.CreateClient();
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+        var token = await GetAntiforgeryTokenAsync(admin, "/StaffAdmin/Create");
+        var duplicate = await admin.PostAsync("/StaffAdmin/Create", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("StaffId", "STF-AUDIT-DUP"), new("Name", "Duplicate Email"),
+            new("Email", "ADMIN@example.test"), new("Role", "0"), new("BranchCode", "BR-NORTH"), new("Password", "duplicate-email-password") ]));
+
+        Assert.Equal(
+            [System.Net.HttpStatusCode.Redirect, System.Net.HttpStatusCode.Forbidden, System.Net.HttpStatusCode.NotFound, System.Net.HttpStatusCode.Conflict],
+            [signIn.StatusCode, otherBranch.StatusCode, missing.StatusCode, duplicate.StatusCode]);
+        var records = await factory.GetAuditRecordsAsync();
+        // LocalRedirect after sign-in, Forbid() inside an action, an exception the Problem Details middleware maps to
+        // 404, and a form re-rendered with 409: each is audited with the status the browser actually got.
+        Assert.Contains(records, record => record is { Controller: "Account", Action: "Login", StatusCode: 302, Outcome: "Succeeded" });
+        Assert.Contains(records, record => record is { Controller: "CounterTransactions", Action: "New", StaffId: "STF-CLERK-01", StatusCode: 403, Outcome: "Failed" });
+        Assert.Contains(records, record => record is { Controller: "CounterTransactions", Action: "Void", StaffId: "STF-MANAGER-01", StatusCode: 404, Outcome: "Failed" });
+        Assert.Contains(records, record => record is { Controller: "StaffAdmin", Action: "Create", StaffId: "STF-ADMIN-01", StatusCode: 409, Outcome: "Failed" });
+        Assert.DoesNotContain(records, record => record.StatusCode == 500);
+        Assert.False(await factory.SaleExistsAsync("TX-WEB-AUDIT-OTHER"));
+    }
+
+    [Fact]
     public async Task Invalid_model_returns_validation_view_and_is_audited_without_password()
     {
         await using var factory = new AuthWebApplicationFactory();
@@ -754,14 +786,14 @@ public sealed class AuthenticationTests
             new("__RequestVerificationToken", token), new("TransactionId", transactionId), new("Reason", "Problem details check") ]));
     }
 
-    private static async Task<HttpResponseMessage> CheckoutAsync(HttpClient client, string transactionId, IReadOnlyList<(string ProductId, int Quantity)> retailLines, string shipmentIds = "", string moneyOrderIds = "")
+    private static async Task<HttpResponseMessage> CheckoutAsync(HttpClient client, string transactionId, IReadOnlyList<(string ProductId, int Quantity)> retailLines, string shipmentIds = "", string moneyOrderIds = "", string branchCode = "BR-NORTH")
     {
         var token = await GetAntiforgeryTokenAsync(client, "/CounterTransactions/New");
         var fields = new List<KeyValuePair<string, string>>
         {
             new("__RequestVerificationToken", token),
             new("TransactionId", transactionId),
-            new("BranchCode", "BR-NORTH"),
+            new("BranchCode", branchCode),
             new("CounterCode", "C-01"),
             new("PaymentMethod", "0"),
             new("ShipmentIds", shipmentIds),

@@ -142,6 +142,29 @@ public sealed class QueryServiceTests(SqlServerTestDatabase database)
         Assert.Null(prices["Untouched C"].Modified);
     }
 
+    // Replaces the Week 2 report-service assertions on tax and cancellation, now that reports run in SQL Server.
+    [Fact]
+    public async Task Daily_sales_include_the_tax_charged_and_every_report_honours_cancellation()
+    {
+        var data = await SqlTestData.SeedAsync(database, stock: 10);
+        await using (var db = database.CreateContext())
+        {
+            await SqlTestData.CheckoutService(db, taxRate: 0.10m).CheckoutAsync(data.Sale($"TX-TAX-{data.Branch.Value[3..]}", quantity: 2));
+        }
+
+        await using var read = database.CreateContext();
+        var reports = new EfBranchReportQueries(read);
+        var sales = await reports.GetDailySalesAsync(data.Branch, Today);
+        Assert.Equal((20m, 2m, 22m, 1), (sales.RetailSales.Amount, sales.Tax.Amount, sales.TotalSales.Amount, sales.PaidTransactionCount));
+
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reports.GetDailySalesAsync(data.Branch, Today, cancelled.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reports.GetLowStockAsync(data.Branch, threshold: 8, cancelled.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reports.GetShippingVolumeAsync(data.Branch, cancelled.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reports.GetMoneyOrderVerificationAsync(data.Branch, cancelled.Token));
+    }
+
     private static void AssertOneCommand(SqlCommandLog log)
     {
         Assert.Single(log.Commands);

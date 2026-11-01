@@ -1,95 +1,107 @@
 # Testing
 
-## Current test projects
-
-The solution contains four xUnit test projects:
-
-- `ApexPost.Domain.Tests` references `ApexPost.Domain`.
-- `ApexPost.Application.Tests` references `ApexPost.Application`.
-- `ApexPost.Infrastructure.Tests` references `ApexPost.Infrastructure`.
-- `ApexPost.Web.IntegrationTests` references `ApexPost.Web`.
-
-`ApexPost.Web.IntegrationTests` references the approved `Microsoft.AspNetCore.Mvc.Testing` package for actual ASP.NET Core test hosting. Domain tests cover value objects/entities; Application tests cover workflows/pricing; Infrastructure tests cover JSON/seed behavior; and Web tests cover MVC, authentication, filters, and middleware. Test data, credentials, correlation IDs, and filesystem locations are synthetic/test-owned.
-
-## Current test coverage
-
-Infrastructure tests use a unique directory below the OS temporary directory for every test and clean up only that test-owned directory. Coverage includes round trips for all seven repositories, identity-based update/upsert behavior, missing files, empty/malformed JSON, cancellation, sensitive-data-safe serialization, and concurrent same-process writes.
-
-Seed-data tests use separate test-owned temporary directories. They verify 5 branches, 20 staff, 30 products, 10 zones/60 rates, and 40 historical records; role coverage, uniqueness, branch/staff/product/inventory relationships, rate construction through existing value objects, transaction arithmetic, rerun no-op behavior, and rejection of unmarked pre-existing data.
-
-Application inventory-service tests cover available stock, insufficient stock, invalid quantities, branch isolation, positive/negative adjustments, low-stock crossings, and concurrent removals. Infrastructure tests exercise concurrent `JsonInventoryRepository` updates through separate service instances and confirm that exactly the available units are removed without same-process overselling.
-
-Application shipping-workflow tests cover letters and parcels, Standard/Express/Registered services, zones, configured maximum-weight boundaries, missing rates, invalid measurements, persistence errors, cancellation, and distinct missing-origin/shipment handling. Infrastructure tests verify that the JSON rate provider loads the 60 deterministic seed rates and handles missing configuration/cancellation.
-
-Money-order workflow tests cover below/at/above configurable thresholds, successful/failed/pending/missing/mismatched-context verification, masked document references, invalid amounts, cancellation, and persistence failures. Repository serialization tests verify that only the masked identity-document reference appears in JSON, not the original full value.
-
-Mixed-counter-transaction tests cover retail/service totals and configured tax, insufficient stock, inactive/wrong-branch clerks, closed branches, high-value money-order verification, manager/reason/state-transition constraints, retail-stock restoration on refund, and transaction-save failure compensation.
-
-Report tests cover paid-sales grouping/totals, UTC date boundaries, branch isolation, low-stock thresholds, shipping zone/service grouping, privacy-safe money-order verification counts, and cancellation. Notification tests cover high-value money orders, void/refund delivery, and delivery failures after persisted state.
-
-MVC integration tests use `WebApplicationFactory`: all required GET routes render successfully, and a POST with a valid antiforgery token but missing login input returns the validation view. The tests use the application's local test-host data directory only; no demo data or external service is required.
-
-Cookie-authentication integration tests seed only test-owned JSON data and use a test-only in-memory password configuration. Coverage verifies unauthenticated login redirects, successful and failed sign-in, inactive-login rejection, cookie invalidation after deactivation, HttpOnly/SameSite cookie settings, cross-branch denial, Counter Clerk denial of privileged reports, and Branch Manager access to branch reports.
-
-Isolated middleware integration tests cover security headers and correlation-ID reuse, maintenance-mode `503` with `/health` bypass, integration API-key missing/configuration-failure responses, IP allowlist denial, login `429` rate limiting, and approved/unapproved CORS preflight behavior. The in-memory test configuration uses only test keys and temporary, test-owned data directories. TestServer does not populate a remote client IP for manager POSTs, so those endpoints are denied by the IP gate in that host; the integration endpoint independently verifies the required `403` behavior.
-
-JSON audit-store concurrency tests verify that simultaneous same-process appends preserve every record. MVC integration tests verify a successful authenticated action records staff identity, role, branch, action metadata, status, and a supplied correlation ID; invalid-model login returns the validation view and is audited as failed; the submitted password is absent from the JSON audit file; and a zero-millisecond performance threshold produces an MVC-action warning. Test records, credentials, identifiers, and correlation IDs are synthetic. Cross-process append coordination and tamper resistance are not claimed or tested because the JSON store does not provide them.
-
-## Test strategy and coverage
-
-The suite is deterministic and layered. Domain tests cover local aggregate/value-object invariants. Application tests use controlled in-memory implementations to verify stock cannot become negative, high-value money orders require a verified matching transaction context, shipping rejects a weight above its selected service limit, pricing rejects invalid/missing/ambiguous rates, and branch/staff/transaction authorization rules remain enforced. They also cover cancellation and representative persistence/notification error paths.
-
-Infrastructure tests isolate every JSON test under a new temporary directory, including same-process concurrent append/update behavior and sensitive-data-safe serialization. Web tests use `WebApplicationFactory` with synthetic in-memory configuration, local temporary data, and test-only passwords. Required integration cases cover security headers, `401` for missing/invalid integration API keys, `403` for a configured-blocked IP, deterministic fixed-window login `429` after exactly the active configured permitted requests, protected-route login redirect, Clerk `403` for void, and echoed/generated `X-Correlation-Id`.
-
-No implementation gap remains among the required cases for endpoints currently implemented. The known environmental limitation is that TestServer does not model a realistic remote client IP for the manager-reversal path; the endpoint is therefore denied by the real IP gate in that host. The independently blocked-IP integration-endpoint test validates the allowlist behavior. Cross-process JSON durability/tamper resistance also remains outside the guarantees of this project.
-
-## Concurrency and asynchronous behavior
-
-Concurrency tests verify that concurrent same-process inventory removals and checkouts cannot oversell stock, concurrent JSON audit appends preserve every record, and JSON locking protects read-modify-write operations. The audit-store tests now also prove cancellation is reported as `OperationCanceledException` without creating a record, while malformed JSON is a separate `JsonException` failure. Existing Application/Infrastructure tests cover cancellation propagation for shipping, money orders, reports, repositories, and transaction checkout; notification-delivery failures are asserted separately from persistence outcomes.
-
-The checkout validation fan-out uses `Task.WhenAll` only for branch/counter/clerk/duplicate-ID reads, which target independent aggregates. Tests retain serialized assertions for stock and transaction mutations; no test assumes parallel writes. No benchmark is recorded because the repository has no supported benchmark harness or representative load data. Cache and `ValueTask` tests are intentionally absent because neither optimization is implemented: there is no measured repeated-read hot path that justifies cache invalidation complexity, and existing async operations are genuinely I/O-bound `Task` operations rather than commonly synchronous completions.
-
-Additional tests should be added when future features or defects warrant them; all new tests should continue to verify the assignment rules in [business-rules.md](business-rules.md) and security constraints in [security.md](security.md).
-
-## Security and reliability regression coverage
-
-Integration rate limiting uses a shared bounded partition and does not trust `X-Partner-Id`. A WebApplicationFactory regression test sends 61 valid-key requests with distinct partner-header values against the configured 60-request limit and verifies the final request receives `429` instead of opening a new limiter partition. API-key failures occur before this limit and do not consume its quota. This is an aggregate per-process integration limit, not a per-partner quota or a distributed limit.
-
-Application tests cancel transaction persistence after stock has been removed and verify the compensation completes despite request cancellation. Infrastructure tests force JSON replacement to fail by making the target path a directory, then verify the existing target remains and the sibling temporary file is removed. Web tests verify unexpected exception details are excluded from Problem Details and application logs, correlation ID and exception type are retained, request-abort cancellation is recorded as internal status 499 without attempting a response body, and synthetic passwords, document numbers, and API keys are absent from request logs and audit records.
-
-Existing integration coverage continues to exercise wrong-branch access, inactive-staff cookie rejection, Clerk denial of void, API-key configuration/missing/invalid cases, blocked-IP behavior, rate limits, maintenance mode, CORS, correlation IDs, headers, and safe audit fields. These tests use synthetic values and temporary test-owned data directories. No penetration test, proxy deployment test, cross-process JSON test, or production certification is claimed.
-
-The documented full validation commands are:
-
-```powershell
-dotnet restore ApexPost.slnx
-dotnet build ApexPost.slnx --no-restore
-dotnet test ApexPost.slnx --no-build --verbosity normal
-git diff --check
-```
-
-## Workflow integration coverage
-
-Web integration tests seed test-owned branch, counter, product, inventory, shipping-rate, and synthetic staff records in temporary data directories. Coverage verifies branch claim defaults and role-aware navigation, explicit wrong-branch denial for managers, Clerk denial of both reversal endpoints, successful checkout redirect/confirmation with stock reduction, antiforgery rejection without inventory mutation, configured shipping weight-limit feedback, high-value money-order verification feedback, and empty states across all reports for a branch with no activity. Shipping-volume and money-order reports are branch aggregates, not filtered by the selected sales day. The test host is not a persistent demo seed mechanism.
-
-MVC GET routes are exercised through WebApplicationFactory, along with login validation, protected-route redirects, cookie invalidation, and branch restrictions. Tests assert important view content and effects, but they do not execute a real browser, screen reader, keyboard-only audit, axe scan, or WCAG conformance test. Manual accessibility compliance is therefore unverified. No authenticated reversal UI, transaction history/lookup screen, or supported developer seed CLI exists; tests do not fabricate those flows.
-
-The reproducible test-host workflow command is:
-
-```powershell
-dotnet test tests/ApexPost.Web.IntegrationTests/ApexPost.Web.IntegrationTests.csproj --no-build --filter "FullyQualifiedName~AuthenticationTests"
-```
-
-This exercises synthetic checkout, shipping eligibility, money-order verification, and empty report states. It does not establish that a fresh developer can run the same flows interactively: the production app currently has no supported command to populate its persistent data directory, and no real/demo passwords are committed.
-
-The latest recorded full-solution validation completed with 140 passed, 0 failed, and 0 skipped: Domain (39), Application (56), Infrastructure (18), and Web integration (27). The solution build completed with 0 warnings and 0 errors.
-
 ## Commands
 
-From the solution root:
-
 ```powershell
-dotnet restore ApexPost.slnx
-dotnet build ApexPost.slnx --no-restore
-dotnet test ApexPost.slnx --no-build
+dotnet build ApexPost.slnx -c Release -warnaserror
+dotnet test ApexPost.slnx -c Release --no-build
 ```
+
+The latest run had **261 tests passing, 0 failing, 0 skipped**, with a zero-warning build.
+
+| Project | Tests | Needs a database |
+|---|---|---|
+| `ApexPost.Domain.Tests` | 66 | No |
+| `ApexPost.Application.Tests` | 86 | No |
+| `ApexPost.Infrastructure.Tests` | 59 | SQL Server (except the model and password-hasher tests) |
+| `ApexPost.Web.IntegrationTests` | 50 | SQL Server |
+
+Each test project references only the production project it tests. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
+
+## The test database
+
+The SQL Server tests never touch the development database:
+
+- **Disposable databases.** Each test run creates its own database, `ApexPostDb_Test_<guid>`. It is built with `Database.MigrateAsync()` from the **real migrations**, never `EnsureCreated`, and dropped afterwards. The test database therefore has exactly the production schema, procedures and indexes.
+- **Shared within a run, isolated per test.** The Infrastructure tests share one database per run through an xUnit collection fixture. Each test seeds its own rows, with codes carrying a unique suffix, so tests never see each other's data.
+- **One database per Web factory.** Each `WebApplicationFactory` gets its own database.
+- **A guard.** It refuses any database whose name lacks the `ApexPostDb_Test_` prefix, so a misconfigured connection string cannot point the tests at real data.
+- **Choosing the server.** It comes from `APEXPOST_TEST_SQLSERVER`, a connection string without a database name. The default is the local default instance with Windows authentication. CI starts a throwaway SQL Server container with a random password and sets this variable.
+
+No test uses a real credential, external service or arbitrary delay. All data is fictional.
+
+## What is covered
+
+### Unit tests: no database
+
+**Domain (66).** These are the Week 2 business-rule tests, which **pass unchanged** against the new persistence layer. They cover:
+- value objects;
+- stock that never goes negative;
+- staff eligibility;
+- the transaction state machine (pay, void a paid sale, refund);
+- money-order verification and masked references;
+- weight limits.
+
+`PersistenceReadyDomainTests` cover the Week 3 additions: SKU, category, payment, stock adjustment, and the 30 kg limit.
+
+**Application (86).** Services run against in-memory fake repositories and a `SpyUnitOfWork`. The spy records commits and explicit transactions, can fail a commit, and can cancel one. The tests show:
+- **One commit per use case, or none on failure.** Checkout commits the stock, the sale, the lines and the payment once. A failed validation or a failed commit leaves nothing committed.
+- **The same business assertions as Week 2.** Only the wiring changed (the spy unit of work), and every Week 2 business assertion is unchanged.
+- **Stock adjustments.** There is one transaction per adjustment. A first delivery saves the stock row before the procedure runs. Only a manager of the same branch may adjust. The domain rules run first.
+- **Price revision.** The percentage limits are enforced, and the request reaches the set-based port.
+
+### The Week 2 tests after the refactor
+
+The brief asks for the Week 2 business-rule tests to pass unchanged against the new persistence layer. Compared with the last Week 2 commit (`7548441`):
+
+- **Domain:** every Week 2 test file is byte-for-byte unchanged. One file was added (`PersistenceReadyDomainTests`).
+- **Application:** services now commit through `IUnitOfWork`, so the test wiring changed: fakes stage changes and a `SpyUnitOfWork` commits. The business assertions are unchanged.
+- **Four tests were replaced.** Each tested a Week 2 mechanism that no longer exists. Its business rule is now proven where the rule now lives:
+
+| Week 2 test (removed) | Mechanism it tested | Replaced by |
+|---|---|---|
+| `Failed_transaction_save_compensates_previously_removed_inventory` | Compensating stock writes after a failed JSON save | `Failed_commit_persists_nothing_and_raises_no_sale_events` (Application); `A_sale_that_fails_part_way_through_the_commit_rolls_back_stock_and_transaction_rows_together` (SQL Server) |
+| `Cancelled_transaction_save_still_compensates_previously_removed_inventory` | Compensation ignoring request cancellation | `Cancelled_commit_persists_nothing_and_raises_no_sale_events` (Application) |
+| `Reports_group_actual_branch_data_without_identity_details` | The in-memory `BranchReportService` | `Reports_are_aggregated_by_the_database_and_count_only_paid_sales_of_the_day` and `Daily_sales_include_the_tax_charged_and_every_report_honours_cancellation` (SQL Server). The report records hold counts only, never identity data. |
+| `Reports_propagate_cancellation` | Same service | `Daily_sales_include_the_tax_charged_and_every_report_honours_cancellation`, covering all four reports |
+
+### SQL Server integration tests (Infrastructure, 59)
+
+| Area | Tests show |
+|---|---|
+| Model (`ApexPostModelTests`, no database) | Audit columns on every table; `rowversion` on stock and sales; masked identity column; unique business keys; weight CHECKs; only owned children cascade; decimal(18,2) and varchar codes; mapper round trip; **the workload indexes' key order and INCLUDE columns** |
+| Repository mapping (`EfRepositoryMappingTests`) | Every aggregate round-trips with its value objects, owned types and audit columns. Value-object predicates become `varchar(48)` parameters. Duplicate keys become `DuplicateKeyException`, and a detached update is refused. |
+| Atomicity and concurrency (`CheckoutPersistenceTests`) | A sale is one commit. **A failure part-way through the commit rolls back stock and sale rows together.** Two clerks selling the last unit leave stock at 0 and one conflict. **8 concurrent sales never oversell or lose an update.** Sales and voids lock stock rows in key order, before the sale rows (the deadlock rule). |
+| Stored procedures (`StoredProcedureTests`) | Parameter validation errors. Both report modes. Adjustment and history in one transaction. Refusal below zero. A procedure update invalidates a stale EF copy. A mixed `SaveChanges` + procedure call rolls back as one unit. |
+| Query services (`QueryServiceTests`) | Each screen query is **one SQL command** (no N+1) and tracks nothing. Reports aggregate in the database, count only paid sales of the day, include the tax charged, and honour cancellation. Price revision is one set-based `UPDATE`. |
+| Generated SQL (`GeneratedSqlTests`) | Captures `ToQueryString()` for the dashboard, shipping volume and money-order reports (used in `PERFORMANCE.md`), and pins their SARGable shape. |
+| Audit store (`EfAuditStoreTests`) | Round trip and staff stamping. A failed business save is audited but never committed by the audit write. A failed audit write does not undo a committed change. |
+| Seeding and caching (`SeedingAndRateCacheTests`) | The seed meets the brief's volumes (5 branches, 20 staff, 30 products, 10 zones/60 rates, 240 sales). It refuses an unmigrated database. Rates are cached, but an empty table is not. |
+
+### Web integration tests (50)
+
+`WebApplicationFactory` hosts the real `Program.cs` against a disposable test database, with cookies and antiforgery tokens handled as a browser would. The tests cover:
+
+- **What the brief requires:**
+  - a sale posted through the counter screen is stored with its lines, payment and audit columns;
+  - **a void requires the Branch Manager role** (a clerk gets 403);
+  - a manager voids a paid sale and the stock is returned;
+  - **the reports show the day's totals from the database**;
+  - **errors return Problem Details**: 409 for two clerks selling the last unit and for a duplicate email, 404 for a missing sale, 400 for a broken rule or an invalid price revision.
+- **Over-posting:** posting status, identity, activity, password or audit fields has no effect on a sale or a staff edit.
+- **Workflows:** a several-line basket; shipments and verified money orders billed in the basket; weight limits and verification errors shown; manager stock adjustment through the procedure; administrator price revision; staff and branch administration.
+- **Security pipeline:** sign-in with hashed passwords; inactive staff rejected and existing cookies invalidated; cross-branch denial; security headers and correlation ID; maintenance mode; API key; IP allowlist; shared integration rate limit; login rate limit; CORS; no exception details in Problem Details or logs; a client abort is not a 500.
+- **Audit:**
+  - safe fields only;
+  - no password, document number or API key in records or logs;
+  - an audit-store failure never breaks a committed sale;
+  - **the recorded status is the one the client received**, for a sign-in redirect (302), an in-action `Forbid` (403), a mapped exception (404) and a 409 form. This test fails against the old action filter.
+
+`ProblemDetailsMappingTests` cover each row of the exception mapping, including framework exceptions of the same types staying 500 without detail.
+
+## Not covered
+
+- **No browser automation.** There is no real-browser, screen-reader, keyboard-only or automated accessibility test.
+- **No load or penetration test.** `PERFORMANCE.md` measures query cost with a reproducible data set; it is not a load test.
+- **No proxy or multi-host deployment test.** The concurrency tests use several contexts and connections against one SQL Server. That reproduces the conditions of several web servers, but not an actual farm.
+- **CI unverified.** The CI workflow, with its SQL Server container, has not run on GitHub yet; locally, the same commands pass.

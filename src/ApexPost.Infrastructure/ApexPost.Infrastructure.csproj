@@ -19,6 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Tests capture the SQL of the internal query builders with ToQueryString (PERFORMANCE.md). -->
+    <InternalsVisibleTo Include="ApexPost.Infrastructure.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The CREATE OR ALTER scripts are the single source for the stored procedures: migrations deploy them. -->
     <EmbeddedResource Include="Persistence\StoredProcedures\*.sql" />
   </ItemGroup>

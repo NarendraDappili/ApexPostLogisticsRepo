@@ -1,6 +1,6 @@
 # ADR 0007: Complete inventory compensation after request cancellation
 
-Status: Accepted.
+Status: Superseded by ADR 0017. Checkout and reversals commit in one database transaction, so there is nothing to compensate.
 
 ## Context
 

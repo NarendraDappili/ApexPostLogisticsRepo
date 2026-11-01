@@ -65,6 +65,11 @@ internal sealed class ShipmentConfiguration : IEntityTypeConfiguration<Shipment>
         builder.Property(shipment => shipment.DestinationZoneCode).HasColumnName("ZoneCode");
         builder.HasOne<ShippingZoneEntity>().WithMany().HasForeignKey(shipment => shipment.DestinationZoneCode).HasPrincipalKey(zone => zone.ZoneCode).OnDelete(DeleteBehavior.Restrict);
         builder.Property(shipment => shipment.OriginBranchCode);
+        // Shipping volume by zone and service level for one branch (PERFORMANCE.md, W3): the branch equality first,
+        // then the two GROUP BY columns in grouping order, so the rows arrive already grouped (no sort, no lookups).
+        // It starts with the branch FK column, so it also replaces EF's single-column FK index on OriginBranchCode.
+        builder.HasIndex(shipment => new { shipment.OriginBranchCode, shipment.DestinationZoneCode, shipment.ServiceLevel })
+            .HasDatabaseName("IX_Shipments_OriginBranchCode_ZoneCode_ServiceLevel");
         builder.Property(shipment => shipment.Weight).HasColumnName("WeightKg");
         builder.Property(shipment => shipment.ShipmentType);
         builder.Property(shipment => shipment.ServiceLevel);

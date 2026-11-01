@@ -56,13 +56,13 @@ internal sealed class SqlTestData
         new(transactionId, Branch.Value, Counter.Value, Clerk.Value, PaymentMethod.Card, [new RetailBasketLineRequest(Product.Value, quantity)], [], []);
 
     /// <summary>The production checkout service over EF repositories, as the web app composes it for one request.</summary>
-    public static CounterTransactionWorkflowService CheckoutService(ApexPostDbContext db)
+    public static CounterTransactionWorkflowService CheckoutService(ApexPostDbContext db, decimal taxRate = 0m)
     {
         IUnitOfWork unitOfWork = new EfUnitOfWork(db);
         return new CounterTransactionWorkflowService(
             new EfBranchRepository(db), new EfCounterRepository(db), new EfStaffMemberRepository(db), new EfProductRepository(db),
             new InventoryService(new EfInventoryRepository(db), unitOfWork, new InventoryServiceOptions { LowStockThreshold = 2 }),
             new EfShipmentRepository(db), new EfShippingRateProvider(db, new ShippingRateCache()), new EfMoneyOrderRepository(db),
-            new EfCounterTransactionRepository(db), new MoneyOrderPolicy(new Money(1000m)), new FixedRateTaxPolicy(0m), unitOfWork);
+            new EfCounterTransactionRepository(db), new MoneyOrderPolicy(new Money(1000m)), new FixedRateTaxPolicy(taxRate), unitOfWork);
     }
 }

@@ -6,7 +6,7 @@ Status: Accepted. Supersedes the storage part of ADR 0005.
 
 The MVC audit filter records every action, including failed ones. ADR 0005 stored those records in a JSON Lines file. Week 3 moves them into the `AuditEntries` table behind the same `IAuditStore` interface, and requires that an audit write never breaks the business transaction.
 
-Each request has one scoped `ApexPostDbContext`, shared by the repositories and `EfUnitOfWork`. The audit filter runs after the action, so the business commit (or its failure) has already happened when the audit record is written.
+Each request has one scoped `ApexPostDbContext`, shared by the repositories and `EfUnitOfWork`. The audit filter writes its record after the action and its result have run, so the business commit (or its failure) has already happened when the audit record is written.
 
 ## Options considered
 
@@ -22,6 +22,20 @@ Each request has one scoped `ApexPostDbContext`, shared by the repositories and 
 - `AuditEntries` has no foreign keys. It must record failed sign-ins for unknown staff IDs and must outlive later changes to the staff and branch rows it mentions.
 - The audit filter keeps its Week 2 behaviour: an append failure is logged and does not change the action's result.
 - The store offers append and read only, no update or delete.
+
+### The status code recorded is the one the client received
+
+The Week 2 filter was an action filter. It guessed the status from the action's result type before the result ran, which was wrong in four cases:
+- `LocalRedirect` (sign-in), `RedirectToPage`, `Forbid` and `Challenge` fell through to 200. A refused cross-branch attempt was audited as "200 Succeeded".
+- Permanent and method-preserving redirects were all recorded as 302.
+- A form re-rendered with 409 was recorded as 200.
+- A business exception that `ProblemDetailsExceptionMiddleware` turns into 409/404/400 was recorded as 500.
+
+It is now `AuditResourceFilter`, a **resource filter**. Resource filters wrap model binding, the action and the result execution, so:
+- **When no exception escapes MVC,** the filter records `Response.StatusCode` after the result has run. That is the real status: the redirect's 301/302/307/308, the 403 from `Forbid`, the 409 page, the 400 Problem Details.
+- **When an exception escapes MVC,** the filter records the status the middleware will send for it. It uses the same `ExceptionProblemMapping` (ADR 0018): 409/404/400 for mapped business errors, 499 for a client abort, otherwise 500.
+
+The duration now includes result execution, such as view rendering, so it reflects the whole MVC request. Requests refused by authorization (antiforgery or policy failures) are rejected before MVC filters run and are not audited by this filter, as before. The regression test `Audit_records_the_status_the_client_received_for_redirects_refusals_and_mapped_errors` fails against the old filter.
 
 ## Consequences
 

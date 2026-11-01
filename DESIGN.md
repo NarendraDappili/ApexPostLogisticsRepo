@@ -1,300 +1,401 @@
-# ApexPost Logistics Design
+# ApexPost Logistics: design
 
-## Current architecture
+ApexPost is an ASP.NET Core MVC application for post-office counters: retail sales, shipments, money orders with identity verification, voids and refunds, stock, and branch reports. Since Week 3, **Microsoft SQL Server is the system of record**, accessed through **EF Core 10**. The domain rules and the application interfaces are the ones Week 2 built; only the persistence behind them changed, and the Week 2 domain tests still pass unchanged.
 
-The solution is a layered .NET 10 MVC application. Domain provides validated value objects and business entities; Application owns workflows and contracts; Infrastructure provides JSON adapters; and Web is the HTTP/MVC composition root. Persistence, MVC workflows, security controls, auditing, reports, and integration tests are implemented as described below. For the concise system context, project boundaries, HTTP pipeline, and operational limits, start with the [architecture overview](docs/architecture/README.md).
+| | Week 2 | Week 3 |
+|---|---|---|
+| Storage | JSON files under `App_Data` | SQL Server `ApexPostDb`, 17 tables, code-first migrations |
+| Writes | Each repository saved its own file | Repositories stage; one unit of work commits once per use case |
+| Concurrency | Per-file and per-branch `SemaphoreSlim`, compensating writes | `rowversion` optimistic concurrency, database transactions (ADR 0017) |
+| Reads | Repositories loaded aggregates; reports summed in memory | Query services with no-tracking projections, and three stored procedures |
+| Audit | JSON Lines file | `AuditEntries` table, written outside the unit of work (ADR 0011) |
+| Errors | Generic 500 | 409 / 404 / 400 / 500 Problem Details (ADR 0018) |
 
-| Project | Responsibility | Current state |
-| --- | --- | --- |
-| `ApexPost.Domain` | Business entities, value objects, and invariants. | Implemented. |
-| `ApexPost.Application` | Use cases, service contracts, repository abstractions, external-capability contracts, and pricing rules. | Implemented workflows for inventory, shipping, money orders, transactions, and reports. |
-| `ApexPost.Infrastructure` | Technical adapters, including JSON repository persistence. | Implements all current repository contracts. |
-| `ApexPost.Web` | ASP.NET Core MVC UI and composition root. | Implemented MVC screens, filters, authentication/authorization, middleware, integration endpoint, and registrations. |
-| `ApexPost.Domain.Tests` | Unit tests for Domain. | Value-object and entity unit tests implemented. |
-| `ApexPost.Application.Tests` | Unit tests for Application. | Workflow, pricing, cancellation, failure, and concurrency coverage. |
-| `ApexPost.Infrastructure.Tests` | Tests for JSON adapters and seed data. | Persistence, seed, cancellation, and concurrency coverage. |
-| `ApexPost.Web.IntegrationTests` | Integration tests for Web. | Cookie, MVC filter, middleware, and integration-security coverage. |
+Related documents:
+- [README](README.md): setup, running, demo accounts.
+- [PERFORMANCE.md](PERFORMANCE.md): indexes and execution plans.
+- [sql/README.md](sql/README.md): reporting queries, T-SQL transactions, blocking and deadlocks.
+- [docs/security.md](docs/security.md), [docs/testing.md](docs/testing.md), [docs/business-rules.md](docs/business-rules.md).
 
-## Verified project dependency flow
+## Architecture
 
-```mermaid
-flowchart RL
-    Web[ApexPost.Web] --> Application[ApexPost.Application]
-    Web --> Infrastructure[ApexPost.Infrastructure]
-    Infrastructure --> Application
-    Infrastructure --> Domain[ApexPost.Domain]
-    Application --> Domain
-    DomainTests[ApexPost.Domain.Tests] --> Domain
-    ApplicationTests[ApexPost.Application.Tests] --> Application
-    InfrastructureTests[ApexPost.Infrastructure.Tests] --> Infrastructure
-    WebIntegrationTests[ApexPost.Web.IntegrationTests] --> Web
-```
+### Projects and dependencies
 
-`ApexPost.Domain` deliberately has no solution-project references. This keeps business rules independent of HTTP, MVC, JSON, and persistence details. The dependency direction is inward: Application depends on Domain, Infrastructure adapts Application and Domain, and Web uses Application and Infrastructure at the outer edge.
-
-The test projects reference only the production layer they verify: Domain tests reference Domain, Application tests reference Application, Infrastructure tests reference Infrastructure, and Web integration tests reference Web. Transitive references follow the production graph rather than introducing direct test-to-unrelated-layer coupling.
-
-## Composition root and dependency injection
-
-`src/ApexPost.Web/Program.cs` is the composition root. It registers Infrastructure adapters, Application workflows, MVC filters, authentication/authorization, options, and middleware without placing business rules there.
-
-## Application contracts
-
-Application owns repository interfaces for each implemented aggregate or independently persisted entity: branches, counters, staff members, products, branch inventory items, shipments, and money orders. Each contract returns an optional entity from `Find...Async` when absence is valid and persists an entity through `SaveAsync`. Every asynchronous operation accepts a final optional `CancellationToken`; contracts reveal neither file paths nor JSON details.
-
-`ICurrentStaffContext` makes the current operator's `StaffId` and branch context available without referencing ASP.NET Core. `IAuditStore` persists safe `AuditRecord` data through Infrastructure's `JsonAuditStore`; `INotificationSender` is fulfilled by local logging. Audit records exclude identity-document numbers, credentials, and payment-card data.
+| Project | Owns | References |
+|---|---|---|
+| `ApexPost.Domain` | Entities, value objects, enums, business invariants | Nothing |
+| `ApexPost.Application` | Use-case services, policies, repository / unit-of-work / query / audit interfaces, read models, application exceptions | Domain |
+| `ApexPost.Infrastructure` | EF Core `ApexPostDbContext`, configurations, migrations, repositories, unit of work, query services, stored procedure scripts and callers, audit store, seeding | Application, Domain, EF Core |
+| `ApexPost.Web` | MVC controllers, views, view models, filters, middleware, authentication, **composition root** (`Program.cs`) | Application, Infrastructure |
 
 ```mermaid
 flowchart RL
-    Web[ApexPost.Web<br/>MVC composition root] --> Application[ApexPost.Application<br/>workflows and contracts]
-    Application --> Domain[ApexPost.Domain<br/>implemented model]
-    Infrastructure[ApexPost.Infrastructure<br/>JSON repository implementations] --> Application
+    Web[ApexPost.Web<br/>MVC, filters, middleware,<br/>composition root] --> Application
+    Web --> Infrastructure
+    Infrastructure[ApexPost.Infrastructure<br/>EF Core, SQL Server,<br/>repositories, query services] --> Application
     Infrastructure --> Domain
+    Application[ApexPost.Application<br/>use cases and interfaces] --> Domain[ApexPost.Domain<br/>references nothing]
+    DomainTests[Domain.Tests] --> Domain
+    ApplicationTests[Application.Tests] --> Application
+    InfrastructureTests[Infrastructure.Tests<br/>SQL Server] --> Infrastructure
+    WebTests[Web.IntegrationTests<br/>WebApplicationFactory + SQL Server] --> Web
 ```
+
+The dependencies point inward:
+- **Domain** has no project references and no EF Core attribute.
+- **Application** defines every interface it needs (repositories, `IUnitOfWork`, query services, `IAuditStore`, `IStockAdjustments`, `ICatalogueBulkUpdates`) and does not know EF Core.
+- **Infrastructure** implements those interfaces.
+- **Web** wires everything together in `Program.cs` and holds no business rule.
+
+### Components at run time
 
 ```mermaid
 flowchart LR
-    Consumer[Application workflow] --> Contract[Application contract]
-    Contract --> Repository[Repository interface<br/>implemented]
-    Contract --> Capability[Audit, notification, or staff-context interface<br/>implemented]
-    Repository -. implemented by .-> Infrastructure[Infrastructure JSON adapter<br/>implemented]
-    Capability -. implemented by .-> Infrastructure
-    Repository --> Domain[Domain entity/value object<br/>implemented]
+    Browser --> Pipeline[Middleware pipeline<br/>correlation, errors, headers, auth]
+    Pipeline --> Controllers[MVC controllers<br/>view models in, views out]
+    Controllers --> Commands[Application services<br/>checkout, void, money orders,<br/>shipping, stock, staff, branches]
+    Controllers --> Queries[Query services<br/>dashboard, catalogue, transactions,<br/>reports]
+    Commands --> Repos[Repositories<br/>find + stage]
+    Commands --> UoW[IUnitOfWork<br/>one commit]
+    Commands --> Ports[Set-based ports<br/>usp_AdjustStock, ExecuteUpdate]
+    Repos --> Ctx[(Scoped ApexPostDbContext)]
+    UoW --> Ctx
+    Ports --> Ctx
+    Queries --> Ctx
+    Ctx --> Sql[(SQL Server ApexPostDb)]
+    Controllers -. audit resource filter .-> Audit[EfAuditStore<br/>own context per append] --> Sql
 ```
 
-## Pricing rules
-
-Application owns the calculation logic. `RetailPriceCalculator` multiplies a `Product`'s existing `Money` unit price by a positive quantity, preserving decimal precision without rounding. `ShippingPriceCalculator` receives a `ShippingPricingRequest` and caller-supplied `ShippingRate` collection. A rate has a shipment type (`Letter` or `Parcel`), service level (`Standard`, `Express`, or `Registered`), destination zone, fixed `Money` charge, and maximum `ParcelWeight`.
-
-The calculator requires exactly one matching rate and rejects a shipment above the selected rate's maximum weight; an equal weight is permitted. The assignment repository supplies no authoritative charge, formula, rounding rule, or dimensional surcharge, so the fixed charges and maximum weights are configuration data. Dimensions remain part of the validated `Shipment` but do not currently affect price. `JsonShippingRateProvider` loads the configured JSON rates.
-
-```mermaid
-flowchart LR
-    Product[Product + quantity] --> Retail[RetailPriceCalculator<br/>implemented]
-    Retail --> RetailPrice[Money result]
-    Shipment[Shipment + type + service level] --> Request[ShippingPricingRequest<br/>implemented]
-    Request --> Shipping[ShippingPriceCalculator<br/>implemented]
-    Rates[Caller-supplied ShippingRate data<br/>implemented contract data] --> Shipping
-    Shipping --> ShippingPrice[Money result or validation error]
-    Config[JSON shipping-rate provider] -. supplies .-> Rates
-```
-
-```mermaid
-flowchart LR
-    Input[Pricing request and rates] --> Validate[Validate request and rate match]
-    Validate --> Match{Exactly one rate?}
-    Match -->|No| RateError[Validation error]
-    Match -->|Yes| Weight{Within configured maximum weight?}
-    Weight -->|No| WeightError[Ineligible shipment error]
-    Weight -->|Yes| Calculate[Return configured shipping charge or retail multiplication]
-    Calculate --> Result[Money result]
-```
-
-## Domain value objects
-
-The Domain layer contains immutable sealed records, so equality is value-based and instances cannot be modified after construction. `BranchCode`, `StaffId`, `ProductId`, and `ZoneCode` reject null, empty, and whitespace-only input, then trim and normalize codes to uppercase invariant text. The assignment does not provide code-pattern or length limits, so none are invented here.
-
-`Money` retains its input as a `decimal` and accepts zero or positive amounts without rounding; currency and rounding policies remain deliberately unspecified. `ParcelWeight` represents a strictly positive kilogram value. `ParcelDimensions` represents strictly positive length, width, and height values in centimetres. Shipment weight limits are configured per shipping rate rather than embedded in the value object.
-
-```mermaid
-flowchart TB
-    Domain[ApexPost.Domain<br/>implemented] --> Codes[BranchCode, StaffId, ProductId, ZoneCode<br/>implemented]
-    Domain --> Money[Money<br/>implemented]
-    Domain --> Weight[ParcelWeight<br/>implemented]
-    Domain --> Dimensions[ParcelDimensions<br/>implemented]
-    PlannedEntities[Future domain entities<br/>planned] -. use .-> Codes
-    PlannedEntities -. use .-> Money
-    PlannedEntities -. use .-> Weight
-    PlannedEntities -. use .-> Dimensions
-```
-
-```mermaid
-flowchart LR
-    Input[Raw constructor input] --> Validate[Validate and normalize where applicable]
-    Validate --> Valid{Input valid?}
-    Valid -->|Yes| ValueObject[Immutable value object created]
-    Valid -->|No| Error[Argument exception]
-```
-
-The implemented entities compose these types to retain validation at creation boundaries. Additional entities and cross-entity workflows remain planned.
-
-## Domain entities
-
-Entities are mutable only through their controlled operations and compare by identity rather than their changing state. `Branch` is identified by `BranchCode` and controls whether it is open. `Counter` is identified by its branch and `CounterCode`, and tracks its own open state. `StaffMember` is identified by `StaffId`, has an assigned branch and role, and prevents inactive members from processing transactions; the Counter Clerk role is limited to its assigned branch.
-
-`Product` is identified by `ProductId` and owns its current `Money` unit price. `BranchInventoryItem` is identified by its branch/product pair and prevents quantity from becoming negative. `Shipment` is identified by `ShipmentId` and composes the existing origin, zone, weight, and dimensions value objects. `MoneyOrder` is identified by `MoneyOrderId`, stores a `Money` amount and verification outcome only, and deliberately has no identity-document data.
-
-```mermaid
-flowchart TB
-    Branch[Branch<br/>BranchCode identity] --> Counter[Counter<br/>CounterCode + branch identity]
-    Branch --> Inventory[BranchInventoryItem<br/>branch + product identity]
-    Product[Product<br/>ProductId identity] --> Inventory
-    Staff[StaffMember<br/>StaffId identity] --> AssignedBranch[Assigned BranchCode]
-    Shipment[Shipment<br/>ShipmentId identity] --> ShipmentValues[BranchCode, ZoneCode, ParcelWeight, ParcelDimensions]
-    MoneyOrder[MoneyOrder<br/>MoneyOrderId identity] --> MoneyOrderValues[BranchCode, Money, verification outcome]
-    PlannedTransactions[Counter transactions and line items<br/>planned] -. use .-> Branch
-    PlannedTransactions -. use .-> Staff
-    PlannedTransactions -. use .-> Inventory
-    PlannedTransactions -. use .-> Shipment
-    PlannedTransactions -. use .-> MoneyOrder
-```
-
-```mermaid
-flowchart LR
-    Adjust[Stock adjustment request] --> ValidateAmount{Positive quantity?}
-    ValidateAmount -->|No| RejectAmount[Argument exception]
-    ValidateAmount -->|Yes| Remove{Removal exceeds stock?}
-    Remove -->|Yes| RejectStock[Invalid operation]
-    Remove -->|No| Update[Update inventory quantity]
-```
-
-Branch closure and staff eligibility are entity state and operations. Application workflows coordinate those checks with checkout, shipment creation, money-order thresholds, refunds, and HTTP authorization.
-
-## JSON repository persistence
-
-Infrastructure implements only the existing Application repository abstractions: `IBranchRepository`, `ICounterRepository`, `IStaffMemberRepository`, `IProductRepository`, `IInventoryRepository`, `IShipmentRepository`, and `IMoneyOrderRepository`. No delete contract exists, so deletion is deliberately not added. Each `SaveAsync` upserts by the Domain identity and `Find...Async` returns `null` when data is absent.
-
-```mermaid
-flowchart LR
-    App[Application repository interface] --> Impl[Infrastructure JSON repository]
-    Impl --> Map[Infrastructure DTO mapping]
-    Map --> Domain[Domain entity and value objects]
-    Impl --> Store[Per-file JSON store]
-    Store --> File[(Configured directory / JSON file)]
-```
+### A write, end to end (checkout)
 
 ```mermaid
 sequenceDiagram
-    participant R as Repository
-    participant L as Per-file SemaphoreSlim
-    participant F as JSON file
-    R->>L: wait asynchronously
-    L-->>R: exclusive in-process access
-    R->>F: asynchronously read and deserialize
-    R->>F: serialize complete replacement to temporary file
-    R->>F: move temporary file over target
-    R->>L: release
+    actor Clerk
+    participant C as CounterTransactionsController
+    participant S as CounterTransactionWorkflowService
+    participant R as Repositories
+    participant D as Domain
+    participant U as EfUnitOfWork
+    participant DB as SQL Server
+    Clerk->>C: POST basket (antiforgery, CounterBasketViewModel)
+    C->>S: CounterCheckoutRequest (identifiers only, clerk from the cookie)
+    S->>R: find branch, counter, clerk, products, stock, shipments, money orders
+    R->>DB: SELECT (one per lookup, tracked)
+    S->>D: price lines on the server, BranchInventoryItem.RemoveStock, new CounterTransaction, MarkPaid
+    S->>R: Add(transaction), stock rows already tracked
+    S->>U: SaveChangesAsync (once)
+    U->>DB: BEGIN TRAN, UPDATE BranchStock ... WHERE RowVersion = @v, INSERT sale, lines, payment, COMMIT
+    alt another clerk changed the stock row first
+        DB-->>U: 0 rows updated
+        U-->>C: ConcurrencyConflictException, shown as 409
+    end
+    C-->>Clerk: redirect (PRG) with a notice
 ```
 
-`JsonRepositoryOptions.DataDirectory` selects the data directory. The default is `App_Data` under the Web content root. The whole `src/ApexPost.Web/App_Data/` folder is runtime data — JSON stores, the `audit-records.jsonl` audit log and the ASP.NET Core key ring — and is ignored by Git. In Development it is filled by the demo seeder on first run (see below). DTOs are Infrastructure-only. Money orders persist verification outcome but never an identity-document number.
+## Data model
 
-Missing files are treated as empty repositories. Empty, null, malformed, and domain-invalid JSON throws instead of being replaced; I/O exceptions also reach the caller. File streams are asynchronous and contract cancellation tokens are propagated. A process-wide, path-keyed `SemaphoreSlim` protects each read-modify-write operation for all repository instances in this process; it provides no cross-process coordination. A complete JSON payload is written to a unique temporary file in the same directory, then moved over the target, avoiding a truncated target if serialization fails. Atomic replacement and durability are filesystem/platform dependent, and operations spanning multiple files are not transactional.
+### ER diagram
 
-## Deterministic demo seed data
+```mermaid
+erDiagram
+    Roles ||--o{ Staff : "has role"
+    Branches ||--o{ Counters : has
+    Branches ||--o{ Staff : employs
+    Branches ||--o{ BranchStock : stocks
+    Branches ||--o{ MoneyOrders : issues
+    Branches ||--o{ Shipments : "ships from"
+    ProductCategories ||--o{ Products : groups
+    Products ||--o{ BranchStock : "stocked as"
+    Products |o--o{ TransactionLines : "sold as"
+    BranchStock ||--o{ StockAdjustments : "history of"
+    Staff ||--o{ StockAdjustments : "changed by"
+    Counters ||--o{ CounterTransactions : "rung up at"
+    Staff ||--o{ CounterTransactions : "clerk of"
+    Staff |o--o{ CounterTransactions : "authorised reversal"
+    CounterTransactions ||--|{ TransactionLines : contains
+    CounterTransactions ||--|| Payments : "paid by"
+    ShippingZones ||--o{ ShippingRates : prices
+    ShippingZones ||--o{ Shipments : "destination of"
+    CounterTransactions |o..o{ Shipments : "bills (code, no FK)"
+    MoneyOrders ||--o| IdentityVerifications : "verified by"
 
-`DemoDataSeeder` is an Infrastructure component. In Development, `DemoDataSeedHostedService` (Web) runs it before the server accepts requests when `ApexPost:DemoSeed:Enabled` is true; other environments never seed. It builds valid Domain entities and saves them through the JSON repositories: 5 branches (with region and opening hours), 10 counters, 20 staff across all four roles with emails and PBKDF2 hashes of the configured demo password, 30 products, 150 stock rows (the first three products start at or below the low-stock threshold), 40 historical counter transactions over the last four days mixing retail items, shipments and money orders (including one refund and one void), and one refused money order per branch for the auditor view. It also writes `shipping-rates.json` (60 rates over 10 zones) for `JsonShippingRateProvider`. Because the history is stored as real `CounterTransaction`, `Shipment` and `MoneyOrder` records, all four reports have data on first run. See ADR 0010.
+    Branches {
+        int BranchId PK
+        varchar BranchCode UK
+        nvarchar Name
+        nvarchar Region
+        bit IsOpen
+    }
+    Counters {
+        int CounterId PK
+        varchar BranchCode FK "UK with CounterCode"
+        varchar CounterCode
+        bit IsOpen
+    }
+    Roles {
+        tinyint RoleId PK
+        varchar Name UK
+    }
+    Staff {
+        int StaffMemberId PK
+        varchar StaffCode UK
+        varchar Email "UK when not null"
+        tinyint RoleId FK
+        varchar BranchCode FK
+        varchar PasswordHash "PBKDF2"
+        bit IsActive
+    }
+    ProductCategories {
+        int ProductCategoryId PK
+        varchar CategoryCode UK
+        nvarchar Name
+    }
+    Products {
+        int ProductId PK
+        varchar ProductCode UK
+        varchar Sku UK
+        varchar CategoryCode FK
+        decimal UnitPrice "CHECK >= 0"
+    }
+    BranchStock {
+        int BranchStockId PK
+        varchar BranchCode FK "UK with ProductCode"
+        varchar ProductCode FK
+        int Quantity "CHECK >= 0"
+        rowversion RowVersion
+    }
+    StockAdjustments {
+        bigint StockAdjustmentId PK
+        varchar BranchCode FK "with ProductCode to BranchStock"
+        varchar ProductCode FK
+        int Delta "CHECK <> 0"
+        nvarchar Reason
+        varchar ChangedByStaffCode FK
+    }
+    ShippingZones {
+        int ShippingZoneId PK
+        varchar ZoneCode UK
+    }
+    ShippingRates {
+        int ShippingRateId PK
+        varchar ZoneCode FK "UK band with type, level, weight"
+        varchar ShipmentType "CHECK IN"
+        varchar ServiceLevel "CHECK IN"
+        decimal Charge "CHECK > 0"
+        decimal MaximumWeightKg "CHECK 0-30"
+    }
+    Shipments {
+        bigint ShipmentId PK
+        varchar ShipmentCode UK
+        varchar OriginBranchCode FK
+        varchar ZoneCode FK
+        decimal WeightKg "CHECK 0-30"
+        varchar ServiceLevel "CHECK IN"
+        varchar TransactionCode "no FK"
+    }
+    CounterTransactions {
+        bigint CounterTransactionId PK
+        varchar TransactionCode UK
+        varchar BranchCode FK "with CounterCode to Counters"
+        varchar CounterCode FK
+        varchar ClerkStaffCode FK
+        varchar AuthorizedByStaffCode FK "null unless reversed"
+        decimal Subtotal
+        decimal Tax
+        datetime2 OccurredAtUtc
+        varchar Status "CHECK IN"
+        rowversion RowVersion
+    }
+    TransactionLines {
+        bigint TransactionLineId PK
+        bigint CounterTransactionId FK "CASCADE"
+        varchar ProductCode FK "null for services"
+        nvarchar Description
+        int Quantity "CHECK > 0"
+        decimal UnitPrice "price at sale"
+    }
+    Payments {
+        bigint CounterTransactionId PK "and FK CASCADE"
+        varchar PaymentMethod "CHECK IN"
+        decimal Amount "CHECK >= 0"
+    }
+    MoneyOrders {
+        int MoneyOrderId PK
+        varchar MoneyOrderCode UK
+        varchar BranchCode FK
+        decimal Amount "CHECK > 0"
+        decimal Fee "CHECK >= 0"
+        varchar TransactionContextCode "no FK"
+    }
+    IdentityVerifications {
+        int IdentityVerificationId PK
+        int MoneyOrderId FK "unique, CASCADE"
+        varchar MaskedDocumentReference "varchar 8, CHECK starts ****"
+        varchar Outcome "CHECK IN"
+    }
+    AuditEntries {
+        bigint AuditEntryId PK
+        datetime2 OccurredAtUtc
+        varchar StaffCode "no FK"
+        varchar Controller
+        varchar Action
+        int StatusCode "CHECK 100-599"
+        varchar Outcome "CHECK IN"
+    }
+```
+
+**Columns every table has (left out of the diagram):**
+- `CreatedAtUtc` (`DEFAULT SYSUTCDATETIME()`), `CreatedBy` (`DEFAULT 'system'`) and `ModifiedAtUtc`, stamped by `AuditColumnsInterceptor` from the signed-in staff member.
+- Money is `decimal(18,2)`, points in time are UTC `datetime2(3)`, codes are `varchar`, names are `nvarchar`.
+
+**Constraints and delete behaviours:**
+- The keys, the 26 CHECK constraints and every delete behaviour are explained in [ADR 0013](docs/adr/0013-schema-design-and-delete-behaviours.md).
+- In short, only a sale's lines and payment, and a money order's verification, cascade. Everything else is `NO ACTION`, because history must not disappear with its branch, product or staff member.
+
+**Schema script:** the generated script is [`database/ApexPostDb.idempotent.sql`](database/ApexPostDb.idempotent.sql) (`dotnet ef migrations script --idempotent`).
+
+### Normalisation: three anomalies the design prevents
+
+The tables are in third normal form. Each fact is stored once, in the table whose key it depends on. That design prevents these anomalies:
+
+1. **Update anomaly (prevented by 3NF, no transitive dependency).**
+   - A staff member's role name depends on the role, not on the staff member. `Staff` therefore holds only `RoleId`, and the name lives once in `Roles`.
+   - Likewise, a category's name lives once in `ProductCategories`, and a branch's name and region once in `Branches`.
+   - Renaming a role, category or branch changes one row. With the name copied into every staff, product or sale row, a rename that missed some rows would leave the database contradicting itself.
+2. **Insertion anomaly (prevented by keeping independent facts in their own tables).**
+   - Zones and their rates are their own tables, so a new destination zone and its prices can be set up before the first parcel goes there.
+   - A product exists in `Products` before any branch stocks it.
+   - If rates were stored on shipments, or products only as stock rows, they could not be recorded until their first use.
+3. **Deletion anomaly (prevented by 2NF, no partial dependency).**
+   - `BranchStock` is keyed by `(BranchCode, ProductCode)` and holds only what depends on that pair: the quantity. The product's SKU, name, category and price depend on the product alone, so they live in `Products`.
+   - Removing a branch's last stock row for a product therefore cannot remove the product from the catalogue.
+
+**Two copies are deliberate**, because they are historical facts rather than repeated reference data:
+- **`TransactionLines.UnitPrice` and `Description`** are what the customer was charged. A later catalogue price change must not rewrite past receipts.
+- **The sale's `Subtotal` and `Tax`** are fixed at payment.
+
+## Persistence with EF Core 10
+
+### Mapping
+
+- **`ApexPostDbContext`** has one `DbSet` per aggregate root. It applies one `IEntityTypeConfiguration` class per entity (`Persistence/Configurations`), using the Fluent API only.
+- **Domain entities are mapped directly** ([ADR 0016](docs/adr/0016-domain-and-persistence-model-separation.md)):
+  - **Value converters** for the codes, `Money`, `Sku` and `ParcelWeight`, and `DateTimeOffset` → UTC.
+  - **Owned types:** `ParcelDimensions` in the shipment row; `TransactionLines` and `Payments` in their own tables.
+  - **A complex property** for `Product.UnitPrice`, so it can be updated with `ExecuteUpdateAsync`.
+  - **Shadow properties** for the surrogate keys, the `RowVersion` columns and the audit columns.
+  - **Private constructors** so EF Core can materialise the entities.
+- **Money orders have their own persistence model.** `MoneyOrderEntity` and `IdentityVerificationEntity`, with `MoneyOrderMapper`, make sure only a masked document reference can be stored or read back.
+- **`AuditColumnsInterceptor`** stamps `CreatedAtUtc`, `CreatedBy` and `ModifiedAtUtc` on every `SaveChanges`, using `ICurrentStaffContext`.
+
+### Migrations
+
+| Migration | Contents |
+|---|---|
+| `InitialCreate` | 17 tables, keys, alternate keys, CHECK and DEFAULT constraints, FK indexes; roles and the `GENERAL` category seeded with `HasData` |
+| `AddStoredProcedures` | Deploys the three `CREATE OR ALTER` procedures from embedded `.sql` files ([ADR 0012](docs/adr/0012-stored-procedures-for-reports-and-stock-adjustment.md)) |
+| `AddWorkloadIndexes` | The five workload indexes, added after the baseline measurements ([ADR 0014](docs/adr/0014-index-choices-from-execution-plan-evidence.md)) |
+| `RedeployDailyBranchSales` | Fixes `usp_DailyBranchSales`'s cardinality misestimate; `Down` restores the previous body |
+
+- **Review before applying.** Every migration was reviewed before it was applied. `database/ApexPostDb.idempotent.sql` is regenerated each time and verified by running it twice on an empty database.
+- **The application never creates or migrates the schema.** There is no `EnsureCreated()`; see the README for `dotnet ef database update`.
+- **Demo data** for Development comes from `DemoDataSeeder`:
+  - 5 branches, 20 staff, 30 products in 3 categories, 10 zones with 60 rates, and 240 sales over 60 days, with their shipments, money orders and verifications.
+  - It runs only on an empty, fully migrated database and saves everything in one `SaveChanges`.
+
+## Data access patterns
+
+### Commands: repositories and the unit of work
+
+[ADR 0015](docs/adr/0015-repository-and-unit-of-work-boundaries.md) explains the boundaries in full. In short:
+
+- **Specific repositories per aggregate** find by business key and **stage** changes (`Add`/`Update`). They never call `SaveChanges` and never return `IQueryable`.
+- **`IUnitOfWork.SaveChangesAsync`** commits a use case once.
+- **`ExecuteInTransactionAsync`** runs one explicit transaction inside the execution strategy, for use cases that mix `SaveChanges` with a procedure or `ExecuteUpdate`.
+- **Database errors become application exceptions:** concurrency conflicts and duplicate keys become `ConflictException`s.
+- **Lifetimes:** the `DbContext`, repositories, unit of work and services are **scoped**, so one context serves one request.
+
+### Queries: projection-based read models
+
+- **Interfaces in Application, implementations in Infrastructure.** Dashboard, catalogue, transaction list, staff list and reports go through `IBranchQueries`, `ICatalogueQueries`, `ITransactionQueries`, `IStaffQueries` and `IBranchReportQueries`. The implementations in Infrastructure read the `DbContext` directly.
+- **How they read:** `AsNoTracking()` projections into read-model records, one SQL statement per screen query, aggregation in SQL Server, or one of the stored procedures.
+- **Command logging** is on in Development (`Microsoft.EntityFrameworkCore.Database.Command`). Tests count the commands per screen to prove there is no N+1.
+- **No `Include` or split queries on read screens.** Projections select exactly the columns shown and never load the owned lines of a list of sales, so nothing needs `Include` or `AsSplitQuery`. Tracked aggregates with their lines are loaded only on the write side, where the domain needs them.
+- **`Include` and `AsSplitQuery` on the write side.**
+  - `Include` is used once, by `EfMoneyOrderRepository`, to load the tracked money order with its verification for an update.
+  - `AsSplitQuery` is not used, because no query can multiply rows. A cartesian explosion needs two or more collection navigations in one query, and no aggregate has two.
+  - The sale has one owned collection (its lines) plus a one-to-one payment, and a money order has at most one verification. One joined query therefore returns one row per line at most.
+
+**Query/command separation uses one database.** Reads and writes are separated in code: query services versus repositories plus the unit of work. Both use the same SQL Server database. There is **no separate read database** and no replication; none is needed, and a screen must show what was just committed.
+
+### DTOs and explicit mapping
+
+Every POST binds a **request view model** with validation attributes, and every screen renders a **view model** or an Application read model. Mapping is explicit, layer by layer:
 
 ```mermaid
 flowchart LR
-    Host[Development startup] --> Hosted[DemoDataSeedHostedService]
-    Hosted --> Seeder[DemoDataSeeder]
-    Seeder --> Domain[Validated Domain entities]
-    Seeder --> Hasher[IPasswordHasher PBKDF2]
-    Seeder --> Repositories[Existing JSON repositories]
-    Seeder --> Rates[shipping-rates.json]
-    Repositories --> Files[(Entity JSON files)]
-    Seeder --> Manifest[Completion manifest written last]
-    Manifest --> Files
+    Form[HTML form] --> VM[CounterBasketViewModel<br/>Web input model, validated]
+    VM -->|controller adds the clerk from the cookie| Cmd[CounterCheckoutRequest<br/>Application command, identifiers only]
+    Cmd -->|service prices every line on the server| Entity[CounterTransaction<br/>Domain entity]
+    Entity -->|Fluent API mapping| Rows[(CounterTransactions,<br/>TransactionLines, Payments)]
 ```
 
-The seeder accepts only a nonexistent or empty data directory (the Data Protection key folder is ignored). It writes the `apexpost-demo-v2` manifest last; a matching manifest makes a later call a no-op. If any unmarked data exists it changes nothing and the host logs a warning. A failed multi-file seed is not atomic: a partial seed has no manifest and must be removed before retrying. All identities are synthetic; stored document references are masked.
+- **No input model contains a status, key or audit field.** `Status`, `Id`, `CreatedBy` and similar values posted by an attacker are not bound. The service sets them, or the interceptor and the database do.
+- **The same pattern applies to every form:** `StaffFormViewModel` → staff request, `MoneyOrderFormViewModel` → money-order request, `StockAdjustmentViewModel` → `StockAdjustmentRequest`, and so on.
+- **Over-posting is proven by integration tests:**
+  - `Over_posted_status_identity_and_audit_fields_have_no_effect_on_a_sale`;
+  - `Over_posted_activity_password_and_audit_fields_have_no_effect_on_a_staff_edit`.
 
-## Inventory application behavior
+### Set-based writes and stored procedures
 
-`InventoryService` owns inventory orchestration in Application. `BranchInventoryItem` remains the Domain owner of positive-change and non-negative-stock invariants. The narrowly extended `IInventoryRepository.UpdateAsync` contract runs one mutation against one branch/product item without exposing an intervening read/write window. `JsonInventoryRepository` implements it inside the existing `inventory.json` per-file lock.
+- **Price revision** (`PriceRevisionService` → `ICatalogueBulkUpdates`): one `ExecuteUpdateAsync` statement updates a category's prices without loading products. The setter is `SetProperty(p => p.UnitPrice.Amount, …)`. Because it bypasses `SaveChanges`, it sets `ModifiedAtUtc` itself.
+- **Stock adjustment** (`StockAdjustmentService` → `IStockAdjustments` → `usp_AdjustStock`):
+  - a first delivery inserts the stock row with `SaveChangesAsync`, then calls the procedure;
+  - both run inside one `ExecuteInTransactionAsync`, so a failure in either rolls back both.
+- **Reports:** `usp_DailyBranchSales` and `usp_LowStockReport`.
+- **Calls are always parameterised** (`SqlQuery`/`ExecuteSql` with interpolated values that become parameters). Procedure `THROW` errors become `RuleViolationException`, shown as 400.
+- **Least privilege:** the role `apexpost_app` (`database/security/apexpost-app-role.sql`) has no `DELETE` and no DDL, and can only append and read the audit trail ([ADR 0012](docs/adr/0012-stored-procedures-for-reports-and-stock-adjustment.md)).
 
-```mermaid
-flowchart LR
-    Request[Add, remove, or signed adjustment] --> Validate{Valid quantity?}
-    Validate -->|No| Reject[Argument error]
-    Validate -->|Yes| Atomic[Repository UpdateAsync under inventory file lock]
-    Atomic --> Domain[BranchInventoryItem AddStock or RemoveStock]
-    Domain --> Enough{Stock sufficient?}
-    Enough -->|No| Fail[No file change; insufficient stock error]
-    Enough -->|Yes| Persist[Persist updated inventory item]
-    Persist --> Threshold{Crossed low-stock threshold?}
-    Threshold -->|Yes| Notify[Publish StockLow event]
-    Threshold -->|No| Result[Return available quantity]
-    Notify --> Result
-```
+## Transactions and concurrency
 
-```mermaid
-flowchart TB
-    Lookup[Branch + product] --> Item{Inventory item exists?}
-    Item -->|No| Missing[Missing-item error]
-    Item -->|Yes| Read[Return branch-specific quantity]
-    Remove[Removal request] --> Lock[Same-process JSON file lock]
-    Lock --> Recheck[Read current quantity within mutation]
-    Recheck --> Compare{Requested <= current?}
-    Compare -->|No| Reject[Reject without write]
-    Compare -->|Yes| Save[Save non-negative quantity]
-```
+[ADR 0017](docs/adr/0017-optimistic-concurrency-for-stock-and-transactions.md) explains the strategy; the main points:
 
-The JSON lock is process-wide and keyed by the inventory file path, so concurrent operations through JSON repository instances in one application process cannot oversell. It is not a cross-process lock and does not provide distributed transactions. Low-stock alerts are raised only on a downward threshold crossing, as a `StockLow` event (see "Events and notifications"). Checkout takes stock through `InventoryService.RemoveStockForSaleAsync` and raises the alerts with `RaiseLowStockAlertAsync` only after the sale is saved, so a sale now produces the alert and an alert failure can never strand stock that compensation must return. Without an outbox, a delivery failure after persistence is reported, not retried.
+- **Optimistic concurrency.** `BranchStock` and `CounterTransactions` have a `rowversion`. A stale update affects no row, the whole `SaveChanges` rolls back, and the user gets **409**. Stock never goes negative: the domain refuses it, the CHECK constraint refuses it, and `usp_AdjustStock` checks inside its `UPDATE`.
+- **Atomic use cases.** A checkout commits the stock decrements, the sale, its lines and its payment in one transaction. A void or refund commits the new status and the returned stock together. There are no compensating writes.
+- **Retries and isolation.** The execution strategy (`EnableRetryOnFailure`) retries transient errors, including deadlock victims, by replaying the whole unit. The database runs `READ_COMMITTED_SNAPSHOT`, so readers never wait for writers.
+- **Deadlock avoidance:** every writer touches stock rows first, in key order, and transactions are short. See the [blocking demo and deadlock note](sql/README.md).
 
-## Shipping workflow
+## Errors and auditing
 
-`ShippingWorkflowService` is an Application-layer coordinator. It translates raw request data into the existing validated Domain `Shipment` and value objects, checks the origin branch through `IBranchRepository`, obtains storage-agnostic configured rates through `IShippingRateProvider`, delegates all matching, fixed-price, and maximum-weight behavior to `ShippingPriceCalculator`, then saves through `IShipmentRepository`. `JsonShippingRateProvider` is the Infrastructure implementation that reads `shipping-rates.json` asynchronously.
+**Problem Details** ([ADR 0018](docs/adr/0018-exceptions-to-problem-details-status-codes.md)):
+- `ConflictException` (concurrency, duplicate key) → 409.
+- `NotFoundException` → 404.
+- `RuleViolationException`, and `ArgumentException`/`InvalidOperationException` thrown by Domain or Application code → 400, with the business message.
+- Anything else → 500, with no detail.
+- MVC forms show the message on the form, with status 409 for conflicts.
 
-```mermaid
-flowchart LR
-    Input[Shipment creation request] --> Values[Create Domain value objects and Shipment]
-    Values --> Branch{Origin branch exists and is open?}
-    Branch -->|No| RejectBranch[Not-found or closed-branch error]
-    Branch -->|Yes| Duplicate{Shipment id already exists?}
-    Duplicate -->|Yes| RejectDuplicate[Duplicate-id error]
-    Duplicate -->|No| Rates[Load configured rates via IShippingRateProvider]
-    Rates --> Price[ShippingPriceCalculator]
-    Price --> Eligible{One matching rate and within max weight?}
-    Eligible -->|No| RejectRate[Rate or weight validation error]
-    Eligible -->|Yes| Save[Save through IShipmentRepository]
-    Save --> Result[Shipment and configured price]
-```
+**Audit** ([ADR 0011](docs/adr/0011-audit-store-outside-the-unit-of-work.md)):
+- **What is recorded:** `AuditResourceFilter` records every MVC request: staff, role, branch, controller and action, allow-listed route IDs, status, duration, correlation ID and outcome. It never records bodies, arguments or headers.
+- **Correct status:** as a resource filter it runs after the result, so the status is the one the client received, including redirects, `Forbid`, 409 pages and mapped exceptions.
+- **Separate commit:** `EfAuditStore` appends each record with its own short-lived context. An audit write can neither commit a failed business change nor undo a committed one.
 
-A shipment is created with the ID of the counter transaction that will bill it (`Shipment.TransactionId`); checkout re-prices it from the rate table, so a shipment is billed once and never at a typed-in price (ADR 0009). `JsonShippingRateProvider` keeps the rate table in memory after the first non-empty load and returns it through `ValueTask` synchronously: every shipment and every basket with a shipment reads the full table, and the cache removes the file lock, disk read and deserialization from those calls. It was not benchmarked; a unit test asserts that later calls complete synchronously with the same instance. The workflow does not define rates, formulas, dimensional surcharges, or a universal service limit. `shipping-rates.json` supplies one fixed charge and maximum weight for each applicable type/service/zone. The current Domain model requires positive dimensions for every shipment, including a letter, and no additional type-specific dimensions are invented. Persistence I/O errors propagate unchanged; missing origin branches and shipment retrieval use explicit Application exceptions. The MVC flow presents a label preview; carrier integration and rendered carrier labels are not implemented.
+## Domain model
 
-## Money orders and identity verification
+### Value objects and entities
 
-`MoneyOrderWorkflowService` coordinates persistence and configured policy while `MoneyOrder` owns its amount, fee, sender, recipient, context identity, and verification-association invariants. `IMoneyOrderPolicy` supplies `HighValueThreshold` and the fee: `MoneyOrderPolicy` takes a `Func<Money, Money>` fee rule, built in the composition root from `ApexPost:MoneyOrders:FlatFee` and `FeeRate` and rounded with `RoundedToCents`. The clerk never types the fee (ADR 0009).
-
-Identity verification is a separate step. The clerk issues the order (it is saved as `Pending`), then records the document presented; `IIdentityVerifier` decides the outcome and the service stores the document type and a masked reference against the order's transaction context. A verified order cannot be re-verified; a failed one can be retried. Checkout refuses a high-value order unless its outcome is `Verified` and its context equals the transaction ID.
-
-```mermaid
-flowchart LR
-    Input[Money-order request] --> Branch{Branch exists and is open?}
-    Branch -->|No| RejectBranch[Reject]
-    Branch -->|Yes| Duplicate{Order identifier unused?}
-    Duplicate -->|No| RejectDuplicate[Reject]
-    Duplicate -->|Yes| Fee[Fee from IMoneyOrderPolicy]
-    Fee --> Save[Persist order as Pending]
-    Save --> Issued[Publish MoneyOrderIssued]
-    Issued --> High{Above threshold?}
-    High -->|Yes| VerifyStep[Verify step: IIdentityVerifier decides, masked reference stored]
-    High -->|No| Basket
-    VerifyStep --> Basket[Checkout: requires Verified + same transaction]
-```
-
-The raw identity-document number is transient request input only and is never persisted, logged, audited, or echoed back to the page. Verification is simulated by `SimulatedIdentityVerifier` (supported document types; 6-20 letters or digits; numbers ending `0000` simulate a rejection).
-
-## Mixed counter transactions
-
-`CounterTransaction` is a Domain aggregate for branch/counter/clerk identity, immutable basket lines, subtotal, tax, payment method, and state. It allows `Open → Paid`, `Open → Voided`, `Paid → Voided`, and `Paid → Refunded`; checkout saves a sale as Paid, so a void must accept a Paid sale. Manager authorization and reason input are validated at the Application boundary before the Domain transition. `CounterTransactionWorkflowService` validates branch, counter, clerk, any number of retail lines, shipments and money orders linked to the transaction, stock, and configured tax policy; the request carries identifiers only and every line is priced on the server. Managers void and refund from the **Transactions** screen (`CounterTransactions/Manage`). `ICounterTransactionRepository` is implemented by `JsonCounterTransactionRepository` in `counter-transactions.json`.
-
-```mermaid
-flowchart LR
-    Basket[Mixed basket request] --> POS{Open branch/counter and assigned active clerk?}
-    POS -->|No| RejectPOS[Reject]
-    POS -->|Yes| Lines[Price retail from catalogue; shipments from rate table; money orders from policy fee]
-    Lines --> MO{High-value money orders verified in same transaction?}
-    MO -->|No| RejectMO[Reject]
-    MO -->|Yes| Tax[Calculate configured tax]
-    Tax --> Lock[Acquire in-process branch lock]
-    Lock --> Stock[Remove retail stock through atomic inventory updates]
-    Stock --> Save[Save paid transaction JSON]
-    Save -->|Success| Paid[Paid transaction]
-    Save -->|Failure| Compensate[Restore removed stock in reverse order]
-    Compensate --> Failure[Propagate failure; reconcile if compensation failed]
-```
+| Type | Rules it owns |
+|---|---|
+| `BranchCode`, `StaffId`, `ProductId`, `ZoneCode`, `Sku`, `CounterTransactionId`, … | Required, trimmed, upper-case codes; value equality |
+| `Money` | Non-negative decimal; `RoundedToCents` is the one rounding rule |
+| `ParcelWeight`, `ParcelDimensions` | Positive; weight at most `ParcelWeight.MaximumKilograms` (30 kg, mirrored in CHECK constraints) |
+| `MaskedIdentityDocumentReference` | Only `****` plus at most four characters; a full document number cannot be represented |
+| `Branch`, `Counter` | Open/close; name, region and hours validated through C# 14 `field` setters |
+| `StaffMember` | Role, home branch, active flag; `CanProcessTransactionsAt(branch)`; PBKDF2 hash |
+| `Product`, `ProductCategory` | Price, SKU, category |
+| `BranchInventoryItem` | `AddStock`, `RemoveStock` (never below zero), `Adjust` (returns a `StockAdjustment` with reason and staff) |
+| `Shipment` | Origin, destination zone, weight, dimensions, type, service level, billing transaction ID |
+| `MoneyOrder` | Amount > 0, policy fee, `RequiresVerification(threshold)`, `RecordIdentityVerification`, `IsClearedForPayment` |
+| `CounterTransaction` | Lines, totals, payment; state machine below |
 
 ```mermaid
 stateDiagram-v2
@@ -307,362 +408,134 @@ stateDiagram-v2
     Refunded --> [*]
 ```
 
-Multi-file JSON persistence is not atomic. The service uses an in-process branch lock to serialize its own mixed-basket workflows and the existing per-file inventory mutation lock to prevent overselling. Checkout removes stock before saving the transaction and compensates it if save fails; if a process ends between writes or a compensation write fails, reconciliation is required. Void and refund of a Paid sale persist the new status before restoring inventory and explicitly report a restoration failure; voiding an Open basket restores no stock because only a paid sale has taken stock. These guarantees do not coordinate multiple application processes sharing JSON files, nor do they provide database-grade atomicity.
+### Pricing, shipping and money orders
 
-Compensating inventory writes use `CancellationToken.None` after a mutation has started or a refund status has been persisted. This is intentional: request cancellation must not interrupt the immediate rollback/restoration path. It does not make compensation durable or atomic, and failures continue to surface for reconciliation.
+- **Every price is decided on the server** ([ADR 0009](docs/adr/0009-server-side-pricing-and-separate-identity-verification.md)). The basket carries identifiers only:
+  - **Retail lines** use the catalogue price.
+  - **Shipment lines** use `ShippingPriceCalculator` over the rate table. The calculator needs exactly one matching rate and a weight within that rate's maximum.
+  - **Money-order lines** use the policy fee (flat fee plus a percentage, from configuration).
+- **The rate table is cached** process-wide (`ShippingRateCache`). `IShippingRateProvider` returns a `ValueTask`, which completes synchronously on a cache hit.
+- **Identity verification is a separate step.**
+  - The clerk issues the order, which is pending. Then the clerk records the document presented, and `IIdentityVerifier` (simulated) decides the outcome.
+  - Only the masked reference is stored.
+  - Checkout refuses a high-value order unless it was verified for the same transaction.
 
-```mermaid
-flowchart LR
-    Checkout[Checkout request token] --> Remove[Remove stock]
-    Remove --> Save[Save transaction]
-    Save -->|Success| Complete[Paid transaction]
-    Save -->|Failure or cancellation| Rollback[Restore removed stock with non-cancelable token]
-    Rollback -->|Success| Propagate[Propagate original failure]
-    Rollback -->|Failure| Reconcile[Surface compensation failure for reconciliation]
-    Refund[Persist void/refund status of a paid sale] --> Restore[Restore stock with non-cancelable token]
-    Restore -->|Failure| Reconcile
-```
-
-## Security and request pipeline
-
-The application does not configure forwarded headers. The IP allowlist therefore evaluates the direct connection address and is not a reliable client-IP control behind an unconfigured reverse proxy. It applies to the admin screens (`StaffAdmin`, `BranchAdmin`) and the integration endpoint. Void and refund are not IP-restricted: they are counter operations at the manager's own branch, already protected by the `BranchManagerOnly` policy and the workflow's same-branch, active-manager check. The default allowlist is empty (deny) outside Development; `appsettings.Development.json` allows loopback only. Loopback must not be allowed in a deployment behind a same-host reverse proxy, where every proxied request arrives from loopback.
+## HTTP pipeline and security
 
 ```mermaid
-flowchart LR
-    Request[HTTP request] --> Correlation[Correlation ID]
-    Correlation --> Timing[Structured request timing]
+flowchart TD
+    Request --> Correlation[Correlation ID: validate or generate, echo]
+    Correlation --> Timing[Request timing and logging]
     Timing --> Errors[Problem Details exception boundary]
-    Errors --> Headers[Security response headers]
-    Headers --> Https[HTTPS redirection and HSTS]
-    Https --> Routing[Endpoint routing]
-    Routing --> Maintenance[Maintenance mode; health bypass]
-    Maintenance --> Cors[Configured CORS]
-    Cors --> ApiKey[Integration API-key metadata gate]
-    ApiKey --> Limiter[Login or shared integration rate limit]
-    Limiter --> Ip[Direct-connection IP allowlist]
-    Ip --> Cookie[Cookie authentication]
-    Cookie --> Authorization[Role and branch authorization]
-    Authorization --> Endpoint[MVC or integration endpoint]
-```
-
-The exception boundary returns generic Problem Details for unexpected failures; client-abort cancellation is recorded internally as 499 without writing a response body. API-key validation is before rate limiting; IP allowlisting is after it. CORS does not authorize requests.
-
-## JSON write and concurrency flow
-
-```mermaid
-flowchart LR
-    Operation[Repository read or update] --> Lock[Path-keyed in-process semaphore]
-    Lock --> Read[Read existing JSON or create empty document if missing]
-    Read --> Parse{Valid non-empty JSON?}
-    Parse -->|No| Error[Propagate JSON/I/O error; preserve source]
-    Parse -->|Yes| Mutate[Apply update]
-    Mutate --> Temp[Create sibling temporary file]
-    Temp --> Serialize[Async serialize and flush]
-    Serialize --> Cancel{Cancellation requested before replace?}
-    Cancel -->|Yes| Cleanup[Clean temporary file; propagate cancellation]
-    Cancel -->|No| Replace[Replace target file]
-    Replace --> Cleanup
-    Cleanup --> Unlock[Release in-process semaphore]
-```
-
-The path lock is process-local. Temporary replacement avoids exposing a partially serialized target file during normal single-process writes, but does not guarantee cross-process coordination, multi-file atomicity, or database durability. Malformed and empty documents fail explicitly rather than being replaced with empty collections.
-
-## Reports and simulated notifications
-
-`BranchReportService` has four focused branch-scoped queries: paid daily sales split by retail/service plus tax, inventory at/below a caller-supplied threshold, shipment count grouped by destination zone/service level, and money-order verification outcome counts. The repository contracts add focused branch filters; no generic specification framework is introduced. Report reads are sequenced deliberately: each JSON repository uses its own same-process file lock, while `Task.WhenAll` would add little benefit and create a potentially inconsistent cross-file snapshot.
-
-```mermaid
-flowchart LR
-    Request[Branch-scoped report request] --> Service[BranchReportService]
-    Service --> TxRepo[Counter transaction repository]
-    Service --> InvRepo[Inventory repository]
-    Service --> ShipRepo[Shipment repository]
-    Service --> MORepo[Money-order repository]
-    TxRepo --> Sales[Daily retail/service/tax totals]
-    InvRepo --> Low[Low-stock product IDs and quantities]
-    ShipRepo --> Volume[Zone/service shipping volumes]
-    MORepo --> Verify[Verification outcome counts]
-```
-
-```mermaid
-flowchart LR
-    Stock[Inventory crosses low threshold] --> Sender[INotificationSender]
-    HighValue[Verified high-value money order saved] --> Sender
-    Reversal[Void/refund saved] --> Sender
-    Sender --> Simulated[Simulated delivery implementation]
-    Simulated --> Result[Await success or propagate failure]
-```
-
-Notifications are observer-style calls through the existing Application abstraction, not an external provider. Each is sent after the relevant persistence succeeds; a delivery failure is observable to the caller but is not a distributed transaction and does not undo the stock/order/transaction state. Reports intentionally omit money-order sender, recipient, document type, and masked reference.
-
-## MVC request flow
-
-```mermaid
-flowchart LR
-    Client[Browser] --> Routing[Conventional MVC routing]
-    Routing --> Controller[Thin controller + view model validation]
-    Controller --> AppService[Application workflow or report service]
-    AppService --> Repository[Application repository abstraction]
-    Repository --> Infrastructure[Infrastructure JSON implementation]
-    Infrastructure --> Files[(Configured JSON files)]
-    Controller --> Razor[Razor View / PRG redirect]
-```
-
-Controllers convert HTTP/view-model input into Application requests and return Views, redirects after successful POSTs, or relevant HTTP status results. They do not contain pricing, stock, verification, or persistence rules. Authentication/authorization is explicitly outside this step, despite the login UI placeholder.
-
-## User workflow and validation
-
-```mermaid
-flowchart LR
-    Staff[Staff signs in] --> Claims[Staff ID, role, assigned branch claims]
-    Claims --> RoleNav[Role-aware navigation]
-    RoleNav --> Branch[Branch dashboard, catalogue and stock]
-    RoleNav --> Clerk[Counter Clerk workflows]
-    RoleNav --> Reports[Manager, Auditor or Administrator reports]
-    Clerk --> Basket[Mixed basket form]
-    Basket --> Checkout[CounterTransactionsController]
-    Checkout --> TxService[CounterTransactionWorkflowService]
-    TxService --> TxRules[Branch, counter, active clerk, stock, money-order and tax checks]
-    TxRules --> TxJson[Transaction and inventory JSON repositories]
-    TxJson --> Receipt[Redirect to fresh basket with success notice]
-    Clerk --> Shipping[Shipment form]
-    Shipping --> ShipService[ShippingWorkflowService and configured rate check]
-    ShipService --> Label[Redirect to shipment label preview]
-    Clerk --> MoneyOrder[Money-order and simulated verification form]
-    MoneyOrder --> MoService[MoneyOrderWorkflowService]
-    MoService --> MoJson[Money-order JSON repository]
-    MoJson --> MoNotice[Redirect to fresh form with success notice]
-    Reports --> ReportService[BranchReportService]
-    ReportService --> ReportJson[Branch-scoped JSON repository reads]
-```
-
-Branch screens use the authenticated branch claim when no branch query is supplied. If a caller supplies a branch explicitly, `SameBranchOnly` rejects a different branch for Counter Clerks and Branch Managers; Administrators and Auditors work across branches and may view any branch. Fields that reference stored records (branch, home branch, counter, product, destination zone) are dropdowns filled by `ReferenceDataLookup`, so users pick existing codes instead of typing them; the server still validates every submitted code. Write controllers also compare submitted branch codes to the authenticated claim. Checkout derives clerk identity from the authenticated StaffId claim, not from client-supplied view-model data. Successful POST workflows use Post/Redirect/Get; validation and eligibility errors redisplay the form with safe messages. A successful shipment redirects to its label preview.
-
-Razor form labels are associated with inputs through MVC tag helpers, field-level validation is placed beside applicable controls, and form-level failures use an alert summary. Success notices and report/catalogue empty states use status semantics. Navigation is limited by the authenticated role for usability, while server-side endpoint and Application authorization remains authoritative. Tables include captions and scoped headers; numeric fields declare ranges and decimal/integer input hints. Focus indicators are visible in the site stylesheet. These are targeted accessibility measures, not a WCAG conformance claim.
-
-The counter basket does not bind a clerk ID: the controller uses the authenticated staff claim. Monetary inputs and displayed amounts use decimal values with two fractional digits; the assignment has not specified a currency code. Error states distinguish invalid or ineligible input from success; unexpected failures remain handled by the global exception middleware.
-
-## Authentication and authorization flow
-
-```mermaid
-flowchart TD
-    Login[Login form + antiforgery token] --> Credentials[Local demo credential configuration]
-    Credentials --> Staff[Load StaffMember from repository]
-    Staff -->|Active| Claims[Issue HttpOnly cookie: StaffId, Role, BranchCode]
-    Staff -->|Inactive / missing / invalid| Deny[Generic sign-in failure]
-    Claims --> Request[Protected MVC request]
-    Request --> Recheck[Reload staff record]
-    Recheck -->|Active, role and branch unchanged| Policy[Role and SameBranchOnly policies]
-    Recheck -->|Inactive or changed| Reject[Reject cookie and redirect to login]
-    Policy --> Clerk[Counter Clerk own-branch workflows]
-    Policy --> Manager[BranchManagerOnly void/refund + reason]
-    Policy --> Reports[Auditor / Administrator / Manager own-branch reports]
-```
-
-Cookies are validated against the persisted staff record on every authenticated request. The application service remains the final authority for manager assignment, active staff status, transaction status transitions, and reversal reasons; endpoint policies reduce the HTTP attack surface but do not replace Domain/Application invariants.
-
-## Middleware pipeline
-
-```mermaid
-flowchart TD
-    Request --> Correlation[Correlation ID: validate/generate and echo]
-    Correlation --> Timing[Structured request timing/logging]
-    Timing --> Errors[Safe Problem Details exception boundary]
-    Errors --> Headers[Security headers via OnStarting]
-    Headers --> HTTPS[HSTS outside Development + HTTPS redirect]
+    Errors --> Headers[Security headers]
+    Headers --> HTTPS[HSTS outside Development, HTTPS redirect]
     HTTPS --> Routing[Endpoint routing]
     Routing --> Maintenance[Maintenance mode; /health bypass]
-    Maintenance --> CORS[Approved partner CORS policy]
-    CORS --> ApiKey[Integration API-key metadata check]
-    ApiKey --> Limits[Login/partner rate limits]
-    Limits --> IP[Integration/admin IP allowlist metadata check]
-    IP --> Cookie[Cookie authentication]
-    Cookie --> Authz[Role and branch authorization]
-    Authz --> Endpoint[MVC, integration, or health endpoint]
+    Maintenance --> CORS[Partner widget CORS]
+    CORS --> ApiKey[Integration API key]
+    ApiKey --> Limits[Login and integration rate limits]
+    Limits --> IP[IP allowlist for admin screens and integration]
+    IP --> Cookie[Cookie authentication, staff re-checked against the database]
+    Cookie --> Authz[Role and same-branch policies]
+    Authz --> Mvc[MVC: AuditResourceFilter, ValidationActionFilter, PerformanceActionFilter, action]
 ```
 
-Correlation runs first so every later log/error response has an ID. Timing surrounds the exception boundary so failures are measured. Headers are registered before short-circuiting controls. Routing precedes endpoint-metadata middleware; CORS handles approved preflight requests before API-key checks. API-key validation precedes integration rate limiting so failed credentials do not consume the shared quota; the IP allowlist follows the limiter. These checks run before cookie processing because the integration endpoint is partner-authenticated rather than user-authenticated. `/health` is mapped after the pipeline but bypasses maintenance by path so infrastructure can still observe the service.
+The order is security-significant; [ADR 0004](docs/adr/0004-order-security-middleware-before-endpoints.md) explains it. Authentication and the other controls are described in [docs/security.md](docs/security.md):
+- PBKDF2 passwords on staff rows;
+- cookie claims re-validated against the `Staff` table on every request;
+- `BranchManagerOnly` and `SameBranchOnly` policies;
+- antiforgery on every form;
+- the connection string from user-secrets;
+- masked identity documents;
+- the least-privilege database role.
 
-## MVC filters and audit boundary
+### MVC filters
 
-`IAuditStore` lives in Application because it describes an operational requirement without choosing a persistence mechanism. `JsonAuditStore` lives in Infrastructure and appends one JSON object per line to `audit-records.jsonl` (JSON Lines) under a same-process lock; appending never reads or rewrites earlier records, so audit cost does not grow with the log (ADR 0005). The store exposes only `AppendAsync` and `ReadAsync`; it has no mutation or deletion operation. An `AuditRecord` contains UTC occurrence time, nullable authenticated staff ID/role/branch, controller/action, allow-listed route values, status code, duration, correlation ID, and outcome. It deliberately does not have a request-body, model, summary, or exception-detail field.
+| Filter | Kind and order | Job |
+|---|---|---|
+| `AuditResourceFilter` | Resource filter, outermost (-2000) | One safe audit record per MVC request, with the status the client received |
+| `ValidationActionFilter` | Action filter (-1000) | Invalid model: re-render the MVC view with the bound model, or `400 ValidationProblemDetails` for `[InvalidModelResponse]` actions and API controllers |
+| `PerformanceActionFilter` | Action filter (1000) | Warns when an action exceeds `ApexPost:Performance:WarningThresholdMilliseconds` |
 
-`AuditActionFilter`, `ValidationActionFilter`, and `PerformanceActionFilter` are registered globally using `AddService`, so DI supplies the store, logger, and options. Audit runs outermost so an invalid model is still audited; validation returns the bound model to a conventional MVC view, while endpoints explicitly marked `InvalidModelResponse` and API controllers receive `400 ValidationProblemDetails`. Performance logging is configurable through `ApexPost:Performance:WarningThresholdMilliseconds` and emits a warning at or above the threshold.
+## Performance
 
-| Concern | MVC filter | Middleware |
-| --- | --- | --- |
-| Audit controller/action and model-validation outcome | Has selected action descriptor, route data, action result, and ModelState | Runs before/after endpoint execution but does not naturally observe action result or ModelState |
-| MVC invalid-model response | Can choose View vs `ValidationProblemDetails` using controller/action metadata | Cannot safely select an MVC result/view model |
-| Action performance warning | Measures the action/filter segment and logs controller/action identity | Better for complete HTTP pipeline latency, already handled by request logging middleware |
-| Correlation IDs, headers, CORS, API-key/IP checks | Too early or HTTP-wide for an action filter | Correctly applies to all matching requests, including non-MVC endpoints |
+Measured on a 200,000-sale data set, the five workload indexes cut the per-branch screens and reports by one to three orders of magnitude in logical reads. Two examples: the dashboard went from 6,126 to 20 logical reads, and the daily sales report from 20,885 to 371. The cost is about 23 MB of index storage and about 30% more transaction log. The non-SARGable rewrite, the estimated-vs-actual and parameter-sensitivity investigations, and the generated SQL are in [PERFORMANCE.md](PERFORMANCE.md).
 
-```mermaid
-flowchart TD
-    Request --> Correlation[Correlation middleware assigns/reuses ID]
-    Correlation --> Auth[Authentication and authorization]
-    Auth --> Audit[AuditActionFilter starts timer]
-    Audit --> Validation[ValidationActionFilter]
-    Validation -->|Invalid| Invalid[View or 400 ValidationProblemDetails]
-    Validation -->|Valid| Performance[PerformanceActionFilter]
-    Performance --> Action[Sales / void / refund / money order / identity / stock action]
-    Action --> Result[Action result]
-    Invalid --> Record[Safe AuditRecord]
-    Result --> Record
-    Record --> Store[IAuditStore.AppendAsync]
-    Store --> Json[Infrastructure audit-records.jsonl]
-```
-
-The JSON Lines implementation is append-only at the application API and on disk: it serializes same-process appends and writes only the new line. It is not tamper-proof, WORM storage, a cross-process lock, or a durable ledger. File permissions, retention, integrity controls, off-host replication, and a ledger-capable audit service are required for those properties.
-
-## Test architecture
-
-Tests follow the production dependency direction. Domain tests exercise entity/value-object invariants without I/O. Application tests use deterministic in-memory repository/notification collaborators to cover workflows, cancellation, and failure propagation. Infrastructure tests use a unique OS-temporary directory per test and clean only that owned directory. Web integration tests start the actual composition root through `WebApplicationFactory`, set synthetic in-memory configuration, and use cookie/antiforgery interactions through `HttpClient`; no test uses a real credential, external service, or arbitrary delay.
-
-```mermaid
-flowchart LR
-    DomainTests[Domain tests\nvalue objects and invariants] --> Domain
-    AppTests[Application tests\nin-memory collaborators] --> Application
-    InfraTests[Infrastructure tests\nunique temp JSON directory] --> Infrastructure
-    WebTests[Web integration tests\nWebApplicationFactory + test config] --> Web
-    Web --> Application
-    Web --> Infrastructure
-```
-
-The security integration suite tests the full HTTP pipeline rather than individual middleware in isolation: headers/correlation IDs, API-key failure, IP deny, fixed-window rate limiting, authentication redirect, and unauthorized Clerk reversal requests. TestServer has no socket, so the authentication suite's factory gives requests the loopback address a local browser would have; the security suite leaves it unset and verifies the configured-blocked-IP behaviour. Both factories pass the data directory with `UseSetting`, because values added through `ConfigureAppConfiguration` are not visible to settings `Program.cs` reads before `Build()` — without it the tests wrote into the web project's `App_Data`.
-
-## Concurrency and asynchronous behavior
-
-The codebase uses advanced C# features to support concrete concerns, not as a checklist. Immutable records and validated value objects carry business data safely; pattern matching selects status/rate behavior; generic `JsonFileStore<TDocument>` accepts `Func`/`Action` delegates so a document mutation remains inside its file lock; custom endpoint metadata selects MVC validation behavior; and `INotificationSender` is an awaited observer abstraction. All persistence/workflow calls are asynchronous and take a `CancellationToken`; cancellation tests keep it distinct from malformed-data and I/O failures.
-
-`SemaphoreSlim` is used for same-process per-file serialization and per-branch checkout/reversal serialization. Both acquisition paths pass cancellation to `WaitAsync` and release only in `finally`. Checkout validation now fans out branch, counter, clerk, and duplicate-ID reads using `Task.WhenAll`: they query independent aggregates and have no ordering dependency. It intentionally does not parallelize stock changes, transaction persistence, compensation, report reads, or audit writes—those require ordering, coherent behavior, or lock protection.
-
-```mermaid
-flowchart TD
-    Checkout[Checkout request] --> Gate[Per-branch SemaphoreSlim]
-    Gate --> Reads[Independent validation reads]
-    Reads --> Fanout[Task.WhenAll: branch, counter, clerk, transaction ID]
-    Fanout --> Build[Build and price basket]
-    Build --> Stock[Ordered atomic inventory updates]
-    Stock --> Save[Save transaction]
-    Save -->|Failure| Compensate[Reverse ordered stock changes]
-    Save -->|Success| Done[Paid transaction]
-    Json[JSON repository update] --> FileGate[Per-file SemaphoreSlim]
-    FileGate --> CompleteWrite[Async temp write then replace]
-```
-
-No benchmark framework or representative load profile exists in the repository, so no throughput/latency values are claimed.
-
-- **ValueTask + cache:** `IShippingRateProvider.GetRatesAsync` returns `ValueTask`. After the first non-empty load the JSON provider answers from memory synchronously (no lock, I/O, deserialization or Task allocation). Rates only change when data is reseeded, so the cache lives for the process; an empty table is not cached so rates seeded after startup are picked up.
-- **Timeout and bounded concurrency on a slow external lookup:** the partner `/integration/parcel-status` endpoint asks a (simulated) courier for live tracking. `ParcelStatusService` links the request token with a `CancelAfter(ApexPost:Courier:LookupTimeoutMilliseconds)` timeout. If the timeout fires it returns the shipment with `courierStatus: "Unavailable"` and `courierLookupTimedOut: true` (a degraded dependency, not a failure); if the caller cancels, cancellation propagates unchanged. `SimulatedCourierTrackingClient` holds a `SemaphoreSlim(MaxConcurrentLookups)` so a burst of partner calls queues instead of opening unbounded parallel courier calls.
-
-## Advanced C# usage (where each feature solves a problem)
+## C# features where they solve a problem
 
 | Feature | Where | Problem it solves |
-| --- | --- | --- |
-| Records / value objects | `Money`, `BranchCode`, `ProductId`, `ParcelWeight`, request records | Invalid amounts and codes cannot be constructed; value equality. |
-| Pattern matching | `NotificationEventObserver` (event type + property patterns), `ShippingPriceCalculator`, `AuditActionFilter` status mapping, `RequestValidator` rules | One readable decision table per concern. |
-| C# 14 extension members | `MoneyExtensions` (`RoundedToCents`, `IEnumerable<Money>.Total`), `CounterTransactionExtensions` (`RetailTotal`, `ServiceTotal`) | One rounding rule for tax and fees; reports read basket summaries as properties instead of repeating LINQ. |
-| `field` keyword | `Branch.Name/Region/OpeningHours`, `StaffMember.Name/Email` | Validating setters without hand-written backing fields. |
-| Generics with constraints | `JsonFileStore<TDocument>`, `IInventoryRepository.UpdateAsync<TResult>`, `RequestValidator.Validate<TRequest> where TRequest : class` | One locked read-modify-write and one validator for every type. |
-| Delegates / `Func` | `MoneyOrderPolicy` fee rule (`Func<Money, Money>`), JSON store update delegates | Fee rule configured in the composition root, not hard-coded. |
-| Events / observer | `ApexPostEvent` records (`TransactionCompleted`, `TransactionVoided`, `TransactionRefunded`, `StockLow`, `MoneyOrderIssued`), `IEventPublisher`, `IEventObserver`, `NotificationEventObserver` | Workflows raise an event once; notifications are an observer, and more observers can be added without touching workflows. |
-| Custom attributes + cached reflection | `NotBlankAttribute` on request records, `RequestValidator` (`ConcurrentDictionary<Type, …>` metadata cache) | Declarative request rules; reflection runs once per type. Endpoint metadata attributes (`RequireIpAllowlist`, `RequireIntegrationApiKey`) drive middleware. |
-| async/await + `CancellationToken` | Controller → service → repository → `FileStream` | No blocking I/O; client disconnects stop work, except compensation which deliberately uses `CancellationToken.None`. |
-| `Task.WhenAll` | Checkout point-of-sale validation reads | Independent reads run concurrently. |
-| `SemaphoreSlim` | Per-file JSON lock, per-branch checkout lock, audit append lock, courier concurrency limit | Bounded, async-friendly mutual exclusion. |
-| `ValueTask` + cache | `JsonShippingRateProvider` | Hot rate reads complete synchronously. |
-| Cancellation vs failure | `ParcelStatusService` timeout, `ProblemDetailsExceptionMiddleware` 499 | Timeouts degrade, client aborts are not 500s. |
+|---|---|---|
+| Records and value objects | `Money`, codes, `ParcelWeight`, request and read-model records | Invalid values cannot be constructed; read models are immutable |
+| C# 14 extension members | `MoneyExtensions` (`RoundedToCents`, `Total`), `CounterTransactionExtensions` | One rounding rule; basket totals read as properties |
+| `field` keyword | `Branch`, `StaffMember` setters | Validation in setters without hand-written backing fields |
+| Pattern matching | `ExceptionProblemMapping`, `NotificationEventObserver`, `ShippingPriceCalculator` | One readable decision table per concern |
+| Generics | `IUnitOfWork.ExecuteInTransactionAsync<TResult>`, `Staging.EnsureTracked<TEntity>`, `RequestValidator.Validate<TRequest>` | One transaction wrapper and one validator for every type |
+| Delegates (`Func`) | `MoneyOrderPolicy` fee rule; the operation passed to `ExecuteInTransactionAsync` | Fee rule configured in the composition root; the unit of work owns the transaction boundary |
+| Events and observers | `TransactionCompleted`, `TransactionVoided`, `TransactionRefunded`, `StockLow`, `MoneyOrderIssued`, `IEventPublisher` | Notifications are added without touching workflows; raised only after the commit |
+| Custom attributes + cached reflection | `NotBlankAttribute` with `RequestValidator`; endpoint metadata such as `RequireIpAllowlist` | Declarative rules; reflection once per type |
+| async/await + `CancellationToken` | Controller → service → repository → EF Core | No blocking I/O; no `.Result`, `.Wait()` or `Thread.Sleep` anywhere |
+| `ValueTask` + cache | `EfShippingRateProvider` with `ShippingRateCache` | Cache hits complete synchronously |
+| Timeout + `SemaphoreSlim` | `ParcelStatusService` and the simulated courier client | A slow courier degrades to "Unavailable"; bounded concurrent lookups |
 
-## Architecture decisions and rationale
+## SOLID mapping
 
-### SOLID mapping
+| Principle | Where | Why it applies |
+|---|---|---|
+| Single responsibility | Repositories only stage; `EfUnitOfWork` only commits and translates errors; query services only read; `AuditColumnsInterceptor` only stamps audit columns; controllers only translate HTTP | Each class changes for one reason; a change to commit behaviour touches one class |
+| Open/closed | `IStockAdjustments`, `ICatalogueBulkUpdates`, `IShippingRateProvider`, `IAuditStore`, `IEventObserver` | Swapping the JSON adapters for EF Core, or a LINQ report for a procedure, did not change the services that use them |
+| Liskov substitution | EF repositories and the in-memory fakes; `EfUnitOfWork` and `SpyUnitOfWork` | Application tests run the services against fakes, and the Week 2 web workflow tests run the same services against SQL Server |
+| Interface segregation | Separate repository per aggregate; `IUnitOfWork` separate from repositories; query interfaces per screen area; `IAuditStore` with append and read only | Consumers depend only on what they call; no "god repository" |
+| Dependency inversion | Application defines every port; Infrastructure implements them; `Program.cs` binds them | Business code does not reference EF Core, SQL Server or ASP.NET Core |
 
-| Principle | Actual code | Why it applies |
-| --- | --- | --- |
-| Single responsibility | `ShippingWorkflowService`, `InventoryService`, `JsonFileStore<TDocument>`, MVC controllers | Workflows coordinate one use case; JSON store owns file access/locking; controllers translate HTTP only. |
-| Open/closed | `IShippingRateProvider`, `INotificationSender`, `IAuditStore`, repository interfaces | A provider/store/sender can be replaced without changing workflows. |
-| Liskov substitution | JSON and test in-memory repository implementations | Workflows consume contract behavior and tests substitute deterministic implementations. |
-| Interface segregation | Separate repository, notification, audit, pricing, and tax contracts | Consumers do not depend on unrelated persistence or delivery operations. |
-| Dependency inversion | Application workflows depend on contracts; `Program.cs` supplies JSON/logging adapters | Business rules do not reference MVC or JSON types. |
+## Dependency injection lifetimes
 
-### DI lifetime decisions
+| Lifetime | Registrations | Why |
+|---|---|---|
+| Scoped | `ApexPostDbContext`, `AuditColumnsInterceptor`, `ICurrentStaffContext`, every repository, `IUnitOfWork`, query services, `IStockAdjustments`, `ICatalogueBulkUpdates`, `EfShippingRateProvider`, `IAuditStore`, application services, `DemoDataSeeder`, MVC filters | One `DbContext` per request, shared by the repositories and the unit of work of that request; nothing scoped is captured by a singleton |
+| Singleton | `ShippingRateCache`, policies and options, `IPasswordHasher`, event publisher and observers, notification sender, simulated verifier and courier client, `TimeProvider` | Stateless or process-wide state that holds no `DbContext` |
+| Hosted service | `DemoDataSeedHostedService` | Creates its own scope for the seeder at startup, in Development only |
 
-| Lifetime | Registrations | Rationale and capture prevention |
-| --- | --- | --- |
-| Singleton | JSON repositories/store/provider (including the rate cache), Application workflows and management services, policies/options, event publisher and observers, password hasher, simulated verifier and courier client (which owns its concurrency semaphore), local authenticator, logging notification sender. `DemoDataSeedHostedService` is a hosted service with singleton dependencies only | These services are stateless or own process-wide file locks/configuration. They depend only on singleton-safe collaborators and do not capture request/scoped services. |
-| Scoped | MVC audit, validation, and performance filters | Filters are resolved per MVC request through `AddService`; they receive singleton-safe store/options/logging dependencies. |
-| Framework-managed request state | `HttpContext`, authentication principal, controller instances | It is accessed only within request/filter/controller execution and is not stored in singleton services. |
+## Tests
 
-### Security, audit, and deployment notes
+| Project | Uses | Covers |
+|---|---|---|
+| `ApexPost.Domain.Tests` | No database | Value objects, entities, state transitions (Week 2 tests unchanged) |
+| `ApexPost.Application.Tests` | Fakes + `SpyUnitOfWork` | Workflows commit once, or never on failure; pricing; stock adjustment; price revision |
+| `ApexPost.Infrastructure.Tests` | A disposable SQL Server database per run (`ApexPostDb_Test_<guid>`), built by the migrations | Mapping; rollback; concurrency; procedures; audit store; query shape and N+1; generated SQL; index definitions |
+| `ApexPost.Web.IntegrationTests` | `WebApplicationFactory` + a disposable database | Sales persist; voids need a manager; report totals; Problem Details; over-posting; security pipeline; audit statuses |
 
-| Threat or concern | Current mitigation | Remaining boundary |
-| --- | --- | --- |
-| Credential/API-key disclosure | PBKDF2-SHA256 password hashes per staff member (no plain-text passwords stored or configured), constant-time comparison, equal-cost failure for unknown IDs, user-secrets API key, generic sign-in failures | The Development-only demo password is in `appsettings.Development.json`; no production credential lifecycle or vault integration. |
-| Price or verification tampering | Basket accepts identifiers only; prices, fees and verification outcomes are decided on the server (ADR 0009) | Verification provider is simulated. |
-| Cross-branch/role abuse | Cookie claims are revalidated against persisted staff; role and branch policies plus Application checks | No MFA or distributed session revocation. |
-| Sensitive audit leakage | Audit filter allow-lists route identifiers and never serializes bodies/models/headers | Filesystem writers can alter JSON audit data. |
-| Request correlation and unsafe errors | Correlation middleware, safe Problem Details, security headers | Proxy deployments must configure trusted forwarded headers. |
-| JSON corruption/concurrency | Async temporary replacement writes and same-process semaphores | No cross-process lock or multi-file transaction. |
+A guard refuses to run tests against any database whose name is not a test database. See [docs/testing.md](docs/testing.md).
 
-Deployment configuration belongs outside source control: data directory, local/demo passwords, integration API key, IP allowlist, partner origin, rate limits, thresholds, and maintenance settings. Terminate or serve TLS in production; configure explicit trusted proxies before enabling forwarded headers for client-IP policies. `/health` is intentionally available during maintenance mode for infrastructure checks.
+## Architecture decision records
 
-### Architecture decision records
+| ADR | Decision | Status |
+|---|---|---|
+| [0001](docs/adr/0001-layered-project-dependencies.md) | Layered project dependencies | Accepted |
+| [0002](docs/adr/0002-json-persistence-and-same-process-locking.md) | JSON persistence with same-process locking | Superseded by 0013, 0015, 0017 |
+| [0003](docs/adr/0003-local-cookie-authentication.md) | Local cookie authentication | Accepted |
+| [0004](docs/adr/0004-order-security-middleware-before-endpoints.md) | Security middleware order | Accepted |
+| [0005](docs/adr/0005-mvc-action-audit-with-json-store.md) | MVC audit with a JSON store | Partly superseded by 0011 |
+| [0006](docs/adr/0006-parallelize-only-independent-checkout-reads.md) | Parallel checkout reads | Superseded by 0017 |
+| [0007](docs/adr/0007-complete-compensation-after-cancellation.md) | Compensation after cancellation | Superseded by 0017 |
+| [0008](docs/adr/0008-greenfield-solution-instead-of-week-one-refactor.md) | New solution instead of refactoring Week 1 | Accepted |
+| [0009](docs/adr/0009-server-side-pricing-and-separate-identity-verification.md) | Server-side pricing, separate identity verification | Accepted |
+| [0010](docs/adr/0010-pbkdf2-staff-passwords-and-development-seed.md) | PBKDF2 passwords and the Development seed | Accepted (the seed now fills SQL Server) |
+| [0011](docs/adr/0011-audit-store-outside-the-unit-of-work.md) | **How the audit store interacts with the unit of work** | Accepted |
+| [0012](docs/adr/0012-stored-procedures-for-reports-and-stock-adjustment.md) | **Which operations are stored procedures, and why** | Accepted |
+| [0013](docs/adr/0013-schema-design-and-delete-behaviours.md) | **Schema design and delete behaviours** | Accepted |
+| [0014](docs/adr/0014-index-choices-from-execution-plan-evidence.md) | **Index choices backed by execution-plan evidence** | Accepted |
+| [0015](docs/adr/0015-repository-and-unit-of-work-boundaries.md) | **Repository and unit-of-work boundaries; where direct DbContext projections are acceptable** | Accepted |
+| [0016](docs/adr/0016-domain-and-persistence-model-separation.md) | **Where domain and persistence models are separated** | Accepted |
+| [0017](docs/adr/0017-optimistic-concurrency-for-stock-and-transactions.md) | **Concurrency strategy for stock and transactions** | Accepted |
+| [0018](docs/adr/0018-exceptions-to-problem-details-status-codes.md) | Exceptions to 409/404/400 Problem Details | Accepted |
+| [0019](docs/adr/0019-security-pin-for-a-transitive-package.md) | Security pin for a transitive package outside the allowed list | Needs trainer approval |
 
-The ADRs below record key architectural decisions and their rationale.
+Week 3 added nine ADRs (0011–0019). The seven the brief requires are in bold.
 
-1. [ADR 0001 — layered project dependencies](docs/adr/0001-layered-project-dependencies.md)
-2. [ADR 0002 — JSON persistence and same-process locking](docs/adr/0002-json-persistence-and-same-process-locking.md)
-3. [ADR 0003 — local cookie authentication](docs/adr/0003-local-cookie-authentication.md)
-4. [ADR 0004 — ordered security middleware](docs/adr/0004-order-security-middleware-before-endpoints.md)
-5. [ADR 0005 — MVC action audit with JSON store](docs/adr/0005-mvc-action-audit-with-json-store.md)
-6. [ADR 0006 — parallelize only independent checkout reads](docs/adr/0006-parallelize-only-independent-checkout-reads.md)
-7. [ADR 0007 — complete inventory compensation after request cancellation](docs/adr/0007-complete-compensation-after-cancellation.md)
-8. [ADR 0008 — build ApexPost as a new solution](docs/adr/0008-greenfield-solution-instead-of-week-one-refactor.md)
-9. [ADR 0009 — server-side pricing and separate identity verification](docs/adr/0009-server-side-pricing-and-separate-identity-verification.md)
-10. [ADR 0010 — PBKDF2 staff passwords and Development seed](docs/adr/0010-pbkdf2-staff-passwords-and-development-seed.md)
+## Known limitations
 
-```mermaid
-flowchart TD
-    Login[Login] --> Dashboard[Branch dashboard]
-    Dashboard --> Catalogue[Catalogue and branch stock]
-    Dashboard --> Shipping[Create shipment for a transaction ID]
-    Shipping --> Label[Shipping-label preview]
-    Dashboard --> Money[Issue money order]
-    Money --> Verify[Identity verification step]
-    Label --> Basket[Counter basket: retail rows + shipment IDs + money-order IDs]
-    Verify --> Basket
-    Basket --> Receipt[POST then redirect]
-    Dashboard --> Manage[Manager: transactions, void/refund]
-    Dashboard --> Reports[Branch reports]
-    Dashboard --> Admin[Administrator: staff and branch screens]
-```
-
-## Integration rate-limiter hardening
-
-The integration rate limiter uses one shared partition rather than keying on `X-Partner-Id`. That caller-controlled header is not a trusted partner identity and would allow arbitrary partition creation. API-key validation runs before integration rate limiting so invalid credentials cannot consume the shared quota. A constant partition gives bounded limiter state and enforces the configured aggregate request budget without changing application business rules. If independent partner quotas are later required, introduce a verified partner identity after authentication and make its partition lifecycle bounded.
-
-```mermaid
-flowchart LR
-    Request[Integration HTTP request] --> Routing[Endpoint routing]
-    Routing --> Cors[Configured partner CORS]
-    Cors --> ApiKey[API-key metadata validation]
-    ApiKey --> Limit[Shared bounded integration rate limiter]
-    Limit --> Ip[IP allowlist metadata validation]
-    Ip --> Controller[IntegrationController]
-    Controller --> Workflow[Application workflow or repository contract]
-    Workflow --> Domain[Domain entities and invariants]
-    Workflow --> Contract[Application repository interface]
-    Contract --> Adapter[Infrastructure JSON repository]
-    Adapter --> Store[Async JSON file store]
-    Store --> File[(Configured JSON file)]
-```
-
-The regression test sends 61 valid-key requests with different partner-header values against a 60-request limit and confirms the last request is rate-limited by the shared partition. This does not provide cross-process rate limiting; the built-in limiter state is process-local.
-
-## Test structure
-
-Each test project references only the layer it tests: Domain Tests references Domain, Application Tests references Application, Infrastructure Tests references Infrastructure, and Web Integration Tests references Web. The projects use xUnit; Web Integration Tests uses `Microsoft.AspNetCore.Mvc.Testing` to exercise the full application pipeline through a test host.
-
-## Future architectural work
-
-Future work requires explicit decisions for production identity, payment, notification, carrier, currency/rounding, cache invalidation, distributed concurrency, audit retention/integrity, and reconciliation infrastructure. These are not represented as completed features.
+- **Audit is best-effort.** A crash between the business commit and the audit insert loses that record; an outbox would be needed for guaranteed audit (ADR 0011).
+- **Simulated services.** Notifications are log entries. Identity verification and courier tracking are simulated. There is no payment processing, MFA, account lockout or password rotation.
+- **IP allowlist and proxies.** The allowlist uses the direct connection address. Behind a reverse proxy, trusted forwarded headers must be configured first.
+- **Applying the index migration.** It blocks writes on the indexed tables while the indexes build. Apply it in a quiet period, or with online index creation where the edition supports it (PERFORMANCE.md).
+- **CI has not yet run on GitHub.** The workflow starts a SQL Server container for the database tests.

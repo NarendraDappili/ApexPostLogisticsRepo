@@ -1,6 +1,6 @@
 # ADR 0002: Use JSON persistence with same-process locking
 
-Status: Accepted.
+Status: Superseded by ADR 0013 (schema), ADR 0015 (repositories and unit of work) and ADR 0017 (concurrency) in Week 3, when SQL Server replaced the JSON files.
 
 ## Context
 

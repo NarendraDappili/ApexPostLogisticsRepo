@@ -205,6 +205,11 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ProductId");
 
+                    b.HasIndex("BranchCode", "Quantity")
+                        .HasDatabaseName("IX_BranchStock_BranchCode_Quantity");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("BranchCode", "Quantity"), new[] { "ProductId" });
+
                     b.ToTable("BranchStock", null, t =>
                         {
                             t.HasCheckConstraint("CK_BranchStock_Quantity", "[Quantity] >= 0");
@@ -353,6 +358,11 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
                     b.HasIndex("ClerkId");
 
                     b.HasIndex("BranchCode", "CounterCode");
+
+                    b.HasIndex("BranchCode", "OccurredAtUtc")
+                        .HasDatabaseName("IX_CounterTransactions_BranchCode_OccurredAtUtc");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("BranchCode", "OccurredAtUtc"), new[] { "Status", "Subtotal", "Tax" });
 
                     b.ToTable("CounterTransactions", null, t =>
                         {
@@ -567,7 +577,8 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("DestinationZoneCode");
 
-                    b.HasIndex("OriginBranchCode");
+                    b.HasIndex("OriginBranchCode", "DestinationZoneCode", "ServiceLevel")
+                        .HasDatabaseName("IX_Shipments_OriginBranchCode_ZoneCode_ServiceLevel");
 
                     b.ToTable("Shipments", null, t =>
                         {
@@ -866,7 +877,10 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
                     b.HasKey("IdentityVerificationId");
 
                     b.HasIndex("MoneyOrderId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("IX_IdentityVerifications_MoneyOrderId");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("MoneyOrderId"), new[] { "Outcome" });
 
                     b.ToTable("IdentityVerifications", null, t =>
                         {
@@ -1167,7 +1181,10 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
 
                             b1.HasKey("TransactionLineId");
 
-                            b1.HasIndex("CounterTransactionId");
+                            b1.HasIndex("CounterTransactionId")
+                                .HasDatabaseName("IX_TransactionLines_CounterTransactionId");
+
+                            SqlServerIndexBuilderExtensions.IncludeProperties(b1.HasIndex("CounterTransactionId"), new[] { "ProductId", "Quantity", "UnitPrice" });
 
                             b1.HasIndex("ProductId");
 

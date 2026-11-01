@@ -34,33 +34,39 @@ public sealed class EfBranchReportQueries(ApexPostDbContext db) : IBranchReportQ
 
     public async Task<ShippingVolumeReport> GetShippingVolumeAsync(BranchCode branchCode, CancellationToken cancellationToken = default)
     {
-        var groups = await db.Shipments.AsNoTracking()
-            .Where(shipment => shipment.OriginBranchCode == branchCode)
-            .GroupBy(shipment => new { shipment.DestinationZoneCode, shipment.ServiceLevel })
-            .Select(group => new { group.Key.DestinationZoneCode, group.Key.ServiceLevel, Count = group.Count() })
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var groups = await ShippingVolumeQuery(branchCode).ToListAsync(cancellationToken).ConfigureAwait(false);
         // Service levels are stored by name; order the few grouped rows by the enum's business order here.
         return new ShippingVolumeReport(branchCode, groups
             .OrderBy(group => group.DestinationZoneCode.Value, StringComparer.Ordinal).ThenBy(group => group.ServiceLevel)
-            .Select(group => new ShippingVolumeItem(group.DestinationZoneCode, group.ServiceLevel, group.Count))
             .ToArray());
     }
 
     public async Task<MoneyOrderVerificationReport> GetMoneyOrderVerificationAsync(BranchCode branchCode, CancellationToken cancellationToken = default)
     {
-        // LEFT JOIN to the verification and GROUP BY its outcome; an order without a verification row is pending.
-        var outcomes = await db.MoneyOrders.AsNoTracking()
-            .Where(order => order.BranchCode == branchCode)
-            .Select(order => order.IdentityVerification == null ? (IdentityVerificationOutcome?)null : order.IdentityVerification.Outcome)
-            .GroupBy(outcome => outcome)
-            .Select(group => new { Outcome = group.Key, Count = group.Count() })
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
+        var outcomes = await MoneyOrderOutcomesQuery(branchCode).ToListAsync(cancellationToken).ConfigureAwait(false);
 
         int CountOf(IdentityVerificationOutcome? outcome) => outcomes.Where(row => row.Outcome == outcome).Sum(row => row.Count);
         return new MoneyOrderVerificationReport(
             branchCode, outcomes.Sum(row => row.Count),
             CountOf(IdentityVerificationOutcome.Verified), CountOf(IdentityVerificationOutcome.Failed), CountOf(null));
     }
+
+    // The two LINQ reports are built here so tests can capture their SQL with ToQueryString (PERFORMANCE.md).
+    internal IQueryable<ShippingVolumeItem> ShippingVolumeQuery(BranchCode branchCode) =>
+        db.Shipments.AsNoTracking()
+            .Where(shipment => shipment.OriginBranchCode == branchCode)
+            .GroupBy(shipment => new { shipment.DestinationZoneCode, shipment.ServiceLevel })
+            .Select(group => new ShippingVolumeItem(group.Key.DestinationZoneCode, group.Key.ServiceLevel, group.Count()));
+
+    // LEFT JOIN to the verification and GROUP BY its outcome; an order without a verification row is pending.
+    internal IQueryable<OutcomeCount> MoneyOrderOutcomesQuery(BranchCode branchCode) =>
+        db.MoneyOrders.AsNoTracking()
+            .Where(order => order.BranchCode == branchCode)
+            .Select(order => order.IdentityVerification == null ? (IdentityVerificationOutcome?)null : order.IdentityVerification.Outcome)
+            .GroupBy(outcome => outcome)
+            .Select(group => new OutcomeCount(group.Key, group.Count()));
+
+    internal sealed record OutcomeCount(IdentityVerificationOutcome? Outcome, int Count);
 
     // Result shapes of the procedures; EF maps the result columns to these properties by name.
     private sealed class DailySalesRow
