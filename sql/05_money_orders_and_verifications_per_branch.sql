@@ -15,6 +15,7 @@ DECLARE @FromDate date = '2026-09-01';               -- inclusive, by the date t
 DECLARE @ToDate   date = '2026-10-31';               -- inclusive
 DECLARE @HighValueThreshold decimal(18, 2) = 1000.00;
 
+-- Local variables are invisible to the optimizer at compile time; OPTION (RECOMPILE) below lets it use their values.
 DECLARE @FromUtc datetime2(3) = CAST(@FromDate AS datetime2(3));
 DECLARE @ToUtc   datetime2(3) = DATEADD(DAY, 1, CAST(@ToDate AS datetime2(3)));
 
@@ -36,7 +37,8 @@ LEFT JOIN dbo.MoneyOrders AS mo
       AND mo.CreatedAtUtc <  @ToUtc
 LEFT JOIN dbo.IdentityVerifications AS iv ON iv.MoneyOrderId = mo.MoneyOrderId
 GROUP BY b.BranchCode, b.Name
-ORDER BY b.BranchCode;
+ORDER BY b.BranchCode
+OPTION (RECOMPILE);   -- estimate the date range from the variables' actual values
 
 -- Auditor exceptions: branches that turned a customer away or hold a high-value order that is not verified
 SELECT
@@ -53,4 +55,5 @@ WHERE mo.CreatedAtUtc >= @FromUtc
 GROUP BY b.BranchCode
 HAVING SUM(CASE WHEN iv.Outcome = 'Failed' THEN 1 ELSE 0 END) > 0
     OR SUM(CASE WHEN mo.Amount > @HighValueThreshold AND ISNULL(iv.Outcome, '') <> 'Verified' THEN 1 ELSE 0 END) > 0
-ORDER BY b.BranchCode;
+ORDER BY b.BranchCode
+OPTION (RECOMPILE);

@@ -1,0 +1,8 @@
+"Run","Script","Stmt","Operator","Index","Estimated","Actual","BatchReads"
+"before","01_daily_branch_sales_retail_vs_services.sql","1","Clustered Index Scan","[PK_CounterTransactions]","32529.7","3396","7563"
+"before","02_branches_with_no_sales_today.sql","1","Index Seek","[IX_CounterTransactions_BranchCode_OccurredAtUtc]","80659.4","0","870"
+"before","03_top_products_by_revenue_per_region.sql","1","Index Scan","[IX_CounterTransactions_BranchCode_OccurredAtUtc]","32529.7","0","5236"
+"before","03_top_products_by_revenue_per_region.sql","1","Index Seek","[IX_CounterTransactions_BranchCode_OccurredAtUtc]","32529.6","31396","5236"
+"before","04_shipping_volume_by_zone_and_service_level.sql","1","Clustered Index Scan","[PK_CounterTransactions]","32697.8","32050","5716"
+"before","05_money_orders_and_verifications_per_branch.sql","1","Clustered Index Scan","[PK_MoneyOrders]","4859.2","4836","1660"
+"before","05_money_orders_and_verifications_per_branch.sql","2","Clustered Index Scan","[PK_MoneyOrders]","4859.2","4836","1660"

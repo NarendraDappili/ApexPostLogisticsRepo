@@ -22,9 +22,11 @@ The cost of these gains:
 - **Storage:** about **23.1 MB** of index on a 279.7 MB database (+9%).
 - **Writes:** in steady state, about **30% more transaction log** for the same mixed write batch. Most of it comes from moving a row in `IX_BranchStock_BranchCode_Quantity` on every stock change.
 
-Two further findings:
+Further findings:
 
 - **A real estimated-vs-actual mismatch in `usp_DailyBranchSales`.** It came from local variables, and the new index alone did not fix it. The procedure was changed and redeployed by a migration.
+- **The same local-variable guess in the `/sql` report scripts.** The 7-day daily-sales script estimated 32,530 sales against 3,396 and scanned the clustered index. `OPTION (RECOMPILE)` brings the estimate to 3,467 and the reads from 7,563 to 5,649.
+- **Query Store records both problems across executions:** the old procedure body at 3,754 reads per call against 397, and one shipping plan compiled for `'BR-0100'` reused by every branch.
 - **The non-SARGable rewrite** (`YEAR()`/`MONTH()` → date range) reads **27 pages instead of 282** on the same index.
 
 ## Environment and method
@@ -249,6 +251,40 @@ EF Core sends the shipping report as one parameterised statement, so SQL Server 
 - There is no lookup, no Sort and no memory grant, so the wrong estimate no longer costs anything.
 - A covering index whose order matches the `GROUP BY` makes one plan right for every branch size, which removes the sensitivity rather than working around it with hints.
 
+### Investigation 3: local variables in the `/sql` report scripts
+
+The `/sql` reports declare their date range as local variables (`@FromUtc`, `@ToUtc`) at the top. That is the pattern Investigation 1 found in `usp_DailyBranchSales`, and here it cannot be fixed the same way. In an ad-hoc batch there is no parameter to sniff: writing the bounds as expressions of `@FromDate` would still leave a local variable whose value the optimizer cannot see. The fix is `OPTION (RECOMPILE)` on each report statement. The batch is then compiled with the variables' actual values, so the estimate comes from the histogram.
+
+[`Measure-SqlScripts.ps1`](database/perf/Measure-SqlScripts.ps1) ran each script on `ApexPostDb_Perf` with the actual plan (full-scan statistics, warm cache). The "before" figures are the scripts as of `a15e376`. Results: [`sql-scripts-before.csv`](docs/performance/sql-scripts-before.csv), [`sql-scripts-after.csv`](docs/performance/sql-scripts-after.csv).
+
+| Script (range) | Sales estimated before → after | Actual | Logical reads before → after | Plan before → after |
+|---|---|---|---|---|
+| 01 daily sales (7 days) | 32,530 → **3,467** | 3,396 | 7,563 → **5,649** | Clustered scan of `CounterTransactions` → scan of the narrower `IX_CounterTransactions_BranchCode_OccurredAtUtc` |
+| 02 no sales today (no rows on the perf data) | 80,659 → **200** | 0 | 870 → **670** | Same seek on the sales index |
+| 03 top products (2 months) | 32,530 → 32,044 | 31,396 | 5,236 → 5,236 | Unchanged |
+| 04 shipping volume (2 months) | 32,698 → 32,376 | 32,050 | 5,716 → 5,716 | Unchanged |
+| 05 money orders (2 months), both statements | 4,859 → 4,837 (`MoneyOrders`) | 4,836 | 1,660 → 1,660 | Unchanged |
+
+**Result.**
+- **The fixed guess is a constant fraction of the table,** about 16% of the sales for two inequalities. A two-month window happens to be about 16% of a year, so 03–05 were estimated well by luck, and their plans do not change.
+- **Any other range is misestimated.** The 7-day report was estimated at 9.6 times its real size and scanned the whole clustered index. With `RECOMPILE` it is estimated within about 2% (3,467 against 3,396) and reads 25% fewer pages.
+- **The cost:** a compile on every run. These are reports run by hand, a few times a day at most, so that cost is negligible. For a statement run thousands of times, the fix is the one used in `usp_DailyBranchSales` instead: a parameter.
+
+### Query Store: the same problems, recorded across executions
+
+`SET STATISTICS` shows one execution in one session. Query Store, on in `READ_WRITE` mode in `ApexPostDb` and `ApexPostDb_Perf`, keeps every plan of every query in the database with its runtime statistics. That is how both investigations above would be found in production. [`06-query-store.sql`](database/perf/06-query-store.sql) clears the store, replays both investigations and reads the results back from `sys.query_store_query`, `sys.query_store_plan` and `sys.query_store_runtime_stats`. The estimate and compiled parameter value are taken from the plan Query Store saved. Output: [`docs/performance/query-store.txt`](docs/performance/query-store.txt). Two consecutive runs gave identical plans, reads and estimates.
+
+| Query Store query | Plans | Executions | Estimated rows | Actual | Avg logical reads (min–max) | Avg CPU | Memory grant used |
+|---|---|---|---|---|---|---|---|
+| A. `usp_DailyBranchSales` body with local variables (probe copy of the replaced body) | 1 | 5 | 3,456 sales | 110 | **3,754** | 163 ms | 1,024 KB |
+| A. `usp_DailyBranchSales` as shipped (bounds as expressions of `@Date`) | 1 | 5 | **244** sales | 110 | **397** (389–429) | **1.1 ms** | none |
+| B. shipping report as EF Core sends it | **1** | 6 | 403 shipments (compiled for `'BR-0100'`) | 403 / **20,000** | 147 (**59–165**) | 7.6 ms | none |
+
+**What Query Store adds.**
+- **A: the fix shows up as a different query, not just a different plan.** The shipped body is a new `query_id` with about a tenth of the reads, under a hundredth of the CPU and no memory grant. A regression report sorted by CPU or reads puts the old body at the top.
+- **The guess moves although the data does not.** The very first run on the freshly loaded database estimated 16,133 sales for the same probe. Every later run estimated about 3,456, both before and after the script began refreshing statistics with a full scan. Meanwhile, SQL Server had auto-created sampled statistics on two of the table's columns. The actual figure was 110 throughout. The script refreshes statistics first so its output is repeatable, and a local-variable guess should never be trusted.
+- **B: one plan, many branch sizes.** All six executions share one plan, compiled for `'BR-0100'`. The min–max reads (59 for the small branch, 165 for the flagship) show the parameter sensitivity directly, without capturing a plan per call. With the covering index the spread is small, as Investigation 2 concluded, so no plan needs to be forced. On the baseline plan the same report reached 61,350 reads. There, Query Store's plan forcing, or `OPTIMIZE FOR`, would have been the emergency fix until the index shipped.
+
 ## Write overhead
 
 [`04-write-overhead.sql`](database/perf/04-write-overhead.sql) replays a batch of the application's writes in one transaction and rolls it back, so the data set never changes:
@@ -411,7 +447,7 @@ Plan choices on a few hundred rows say little about production. That is why ever
    - Equality columns first, then the range (`BranchCode, Quantity`; `BranchCode, OccurredAtUtc`), then the `GROUP BY` order.
    - Low-selectivity filters such as `Status` belong in INCLUDE, not in the key.
 3. **Covering indexes also cure parameter sensitivity.** With no lookups or sorts left in the plan, one cached plan is right for a 400-row branch and a 20,000-row branch alike.
-4. **An index cannot fix a bad estimate.** The daily-sales procedure needed a code change, removing local variables from the predicate, before the new index was used well.
+4. **An index cannot fix a bad estimate.** The daily-sales procedure needed a code change, removing local variables from the predicate, before the new index was used well. Ad-hoc scripts, which have no parameters, get `OPTION (RECOMPILE)` instead.
 5. **The price is paid on writes.**
    - About 30% more log for a typical write mix, mostly because `Quantity` is a key column of the stock index.
    - Five extra index row operations per two-line sale.
@@ -436,6 +472,10 @@ sqlcmd -S . -E -d ApexPostDb_Perf -I -i database\perf\04-write-overhead.sql
 dotnet ef database update --project src/ApexPost.Infrastructure --connection "Server=.;Database=ApexPostDb_Perf;Trusted_Connection=True;TrustServerCertificate=True"
 .\database\perf\Measure-Workloads.ps1 -Phase final
 # ...then the same three sqlcmd scripts
+
+# 4. The /sql report scripts (Investigation 3) and the Query Store readout
+.\database\perf\Measure-SqlScripts.ps1 -Label after
+sqlcmd -S . -E -C -d ApexPostDb_Perf -I -W -s "|" -i database\perf\06-query-store.sql
 ```
 
 Open the `.sqlplan` files in SSMS to see the graphical plans with estimated and actual rows. The `E1-…` plans come from the parameter-sensitivity script: run it in SSMS with "Include Actual Execution Plan" on (Ctrl+M) and look at step 2.

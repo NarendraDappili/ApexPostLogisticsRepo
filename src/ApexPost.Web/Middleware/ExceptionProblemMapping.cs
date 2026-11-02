@@ -15,8 +15,11 @@ public sealed record ProblemMapping(int Status, string Title, string Detail);
 /// </summary>
 public static partial class ExceptionProblemMapping
 {
-    private static readonly System.Reflection.Assembly CoreLibrary = typeof(object).Assembly;
     private static readonly System.Reflection.Assembly[] BusinessAssemblies = [typeof(Branch).Assembly, typeof(IUnitOfWork).Assembly];
+
+    // The guard helpers business code calls: ArgumentException.ThrowIfNullOrWhiteSpace, ArgumentNullException.ThrowIfNull,
+    // ArgumentOutOfRangeException.ThrowIfNegative and the like. Their frames are skipped; any other .NET frame is not.
+    private static readonly Type[] GuardHelperTypes = [typeof(ArgumentException), typeof(ArgumentNullException), typeof(ArgumentOutOfRangeException)];
 
     public static ProblemMapping? Map(Exception exception) => exception switch
     {
@@ -29,16 +32,21 @@ public static partial class ExceptionProblemMapping
     };
 
     /// <summary>
-    /// True when the first frame outside the .NET core library belongs to ApexPost.Domain or ApexPost.Application,
-    /// so guard helpers such as ArgumentException.ThrowIfNullOrWhiteSpace count as the business code that called them.
+    /// True when the exception was thrown by ApexPost.Domain or ApexPost.Application code itself, directly or through a
+    /// guard helper such as ArgumentException.ThrowIfNullOrWhiteSpace. A bug inside a .NET method that business code
+    /// called (a List index out of range, a modified collection, Nullable.Value without a value) is not a broken
+    /// rule: the throwing frame is List, ThrowHelper or Nullable, so it stays a 500 and its message is never shown.
     /// </summary>
-    private static bool IsThrownByBusinessCode(Exception exception)
+    internal static bool IsThrownByBusinessCode(Exception exception) => IsThrownBy(exception, BusinessAssemblies);
+
+    internal static bool IsThrownBy(Exception exception, IReadOnlyCollection<System.Reflection.Assembly> assemblies)
     {
         foreach (var frame in new StackTrace(exception, fNeedFileInfo: false).GetFrames())
         {
-            var assembly = frame.GetMethod()?.DeclaringType?.Assembly;
-            if (assembly is null || assembly == CoreLibrary) continue;
-            return BusinessAssemblies.Contains(assembly);
+            var type = frame.GetMethod()?.DeclaringType;
+            if (type is null) continue;
+            if (GuardHelperTypes.Contains(type)) continue;
+            return assemblies.Contains(type.Assembly);
         }
 
         return false;

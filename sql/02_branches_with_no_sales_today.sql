@@ -13,6 +13,7 @@ DECLARE @Day date = CAST(SYSUTCDATETIME() AS date);
 -- The demo history ends on the day it was seeded. To see the rotation in the demo data, use that day instead:
 -- SET @Day = '2026-10-29';
 
+-- Local variables are invisible to the optimizer at compile time; OPTION (RECOMPILE) below lets it use their values.
 DECLARE @FromUtc datetime2(3) = CAST(@Day AS datetime2(3));
 DECLARE @ToUtc   datetime2(3) = DATEADD(DAY, 1, @FromUtc);
 
@@ -31,4 +32,5 @@ LEFT JOIN dbo.CounterTransactions AS t
 WHERE b.IsOpen = 1
 GROUP BY b.BranchCode, b.Name, b.Region
 HAVING COUNT(t.CounterTransactionId) = 0
-ORDER BY b.BranchCode;
+ORDER BY b.BranchCode
+OPTION (RECOMPILE);   -- estimate the day's sales from the variables' actual values

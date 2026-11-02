@@ -10,6 +10,7 @@
 DECLARE @FromDate date = '2026-09-01';   -- inclusive
 DECLARE @ToDate   date = '2026-10-31';   -- inclusive
 
+-- Local variables are invisible to the optimizer at compile time; OPTION (RECOMPILE) below lets it use their values.
 DECLARE @FromUtc datetime2(3) = CAST(@FromDate AS datetime2(3));
 DECLARE @ToUtc   datetime2(3) = DATEADD(DAY, 1, CAST(@ToDate AS datetime2(3)));
 
@@ -49,4 +50,5 @@ SELECT
     CAST(Revenue AS decimal(18, 2)) AS Revenue
 FROM Ranked
 WHERE RevenueRank <= 10
-ORDER BY Region, RevenueRank;
+ORDER BY Region, RevenueRank
+OPTION (RECOMPILE);   -- estimate the date range from the variables' actual values

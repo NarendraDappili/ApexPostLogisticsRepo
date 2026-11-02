@@ -80,19 +80,19 @@ public sealed class MoneyOrdersController(MoneyOrderWorkflowService moneyOrders,
             input.DocumentNumber = string.Empty;
             ModelState.Remove(nameof(input.DocumentNumber));
             ModelState.AddModelError(string.Empty, problem.Detail);
-            input.Summary = await OwnSummaryAsync(input.MoneyOrderId);
+            input.Summary = await OwnSummaryAsync(input.MoneyOrderId, cancellationToken);
             return View(input);
         }
     }
 
     // The order details for a redisplayed form; none when the ID is malformed, unknown or another branch's.
-    private async Task<MoneyOrderSummaryViewModel?> OwnSummaryAsync(string moneyOrderId)
+    private async Task<MoneyOrderSummaryViewModel?> OwnSummaryAsync(string moneyOrderId, CancellationToken cancellationToken)
     {
         MoneyOrderId id;
         try { id = new MoneyOrderId(moneyOrderId); }
         catch (ArgumentException) { return null; }
 
-        var order = await moneyOrderQueries.GetSummaryAsync(id, CancellationToken.None);
+        var order = await moneyOrderQueries.GetSummaryAsync(id, cancellationToken);
         return order is not null && IsOwnBranch(order) ? Summarize(order) : null;
     }
 

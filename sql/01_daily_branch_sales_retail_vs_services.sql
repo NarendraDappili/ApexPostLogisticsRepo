@@ -13,6 +13,9 @@ DECLARE @FromDate date = '2026-10-24';   -- first day, inclusive
 DECLARE @ToDate   date = '2026-10-30';   -- last day, inclusive
 
 -- Half-open UTC range: no function on OccurredAtUtc, so the predicate stays SARGable.
+-- These are local variables, whose values the optimizer cannot see when it compiles the batch: it would guess the
+-- range from a fixed fraction of the table (the misestimate PERFORMANCE.md found in usp_DailyBranchSales).
+-- OPTION (RECOMPILE) on the query compiles it with the actual values, so it estimates from the statistics.
 DECLARE @FromUtc datetime2(3) = CAST(@FromDate AS datetime2(3));
 DECLARE @ToUtc   datetime2(3) = DATEADD(DAY, 1, CAST(@ToDate AS datetime2(3)));
 
@@ -49,4 +52,5 @@ SELECT
 FROM SaleTotals AS s
 INNER JOIN dbo.Branches AS b ON b.BranchCode = s.BranchCode
 GROUP BY b.BranchCode, b.Name, b.Region, s.SalesDate
-ORDER BY s.SalesDate, b.BranchCode;
+ORDER BY s.SalesDate, b.BranchCode
+OPTION (RECOMPILE);   -- estimate the date range from the variables' actual values

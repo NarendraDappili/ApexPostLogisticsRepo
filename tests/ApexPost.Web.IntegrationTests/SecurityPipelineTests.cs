@@ -75,6 +75,51 @@ public sealed class SecurityPipelineTests
     }
 
     [Fact]
+    public async Task The_content_security_policy_allows_no_inline_script_or_style_and_the_pages_need_none()
+    {
+        await using var factory = new SecurityWebApplicationFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/Account/Login");
+        var html = await response.Content.ReadAsStringAsync();
+
+        var policy = response.Headers.GetValues("Content-Security-Policy").Single();
+        Assert.Contains("script-src 'self';", policy, StringComparison.Ordinal);
+        Assert.Contains("style-src 'self';", policy, StringComparison.Ordinal);
+        Assert.DoesNotContain("unsafe-inline", policy, StringComparison.Ordinal);
+        Assert.Equal("same-origin", response.Headers.GetValues("Cross-Origin-Opener-Policy").Single());
+        Assert.Contains("camera=()", response.Headers.GetValues("Permissions-Policy").Single(), StringComparison.Ordinal);
+
+        // The pages must still work under that policy: every script is a file, and nothing is styled or scripted inline.
+        // The rendered login page covers the shared layout; the scan covers every view's source.
+        Assert.DoesNotMatch(InlineScriptOrStyle, html);
+        var contentRoot = factory.Services.GetRequiredService<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>().ContentRootPath;
+        var views = Directory.GetFiles(Path.Combine(contentRoot, "Views"), "*.cshtml", SearchOption.AllDirectories);
+        Assert.NotEmpty(views);
+        Assert.All(views, view => Assert.DoesNotMatch(InlineScriptOrStyle, File.ReadAllText(view)));
+    }
+
+    private const string InlineScriptOrStyle = @"<script(?![^>]*\bsrc=)[^>]*>|<style\b|\sstyle=""|\son[a-z]+=""|javascript:";
+
+    [Fact]
+    public async Task Outside_development_the_sign_in_and_antiforgery_cookies_are_https_only()
+    {
+        await using var production = new SecurityWebApplicationFactory(environment: "Production");
+        // Over HTTPS, as every request is once the HTTPS redirect has run: antiforgery refuses to issue an
+        // HTTPS-only cookie on a plain HTTP request.
+        using var client = production.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
+
+        var loginPage = await client.GetAsync("/Account/Login");
+
+        var antiforgeryCookie = loginPage.Headers.GetValues("Set-Cookie").Single(cookie => cookie.StartsWith(".AspNetCore.Antiforgery.", StringComparison.Ordinal));
+        Assert.Contains("secure", antiforgeryCookie, StringComparison.OrdinalIgnoreCase);
+        var cookieOptions = production.Services.GetRequiredService<IOptionsMonitor<Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationOptions>>()
+            .Get(Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme);
+        Assert.Equal(CookieSecurePolicy.Always, cookieOptions.Cookie.SecurePolicy);
+        Assert.Equal(CookieSecurePolicy.Always, production.Services.GetRequiredService<IOptions<Microsoft.AspNetCore.Antiforgery.AntiforgeryOptions>>().Value.Cookie.SecurePolicy);
+    }
+
+    [Fact]
     public async Task Maintenance_mode_returns_503_but_health_remains_available()
     {
         await using var factory = new SecurityWebApplicationFactory(maintenance: true);
@@ -212,17 +257,20 @@ public sealed class SecurityWebApplicationFactory : WebApplicationFactory<Progra
     private readonly string? _apiKey;
     private readonly string _allowedIp;
     private readonly int _integrationPermitLimit;
+    private readonly string _environment;
 
-    public SecurityWebApplicationFactory(bool maintenance = false, string? apiKey = "test-integration-key", string allowedIp = "127.0.0.1", int integrationPermitLimit = 60)
+    public SecurityWebApplicationFactory(bool maintenance = false, string? apiKey = "test-integration-key", string allowedIp = "127.0.0.1", int integrationPermitLimit = 60, string environment = "Development")
     {
         _maintenance = maintenance;
         _apiKey = apiKey;
         _allowedIp = allowedIp;
         _integrationPermitLimit = integrationPermitLimit;
+        _environment = environment;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseEnvironment(_environment);
         // Program.cs reads these before Build(), which only UseSetting reaches.
         builder.UseSetting("ApexPost:DataDirectory", _dataDirectory);
         builder.UseSetting("ApexPost:RateLimiting:IntegrationPermitLimit", _integrationPermitLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));

@@ -37,8 +37,17 @@ The difficulty is the last row. The domain signals broken rules with `ArgumentEx
 | `ConflictException` (and subclasses) | 409 | The application message |
 | `NotFoundException` | 404 | The application message |
 | `RuleViolationException` | 400 | The procedure's message |
-| `ArgumentException` / `InvalidOperationException` **whose first non-.NET stack frame is in `ApexPost.Domain` or `ApexPost.Application`** | 400 | The message, without the "(Parameter '…')" suffix |
+| `ArgumentException` / `InvalidOperationException` **thrown by `ApexPost.Domain` or `ApexPost.Application` code, directly or through a guard helper** (`ArgumentException.ThrowIfNullOrWhiteSpace`, `ArgumentNullException.ThrowIfNull`, `ArgumentOutOfRangeException.ThrowIf…`) | 400 | The message, without the "(Parameter '…')" suffix |
 | Anything else, including the same types thrown by framework or library code | 500 | None: only `traceId` and `correlationId` |
+
+**How "thrown by business code" is decided.**
+- **The rule:** the first stack frame is examined. Frames of the three guard-helper types (`ArgumentException`, `ArgumentNullException`, `ArgumentOutOfRangeException`) are skipped. The next frame must belong to Domain or Application.
+- **Why not skip every .NET frame:** an earlier version skipped every frame from the .NET core library. A bug in business code that fails inside a .NET method was then reported as the user's mistake (400) with the framework's text, for example `List<T>` index out of range, a duplicate `Dictionary` key, "Collection was modified" or `Nullable.Value` without a value. With the current rule, the throwing frame is `List`, `ThrowHelper` or `Nullable`, so these stay 500 without details. `ProblemDetailsMappingTests` checks both directions.
+- **Why not dedicated domain exception types,** which would need no stack trace at all:
+  - The domain signals rules with `ArgumentException` and `InvalidOperationException`.
+  - The Week 2 business-rule tests assert those exact types (`Assert.Throws<ArgumentException>` and others), and the brief requires them to pass unchanged.
+  - A subclass would fail those exact-type assertions.
+  - New Week 3 rules use `RuleViolationException`, `NotFoundException` and `ConflictException` instead.
 
 ### MVC forms
 

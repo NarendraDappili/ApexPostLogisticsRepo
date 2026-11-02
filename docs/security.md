@@ -16,7 +16,7 @@
 |---|---|
 | `ConnectionStrings:ApexPostDb` | User-secrets in Development (`dotnet user-secrets set --project src/ApexPost.Web …`); the deployment's secret store or the `ConnectionStrings__ApexPostDb` environment variable elsewhere. The app refuses to start without it. `dotnet ef` reads the same user-secret through `ApexPostDesignTimeDbContextFactory`. |
 | `ApexPost:Security:Integration:ApiKey` | User-secrets or the deployment secret store. Compared in constant time and never logged. |
-| Development demo password | User-secrets only (`ApexPost:DemoSeed:Password`); nothing is committed. `scripts/setup-dev.ps1` generates a random one when none is set. Without it the seeder seeds nothing and logs how to set it. Each staff row stores its own PBKDF2 hash, never the password. |
+| Development demo password | User-secrets only (`ApexPost:DemoSeed:Password`); nothing is committed. `scripts/setup-dev.ps1` generates a random one when none is set. Without it the seeder seeds nothing and logs how to set it. Each staff row stores its own PBKDF2 hash, never the password. The value committed before Week 3's review (`ApexPost-Demo-2026`) stays in the Git history, so treat it as public: never reuse it, and change the user-secret of any local database still seeded with it. |
 | CI database password | Generated per run (`openssl rand`), masked in the log, and gone with the throwaway container. |
 | Data-protection keys | Generated locally under `App_Data/data-protection-keys` and ignored by Git, so a clone or deployment gets its own key ring. |
 
@@ -70,7 +70,9 @@ A full document number is accepted only as transient request input on the verifi
 
 **Cookie authentication.** It uses only the built-in ASP.NET Core cookie handler; there is no ASP.NET Core Identity or third-party package.
 - A successful sign-in issues claims for the staff ID, role and home branch.
-- The cookie is HttpOnly and SameSite=Strict, with an eight-hour sliding expiry, and is Secure on HTTPS requests.
+- The cookie is HttpOnly and SameSite=Strict, with an eight-hour sliding expiry.
+- **Outside Development, the sign-in and antiforgery cookies are always `Secure`** (`CookieSecurePolicy.Always`), so a browser never sends them over plain HTTP, even on a first `http://` request before the HTTPS redirect. Development keeps `SameAsRequest` so `http://localhost` and the test host work. A test hosts the app as Production and checks both cookie settings.
+- **Consequence behind a TLS-terminating proxy:** antiforgery refuses to issue an HTTPS-only cookie on a request the app sees as HTTP. Forwarded headers must therefore be configured with trusted proxies (see "IP allowlist" below) before the forms work there.
 
 **Passwords.**
 - Each `Staff` row stores a PBKDF2-HMAC-SHA256 hash: 210,000 iterations and a random 16-byte salt.
@@ -96,9 +98,12 @@ A full document number is accepted only as transient request input on the verifi
   - A client abort is recorded as an internal 499, and no response body is written.
 - **Correlation ID:** a valid `X-Correlation-Id` (at most 64 ASCII letters, digits, `-` or `_`) is reused; anything else is replaced.
 - **Headers:**
-  - CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy`.
+  - CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` (camera, microphone, geolocation, payment and USB off) and `Cross-Origin-Opener-Policy: same-origin`.
   - HSTS outside Development, and HTTPS redirection.
-  - The CSP still allows inline scripts and styles for the Razor/Bootstrap pages, and should be tightened with nonces when the front end is revised.
+  - **The CSP allows no inline script or style:** `script-src 'self'; style-src 'self'`, with no `'unsafe-inline'`. Even if markup were injected into a page, its `<script>` blocks, `onerror=` handlers and `javascript:` links would not run.
+    - This works because the pages need none: every script is a file under `wwwroot`, and the layout's empty import map was removed, since no page uses JavaScript modules.
+    - Bootstrap, Popper and jQuery validation still work: they change styles through the DOM (`element.style.display = …`), which the CSP allows. It blocks only style attributes and `<style>` elements.
+    - A test scans every `.cshtml` file and the rendered layout, so adding an inline script or style attribute fails the build instead of silently breaking the page.
 - **Rate limits:** a fixed-window limit per IP on sign-in. Integration requests must pass the API key before they consume the shared integration limit, which ignores the caller-supplied `X-Partner-Id`.
 - **IP allowlist:** it applies to the admin screens and the integration endpoint. It is loopback-only in Development and empty (deny) elsewhere.
   - It uses the direct connection address.

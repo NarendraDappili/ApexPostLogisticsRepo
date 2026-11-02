@@ -36,6 +36,7 @@ Rules shared by all five reports:
 - **Which sales count:** a sale counts while its status is `Paid`, the same rule as `usp_DailyBranchSales` and the dashboard. Voided and refunded sales are left out.
 - **Prices:** line amounts use the price stored on the line, which is the price at the time of sale.
 - **Dates:** every date filter is a half-open UTC range (`>= @FromUtc AND < @ToUtc`) with no function on the column, so it stays SARGable.
+- **Estimates: `OPTION (RECOMPILE)` on every report statement.** The inputs are local variables, and the optimizer cannot see a local variable's value when it compiles a batch. Without the hint it guesses the range as a fixed fraction of the table, the misestimate PERFORMANCE.md found in `usp_DailyBranchSales`. With the hint, the batch is compiled with the actual values. Measured on 200,000 sales, the 7-day daily-sales report went from 32,530 estimated sales (actual 3,396) and a clustered scan to 3,467 and an index scan, with 25% fewer reads (PERFORMANCE.md, Investigation 3). The cost is one compile per run, which does not matter for a report run by hand.
 - **Joins:**
   - Filters on the optional side of a LEFT JOIN go in the `ON` clause. In the `WHERE` clause they would remove the NULL rows and turn the LEFT JOIN into an INNER JOIN.
   - Totals are summed per parent row first wherever a join could repeat a value. For example, a sale's tax would otherwise be counted once per line.

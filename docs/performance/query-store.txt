@@ -1,0 +1,10 @@
+﻿Query Store readout of database/perf/06-query-store.sql on ApexPostDb_Perf (SQL Server 2025 RTM, compatibility level 170).
+Run on 2026-11-02, after rebuilding ApexPostDb_Perf from the migrations and 01-load-perf-data.sql. Two consecutive runs gave the same plans, reads and estimates.
+Reads are logical reads per execution; CPU is in microseconds; memory is the largest grant used, in KB.
+Actual rows: A = 110 paid sales (BR-0001, 15 Oct 2026); B = 403 shipments for BR-0100 (1 run), 20,000 for BR-0001 (5 runs).
+
+workload|query_id|plan_id|executions|avg_reads|min_reads|max_reads|avg_cpu_us|max_memory_kb|estimated_rows|compiled_for
+--------|--------|-------|----------|---------|---------|---------|----------|-------------|--------------|------------
+A. expressions of @Date (shipped body)|7|7|5|397.0|389|429|1094|0|244.05000000000001|NULL
+A. local variables (replaced body)|5|5|5|3754.0|3754|3754|163108|1024|3456.0|NULL
+B. shipping report (EF Core)|8|8|6|147.3|59|165|7597|0|403.0|'BR-0100'

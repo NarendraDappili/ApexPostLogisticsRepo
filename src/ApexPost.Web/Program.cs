@@ -62,6 +62,10 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("partner-integration", context => RateLimitPartition.GetFixedWindowLimiter(
         "partner-integration", _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(1, integrationPermitLimit), Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
 });
+// Outside Development the sign-in and antiforgery cookies are only ever sent over HTTPS, even if a request arrives
+// over plain HTTP before the HTTPS redirect. Development keeps SameAsRequest so tests and http://localhost work.
+var cookieSecurePolicy = builder.Environment.IsDevelopment() ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+builder.Services.AddAntiforgery(options => options.Cookie.SecurePolicy = cookieSecurePolicy);
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
@@ -70,7 +74,7 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.Cookie.Name = "ApexPost.Auth";
         options.Cookie.HttpOnly = true;
         options.Cookie.SameSite = SameSiteMode.Strict;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Cookie.SecurePolicy = cookieSecurePolicy;
         options.ExpireTimeSpan = TimeSpan.FromHours(8);
         options.SlidingExpiration = true;
         options.Events.OnValidatePrincipal = StaffCookieValidator.ValidateAsync;

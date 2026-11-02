@@ -61,6 +61,36 @@ public sealed class ProblemDetailsMappingTests
         Assert.Equal("safe-correlation", problem.CorrelationId);
     }
 
+    // The classification rule itself, with this test assembly standing in for Domain and Application: code here is
+    // "business code", so each case is thrown from a business frame, exactly as it would be inside a domain method.
+    [Fact]
+    public void Guard_helpers_called_by_business_code_count_as_business_code()
+    {
+        Assert.True(ThrownByThisAssembly(() => ArgumentException.ThrowIfNullOrWhiteSpace(" ")));
+        Assert.True(ThrownByThisAssembly(() => ArgumentNullException.ThrowIfNull((object?)null)));
+        Assert.True(ThrownByThisAssembly(() => ArgumentOutOfRangeException.ThrowIfNegative(-1m)));
+        Assert.True(ThrownByThisAssembly(() => throw new InvalidOperationException("Only an open or paid transaction can be voided.")));
+    }
+
+    [Fact]
+    public void A_bug_inside_a_dotnet_method_called_by_business_code_is_not_a_broken_rule()
+    {
+        // Same exception types as the domain's rules, but thrown by List, Dictionary, string, Nullable and an enumerator:
+        // these are server faults, so they stay 500 and their framework text is never shown to the user.
+        Assert.False(ThrownByThisAssembly(() => _ = new List<int>()[3]));
+        Assert.False(ThrownByThisAssembly(() => new Dictionary<int, int> { [1] = 1 }.Add(1, 1)));
+        Assert.False(ThrownByThisAssembly(() => _ = "abc".Substring(5)));
+        Assert.False(ThrownByThisAssembly(() => _ = ((int?)null)!.Value));
+        Assert.False(ThrownByThisAssembly(() => { var items = new List<int> { 1 }; foreach (var item in items) items.Add(item); }));
+    }
+
+    private static bool ThrownByThisAssembly(Action failure)
+    {
+        try { failure(); }
+        catch (Exception exception) { return ExceptionProblemMapping.IsThrownBy(exception, [typeof(ProblemDetailsMappingTests).Assembly]); }
+        throw new InvalidOperationException("The action was expected to throw.");
+    }
+
     private static async Task<(int Status, string? Title, string? Detail, string? CorrelationId, string? ContentType)> InvokeAsync(Action failure)
     {
         var context = new DefaultHttpContext();

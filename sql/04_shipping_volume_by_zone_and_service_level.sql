@@ -10,6 +10,7 @@
 DECLARE @FromDate date = '2026-09-01';   -- inclusive
 DECLARE @ToDate   date = '2026-10-31';   -- inclusive
 
+-- Local variables are invisible to the optimizer at compile time; OPTION (RECOMPILE) below lets it use their values.
 DECLARE @FromUtc datetime2(3) = CAST(@FromDate AS datetime2(3));
 DECLARE @ToUtc   datetime2(3) = DATEADD(DAY, 1, CAST(@ToDate AS datetime2(3)));
 
@@ -36,4 +37,5 @@ LEFT JOIN Accepted AS a
        ON a.ZoneCode = z.ZoneCode
       AND a.ServiceLevel = levels.ServiceLevel
 GROUP BY z.ZoneCode, z.Name, levels.ServiceLevel, levels.SortOrder
-ORDER BY z.ZoneCode, levels.SortOrder;
+ORDER BY z.ZoneCode, levels.SortOrder
+OPTION (RECOMPILE);   -- estimate the date range from the variables' actual values

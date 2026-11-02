@@ -7,7 +7,7 @@ dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build
 ```
 
-The latest run had **278 tests passing, 0 failing, 0 skipped**, with a zero-warning build.
+The latest run had **282 tests passing, 0 failing, 0 skipped**, with a zero-warning build.
 
 ## CI on GitHub Actions
 
@@ -17,7 +17,7 @@ The latest run had **278 tests passing, 0 failing, 0 skipped**, with a zero-warn
 3. starts a throwaway SQL Server 2022 container with a random password;
 4. runs every test, including the SQL Server tests.
 
-As of 1 November 2026 the workflow has run 11 times on GitHub, and every run passed: [all runs](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/workflows/ci.yml).
+Every run of the workflow on GitHub has passed: 12 runs as of 2 November 2026. The [list of runs](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/workflows/ci.yml) is always current; the table below is a snapshot.
 
 | Run | Trigger | Commit |
 |---|---|---|
@@ -27,6 +27,7 @@ As of 1 November 2026 the workflow has run 11 times on GitHub, and every run pas
 | [41237913225](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41237913225) | pull request #25 | `abbace7` |
 | [41312501953](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41312501953) | pull request #26 | `bfdf82a` |
 | [41313991662](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41313991662) | push to `master` | `b3e6f2e` |
+| [41332216362](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41332216362) | push to `master` (Week 3 review fixes) | `a15e376` |
 
 The other five runs are the pushes to `master` that merged #22–#26.
 
@@ -37,7 +38,7 @@ The other five runs are the pushes to `master` that merged #22–#26.
 | `ApexPost.Domain.Tests` | 67 | No |
 | `ApexPost.Application.Tests` | 86 | No |
 | `ApexPost.Infrastructure.Tests` | 73 | SQL Server (except the model, migration and password-hasher tests) |
-| `ApexPost.Web.IntegrationTests` | 52 | SQL Server |
+| `ApexPost.Web.IntegrationTests` | 56 | SQL Server |
 
 Each test project references only the production project it tests. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
 
@@ -104,7 +105,7 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
 | Audit store (`EfAuditStoreTests`) | Round trip and staff stamping. A failed business save is audited but never committed by the audit write. A failed audit write does not undo a committed change. |
 | Seeding and caching (`SeedingAndRateCacheTests`) | The seed meets the brief's volumes (5 branches, 20 staff, 30 products, 10 zones/60 rates, 240 sales). It refuses an unmigrated database. Rates are cached, but an empty table is not. |
 
-### Web integration tests (52)
+### Web integration tests (56)
 
 `WebApplicationFactory` hosts the real `Program.cs` against a disposable test database, with cookies and antiforgery tokens handled as a browser would. The tests cover:
 
@@ -118,14 +119,14 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
   - **A framework or library `InvalidOperationException` is never shown on a form.** It is a 500, and its text stays private.
 - **Over-posting:** posting status, identity, activity, password or audit fields has no effect on a sale or a staff edit.
 - **Workflows:** a several-line basket; shipments and verified money orders billed in the basket; weight limits and verification errors shown; manager stock adjustment through the procedure; administrator price revision; staff and branch administration.
-- **Security pipeline:** sign-in with hashed passwords; inactive staff rejected and existing cookies invalidated; cross-branch denial; security headers and correlation ID; maintenance mode; API key; IP allowlist; shared integration rate limit; login rate limit; CORS; no exception details in Problem Details or logs; a client abort is not a 500.
+- **Security pipeline:** sign-in with hashed passwords; inactive staff rejected and existing cookies invalidated; cross-branch denial; security headers and correlation ID; a CSP with no `unsafe-inline`, with every view scanned for inline script or style; Secure-only sign-in and antiforgery cookies outside Development; maintenance mode; API key; IP allowlist; shared integration rate limit; login rate limit; CORS; no exception details in Problem Details or logs; a client abort is not a 500.
 - **Audit:**
   - safe fields only;
   - no password, document number or API key in records or logs;
   - an audit-store failure never breaks a committed sale;
   - **the recorded status is the one the client received**, for a sign-in redirect (302), an in-action `Forbid` (403), a mapped exception (404) and a 409 form. This test fails against the old action filter.
 
-`ProblemDetailsMappingTests` cover each row of the exception mapping, including framework exceptions of the same types staying 500 without detail.
+`ProblemDetailsMappingTests` cover each row of the exception mapping, including framework exceptions of the same types staying 500 without detail. Two more tests pin the classification rule: the guard helpers count as business code, but the same exception types thrown inside `List`, `Dictionary`, `string`, `Nullable` or an enumerator called by business code do not.
 
 ## Not covered
 
