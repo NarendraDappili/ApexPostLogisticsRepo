@@ -8,6 +8,7 @@ namespace ApexPost.Infrastructure.Persistence.StoredProcedures;
 public static class StoredProcedureScripts
 {
     public const string DailyBranchSales = "usp_DailyBranchSales";
+    public const string BranchSalesForPeriod = "usp_BranchSalesForPeriod";
     public const string LowStockReport = "usp_LowStockReport";
     public const string AdjustStock = "usp_AdjustStock";
 

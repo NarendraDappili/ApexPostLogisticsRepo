@@ -33,7 +33,10 @@ Option 3.
   - red marks actions and the current place: primary buttons, the current menu entry, accent edges and links;
   - black carries text, icons and the footer.
   List tables use their own slate palette, so data rows stand apart from the brand chrome. Every text and background pair passes WCAG AA contrast.
-- **The logo watermark is a same-origin file.** `wwwroot/img/logo-watermark.svg` is drawn by a fixed `body::before` layer behind the content. It is allowed by `img-src 'self'` and stays in view while long pages scroll.
+- **The logo watermark is a same-origin file.** `wwwroot/img/logo-watermark.svg` is drawn by a fixed `body::after` layer behind the content, over a fixed `body::before` layer that holds the soft background glow. It is allowed by `img-src 'self'` and stays in view while long pages scroll.
+  - Both layers are their own compositor layers (`will-change: transform`). Scrolling therefore moves the page over them without repainting the window.
+  - The first version used `background-attachment: fixed`, which repainted the whole window on every scroll step and showed as flicker. A scroll trace in headless Edge measured 33 paints, 31 of them full-window, about 54 ms. After the change it measured 5 paints, about 6.5 ms.
+  - The sticky top bar also dropped its backdrop blur for the same reason.
 
 ## Consequences
 

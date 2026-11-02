@@ -538,6 +538,33 @@ public sealed class AuthenticationTests
     }
 
     [Fact]
+    public async Task Reports_cover_a_chosen_period_with_totals_and_a_row_per_day_and_explain_an_invalid_period()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var clerk = factory.CreateClient();
+        await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await CheckoutAsync(clerk, "TX-PERIOD-1", [("PRD-001", 2)])).StatusCode);
+
+        using var manager = factory.CreateClient();
+        await SignInAsync(manager, "STF-MANAGER-01", AuthWebApplicationFactory.TestPassword);
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = today.AddDays(-6).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var to = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+        var page = await manager.GetStringAsync($"/Reports?from={from}&to={to}");
+        Assert.Contains($"Sales: {from} to {to}", page, StringComparison.Ordinal);
+        Assert.Contains("Retail</dt><dd class=\"col-sm-9\">20.00</dd>", page, StringComparison.Ordinal);
+        Assert.Contains("Sales by day", page, StringComparison.Ordinal);
+        Assert.Contains($"<th scope=\"row\">{to}</th>", page, StringComparison.Ordinal);
+        Assert.Contains($"id=\"from\" name=\"from\" type=\"date\" value=\"{from}\"", page, StringComparison.Ordinal);
+
+        var reversed = await manager.GetAsync($"/Reports?from={to}&to={from}");
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, reversed.StatusCode);
+        Assert.Contains("The start date must be on or before the end date.", await reversed.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Reports_show_empty_states_for_a_branch_without_activity()
     {
         await using var factory = new AuthWebApplicationFactory();
@@ -654,6 +681,37 @@ public sealed class AuthenticationTests
         var list = await admin.GetStringAsync("/BranchAdmin");
         Assert.Contains("Harbour Branch", list, StringComparison.Ordinal);
         Assert.Contains("Branch BR-HARBOUR is now closed.", list, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Opening_hours_picked_as_times_are_stored_as_text_and_shown_again_when_editing()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var admin = factory.CreateClient();
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+        var form = await admin.GetStringAsync("/BranchAdmin/Create");
+        Assert.Contains("id=\"WeekdaysOpen\" name=\"WeekdaysOpen\" type=\"time\"", form, StringComparison.Ordinal);
+        var token = await GetAntiforgeryTokenAsync(admin, "/BranchAdmin/Create");
+
+        // Closing before opening is refused with a message on the form.
+        var refused = await admin.PostAsync("/BranchAdmin/Create", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("BranchCode", "BR-DOCKS"), new("Name", "Docks Branch"), new("Region", "Coast"),
+            new("WeekdaysOpen", "17:00"), new("WeekdaysClose", "09:00"), new("CounterCount", "1") ]));
+        Assert.Contains("On Monday to Friday the branch must close after it opens.", System.Net.WebUtility.HtmlDecode(await refused.Content.ReadAsStringAsync()), StringComparison.Ordinal);
+
+        var created = await admin.PostAsync("/BranchAdmin/Create", new FormUrlEncodedContent([
+            new("__RequestVerificationToken", token), new("BranchCode", "BR-DOCKS"), new("Name", "Docks Branch"), new("Region", "Coast"),
+            new("WeekdaysOpen", "08:30"), new("WeekdaysClose", "17:30"), new("SaturdayOpen", "09:00"), new("SaturdayClose", "12:30"),
+            new("SundayOpen", ""), new("SundayClose", ""), new("CounterCount", "1") ]));
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, created.StatusCode);
+
+        Assert.Contains("Mon-Fri 08:30-17:30; Sat 09:00-12:30", await admin.GetStringAsync("/BranchAdmin"), StringComparison.Ordinal);
+        var edit = await admin.GetStringAsync("/BranchAdmin/Edit/BR-DOCKS");
+        Assert.Contains("id=\"WeekdaysOpen\" name=\"WeekdaysOpen\" type=\"time\" step=\"300\" class=\"form-control\" value=\"08:30\"", edit, StringComparison.Ordinal);
+        Assert.Contains("id=\"SaturdayClose\" name=\"SaturdayClose\" type=\"time\" step=\"300\" class=\"form-control\" value=\"12:30\"", edit, StringComparison.Ordinal);
+        // Sunday is closed: its pickers are empty.
+        Assert.Contains("id=\"SundayOpen\" name=\"SundayOpen\" type=\"time\" step=\"300\" class=\"form-control\" aria-describedby", edit, StringComparison.Ordinal);
     }
 
     [Fact]

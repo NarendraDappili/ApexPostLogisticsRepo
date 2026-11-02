@@ -2,48 +2,87 @@
 @{
     ViewData["Title"] = "Branch reports";
     var picker = new BranchPickerModel(await Lookup.ViewableBranchesAsync(User, Model?.BranchCode, Context.RequestAborted), "col-md-4");
+    var invariant = System.Globalization.CultureInfo.InvariantCulture;
+    string Amount(ApexPost.Domain.ValueObjects.Money money) => money.Amount.ToString("0.00", invariant);
+    string Iso(DateOnly date) => date.ToString("yyyy-MM-dd", invariant);
 }
 <div class="page-header">
     <h1>Branch reports</h1>
-    <p class="text-muted mb-0">Sales, stock, shipping and money-order figures, calculated by the database.</p>
+    <p class="text-muted mb-0">Sales for the period you choose, with current stock, shipping and money-order figures, calculated by the database.</p>
 </div>
-<form method="get" class="row g-2 align-items-end mb-4">
+<form method="get" class="row g-2 align-items-end mb-2">
     <partial name="_BranchPicker" model="picker" />
-    <div class="col-md-3"><label for="day" class="form-label">Sales day (UTC)</label><input id="day" name="day" type="date" value="@Model?.Day.ToString("yyyy-MM-dd")" class="form-control" /></div>
+    <div class="col-sm-6 col-md-2"><label for="from" class="form-label">From (UTC)</label><input id="from" name="from" type="date" value="@(Model is null ? null : Iso(Model.From))" max="@(Model is null ? null : Iso(Model.Today))" class="form-control" required /></div>
+    <div class="col-sm-6 col-md-2"><label for="to" class="form-label">To (UTC)</label><input id="to" name="to" type="date" value="@(Model is null ? null : Iso(Model.To))" max="@(Model is null ? null : Iso(Model.Today))" class="form-control" required /></div>
     <div class="col-md-auto"><button class="btn btn-primary" type="submit">Run reports</button></div>
 </form>
+@if (Model is not null)
+{
+    var today = Model.Today;
+    var monthStart = new DateOnly(today.Year, today.Month, 1);
+    <nav class="report-periods mb-4" aria-label="Quick periods">
+        <span class="text-muted small me-1">Quick periods:</span>
+        <a class="btn btn-sm btn-outline-secondary" asp-route-branchCode="@Model.BranchCode" asp-route-from="@Iso(today)" asp-route-to="@Iso(today)">Today</a>
+        <a class="btn btn-sm btn-outline-secondary" asp-route-branchCode="@Model.BranchCode" asp-route-from="@Iso(today.AddDays(-6))" asp-route-to="@Iso(today)">Last 7 days</a>
+        <a class="btn btn-sm btn-outline-secondary" asp-route-branchCode="@Model.BranchCode" asp-route-from="@Iso(today.AddDays(-29))" asp-route-to="@Iso(today)">Last 30 days</a>
+        <a class="btn btn-sm btn-outline-secondary" asp-route-branchCode="@Model.BranchCode" asp-route-from="@Iso(monthStart)" asp-route-to="@Iso(today)">This month</a>
+    </nav>
+}
 @if (Model is null) { <p class="text-muted" role="status">Your account has no assigned branch.</p> }
+else if (Model.Page is null) { <div class="alert alert-danger" role="alert">@Model.Error</div> }
 else
 {
+    var sales = Model.Page.Sales;
     <p>Branch: <strong>@Model.BranchCode</strong></p>
     <div class="row g-3">
         <section class="col-lg-6" aria-labelledby="daily-sales-heading">
             <div class="card report-card h-100"><div class="card-body">
-                <h2 id="daily-sales-heading" class="h5 card-title">Daily sales: @Model.Day.ToString("yyyy-MM-dd")</h2>
-                <dl class="row mb-0"><dt class="col-sm-3">Retail</dt><dd class="col-sm-9">@Model.DailySales.RetailSales.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Services</dt><dd class="col-sm-9">@Model.DailySales.ServiceSales.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Tax</dt><dd class="col-sm-9">@Model.DailySales.Tax.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Paid transactions</dt><dd class="col-sm-9">@Model.DailySales.PaidTransactionCount</dd></dl>
-                @if (Model.DailySales.PaidTransactionCount == 0) { <p class="text-muted mt-2 mb-0" role="status">No paid transactions were recorded for this branch on this day.</p> }
+                <h2 id="daily-sales-heading" class="h5 card-title">@(sales.IsSingleDay ? $"Daily sales: {Iso(sales.From)}" : $"Sales: {Iso(sales.From)} to {Iso(sales.To)}")</h2>
+                <dl class="row mb-0"><dt class="col-sm-3">Retail</dt><dd class="col-sm-9">@Amount(sales.RetailSales)</dd><dt class="col-sm-3">Services</dt><dd class="col-sm-9">@Amount(sales.ServiceSales)</dd><dt class="col-sm-3">Tax</dt><dd class="col-sm-9">@Amount(sales.Tax)</dd><dt class="col-sm-3">Total</dt><dd class="col-sm-9 fw-semibold">@Amount(sales.TotalSales)</dd><dt class="col-sm-3">Paid transactions</dt><dd class="col-sm-9">@sales.PaidTransactionCount</dd></dl>
+                @if (sales.PaidTransactionCount == 0) { <p class="text-muted mt-2 mb-0" role="status">No paid transactions were recorded for this branch @(sales.IsSingleDay ? "on this day" : "in this period").</p> }
             </div></div>
         </section>
         <section class="col-lg-6" aria-labelledby="money-orders-heading">
             <div class="card report-card h-100"><div class="card-body">
                 <h2 id="money-orders-heading" class="h5 card-title">Money orders and verification</h2>
-                <dl class="row mb-0"><dt class="col-sm-3">Orders</dt><dd class="col-sm-9">@Model.MoneyOrders.TotalCount</dd><dt class="col-sm-3">Verified</dt><dd class="col-sm-9">@Model.MoneyOrders.VerifiedCount</dd><dt class="col-sm-3">Failed</dt><dd class="col-sm-9">@Model.MoneyOrders.FailedCount</dd><dt class="col-sm-3">Pending</dt><dd class="col-sm-9">@Model.MoneyOrders.PendingCount</dd></dl>
-                @if (Model.MoneyOrders.TotalCount == 0) { <p class="text-muted mt-2 mb-0" role="status">No money orders are recorded for this branch.</p> }
+                <p class="small text-muted mb-2">All money orders issued at this branch.</p>
+                <dl class="row mb-0"><dt class="col-sm-3">Orders</dt><dd class="col-sm-9">@Model.Page.MoneyOrders.TotalCount</dd><dt class="col-sm-3">Verified</dt><dd class="col-sm-9">@Model.Page.MoneyOrders.VerifiedCount</dd><dt class="col-sm-3">Failed</dt><dd class="col-sm-9">@Model.Page.MoneyOrders.FailedCount</dd><dt class="col-sm-3">Pending</dt><dd class="col-sm-9">@Model.Page.MoneyOrders.PendingCount</dd></dl>
+                @if (Model.Page.MoneyOrders.TotalCount == 0) { <p class="text-muted mt-2 mb-0" role="status">No money orders are recorded for this branch.</p> }
             </div></div>
         </section>
         <section class="col-lg-6" aria-labelledby="low-stock-heading">
-            <div class="card h-100 @(Model.LowStock.Items.Count > 0 ? "border-warning" : null)"><div class="card-body">
-                <h2 id="low-stock-heading" class="h5 card-title">Low stock (threshold: @Model.LowStock.Threshold)</h2>
-                @if (Model.LowStock.Items.Count == 0) { <p class="text-muted mb-0" role="status">No products are at or below the low-stock threshold.</p> }
-                else { <ul class="mb-0">@foreach (var item in Model.LowStock.Items) { <li>@item.ProductId.Value - @item.Name: @item.Quantity units</li> }</ul> }
+            <div class="card h-100 @(Model.Page.LowStock.Items.Count > 0 ? "border-warning" : null)"><div class="card-body">
+                <h2 id="low-stock-heading" class="h5 card-title">Low stock (threshold: @Model.Page.LowStock.Threshold)</h2>
+                <p class="small text-muted mb-2">Current stock.</p>
+                @if (Model.Page.LowStock.Items.Count == 0) { <p class="text-muted mb-0" role="status">No products are at or below the low-stock threshold.</p> }
+                else { <ul class="mb-0">@foreach (var item in Model.Page.LowStock.Items) { <li>@item.ProductId.Value - @item.Name: @item.Quantity units</li> }</ul> }
             </div></div>
         </section>
         <section class="col-lg-6" aria-labelledby="shipping-heading">
             <div class="card h-100"><div class="card-body">
                 <h2 id="shipping-heading" class="h5 card-title">Shipping volume</h2>
-                @if (Model.Shipping.Items.Count == 0) { <p class="text-muted mb-0" role="status">No shipments are recorded for this branch.</p> }
-                else { <ul class="mb-0">@foreach (var item in Model.Shipping.Items) { <li>@item.DestinationZoneCode.Value / @item.ServiceLevel: @item.Count</li> }</ul> }
+                <p class="small text-muted mb-2">All shipments sent from this branch.</p>
+                @if (Model.Page.ShippingVolume.Items.Count == 0) { <p class="text-muted mb-0" role="status">No shipments are recorded for this branch.</p> }
+                else { <ul class="mb-0">@foreach (var item in Model.Page.ShippingVolume.Items) { <li>@item.DestinationZoneCode.Value / @item.ServiceLevel: @item.Count</li> }</ul> }
             </div></div>
         </section>
+        @if (!sales.IsSingleDay && sales.Days.Count > 0)
+        {
+            <section class="col-12" aria-labelledby="sales-by-day-heading">
+                <h2 id="sales-by-day-heading" class="h5 mt-2">Sales by day</h2>
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle">
+                        <caption>Paid sales per UTC day; days without a paid sale are not listed.</caption>
+                        <thead><tr><th scope="col">Day</th><th scope="col" class="text-end">Retail</th><th scope="col" class="text-end">Services</th><th scope="col" class="text-end">Tax</th><th scope="col" class="text-end">Total</th><th scope="col" class="text-end">Paid transactions</th></tr></thead>
+                        <tbody>
+                        @foreach (var dayRow in sales.Days)
+                        {
+                            <tr><th scope="row">@Iso(dayRow.Day)</th><td class="text-end">@Amount(dayRow.RetailSales)</td><td class="text-end">@Amount(dayRow.ServiceSales)</td><td class="text-end">@Amount(dayRow.Tax)</td><td class="text-end">@Amount(dayRow.TotalSales)</td><td class="text-end">@dayRow.PaidTransactionCount</td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
     </div>
 }

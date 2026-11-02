@@ -7,7 +7,7 @@ dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build
 ```
 
-The latest run had **286 tests passing, 0 failing, 0 skipped**, with a zero-warning build.
+The latest run had **292 tests passing, 0 failing, 0 skipped**, with a zero-warning build.
 
 ## CI on GitHub Actions
 
@@ -44,8 +44,8 @@ The other five runs are the pushes to `master` that merged #22–#26.
 |---|---|---|
 | `ApexPost.Domain.Tests` | 67 | No |
 | `ApexPost.Application.Tests` | 86 | No |
-| `ApexPost.Infrastructure.Tests` | 73 | SQL Server (except the model, migration and password-hasher tests) |
-| `ApexPost.Web.IntegrationTests` | 60 | SQL Server |
+| `ApexPost.Infrastructure.Tests` | 77 | SQL Server (except the model, migration and password-hasher tests) |
+| `ApexPost.Web.IntegrationTests` | 62 | SQL Server |
 
 Each test project references only the production project it tests. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
 
@@ -96,23 +96,23 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
 | `Reports_group_actual_branch_data_without_identity_details` | The in-memory `BranchReportService` | `The_week_2_report_scenario_gives_the_same_figures_from_sql_server` (SQL Server). It seeds the same scenario and keeps the same ten assertions and expected figures. It also checks that the report type holds counts only, never identity data. |
 | `Reports_propagate_cancellation` | Same service | `Daily_sales_include_the_tax_charged_and_every_report_honours_cancellation`, covering all four reports |
 
-### SQL Server integration tests (Infrastructure, 73)
+### SQL Server integration tests (Infrastructure, 77)
 
 | Area | Tests show |
 |---|---|
 | Model (`ApexPostModelTests`, no database) | Audit columns on every table; `rowversion` on stock and sales; masked identity column; unique business keys; weight CHECKs; only owned children cascade; decimal(18,2) and varchar codes; mapper round trip; **the workload indexes' key order and INCLUDE columns** |
 | Repository mapping (`EfRepositoryMappingTests`) | Every aggregate round-trips with its value objects, owned types and audit columns. Value-object predicates become `varchar(48)` parameters. Duplicate keys become `DuplicateKeyException`, and a detached update is refused. |
 | Atomicity and concurrency (`CheckoutPersistenceTests`) | A sale is one commit. **A failure part-way through the commit rolls back stock and sale rows together.** Two clerks selling the last unit leave stock at 0 and one conflict. **8 concurrent sales never oversell or lose an update.** Sales and voids lock stock rows in key order, before the sale rows (the deadlock rule). |
-| Stored procedures (`StoredProcedureTests`) | Parameter validation errors. Both report modes. Adjustment and history in one transaction. Refusal below zero. **Only an active Branch Manager of the branch may adjust** (a clerk, another branch's manager and an inactive manager are refused). A procedure update invalidates a stale EF copy. A mixed `SaveChanges` + procedure call rolls back as one unit. **The migrated database runs exactly the `.sql` files in source control.** |
-| Migration snapshots (`StoredProcedureMigrationTests`, no database) | Each migration keeps the procedure text it shipped. The latest one for each procedure carries the current script. `Down` restores the previous body. |
-| Parallel reports (`ParallelReportTests`) | The four reports run **at the same time**, each on its own context: a gated factory times out unless all four are waiting together. The results equal the sequential reads, and a failing report fails the page with its business message. |
+| Stored procedures (`StoredProcedureTests`) | Parameter validation errors. Both report modes. Adjustment and history in one transaction. Refusal below zero. **Only an active Branch Manager of the branch may adjust** (a clerk, another branch's manager and an inactive manager are refused). A procedure update invalidates a stale EF copy. A mixed `SaveChanges` + procedure call rolls back as one unit. **Sales for a period are grouped by day, leave out sales outside the period, and for one day equal the daily procedure.** The period's dates are validated in the database and before the call (reversed, longer than 366 days). **The migrated database runs exactly the `.sql` files in source control.** |
+| Migration snapshots (`StoredProcedureMigrationTests`, no database) | Each migration keeps the procedure text it shipped. The latest one for each procedure carries the current script. `Down` restores the previous body, or drops a procedure the migration added. |
+| Parallel reports (`ParallelReportTests`) | The four reports run **at the same time**, each on its own context: a gated factory times out unless all four are waiting together. The results equal the sequential reads, for a single day and for a period, and a failing report fails the page with its business message. |
 | Query services (`QueryServiceTests`) | Each screen query is **one SQL command** (no N+1) and tracks nothing, including the shipping label and the money-order verification summary (one `LEFT JOIN`). Reports aggregate in the database, count only paid sales of the day, include the tax charged, and honour cancellation. The Week 2 report scenario gives the Week 2 figures. Price revision is one set-based `UPDATE`. |
 | Generated SQL (`GeneratedSqlTests`) | Captures `ToQueryString()` for the dashboard, shipping volume and money-order reports (used in `PERFORMANCE.md`), and pins their SARGable shape. Loads sales with their lines as a **single query and as a split query** (ADR 0020): one joined statement against two, with identical results. |
 | Checkout constraints (`CheckoutPersistenceTests`) | `CK_Payments_Amount` rejects a payment that is not greater than zero, even from a write that bypasses the domain. |
 | Audit store (`EfAuditStoreTests`) | Round trip and staff stamping. A failed business save is audited but never committed by the audit write. A failed audit write does not undo a committed change. |
 | Seeding and caching (`SeedingAndRateCacheTests`) | The seed meets the brief's volumes (5 branches, 20 staff, 30 products, 10 zones/60 rates, 240 sales). It refuses an unmigrated database. Rates are cached, but an empty table is not. |
 
-### Web integration tests (60)
+### Web integration tests (62)
 
 `WebApplicationFactory` hosts the real `Program.cs` against a disposable test database, with cookies and antiforgery tokens handled as a browser would. The tests cover:
 
@@ -120,7 +120,7 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
   - a sale posted through the counter screen is stored with its lines, payment and audit columns;
   - **a void requires the Branch Manager role** (a clerk gets 403);
   - a manager voids a paid sale and the stock is returned;
-  - **the reports show the day's totals from the database**;
+  - **the reports show the day's totals from the database**, and a chosen from-to period shows its totals and a row per day; a reversed period is explained with a 400;
   - **errors keep their status codes**: 409 for two clerks selling the last unit and for a duplicate email; 404 for a missing sale; 400 for a broken rule or an invalid price revision.
   - **A refused void or refund is shown on the Manage page** with its reason and the 404/400 status. It is not raw Problem Details JSON.
   - **A framework or library `InvalidOperationException` is never shown on a form.** It is a 500, and its text stays private.
@@ -130,6 +130,7 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
   - An administrator gets a dropdown of every branch.
   - The left menu shows each role its own screens, and marks exactly one entry as the current page (`aria-current="page"`).
   - Stored values (counters, products, zones) are offered as dropdowns.
+  - Opening hours picked as times are stored as text ("Mon-Fri 08:30-17:30; Sat 09:00-12:30") and shown in the pickers again when editing. Closing before opening is refused on the form.
 - **Workflows:** a several-line basket; shipments and verified money orders billed in the basket; weight limits and verification errors shown; manager stock adjustment through the procedure; administrator price revision; staff and branch administration.
 - **Security pipeline:** sign-in with hashed passwords; inactive staff rejected and existing cookies invalidated; cross-branch denial; security headers and correlation ID; a CSP with no `unsafe-inline`, with every view scanned for inline script or style; Secure-only sign-in and antiforgery cookies outside Development; maintenance mode; API key; IP allowlist; shared integration rate limit; login rate limit; CORS; no exception details in Problem Details or logs; a client abort is not a 500.
 - **Audit:**

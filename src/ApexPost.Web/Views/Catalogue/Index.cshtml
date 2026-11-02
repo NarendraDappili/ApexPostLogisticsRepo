@@ -65,7 +65,7 @@ else
             @foreach (var item in Model.Products)
             {
                 var isLow = item.StockQuantity <= threshold;
-                <tr class="@(isLow ? "table-warning" : null)"><th scope="row">@item.ProductId</th><td>@item.Sku</td><td>@item.Name</td><td>@item.CategoryCode</td><td>@item.UnitPrice.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td><td>@(item.StockQuantity?.ToString() ?? "Not loaded")@if (isLow) { <span class="badge text-bg-warning ms-2">Low stock</span> }</td></tr>
+                <tr><th scope="row">@item.ProductId</th><td>@item.Sku</td><td>@item.Name</td><td>@item.CategoryCode</td><td>@item.UnitPrice.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td><td>@(item.StockQuantity?.ToString() ?? "Not loaded")@if (isLow) { <span class="badge badge-low-stock ms-2">Low stock</span> }</td></tr>
             }
             </tbody>
         </table>

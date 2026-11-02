@@ -270,9 +270,28 @@ The `/sql` reports declare their date range as local variables (`@FromUtc`, `@To
 - **Any other range is misestimated.** The 7-day report was estimated at 9.6 times its real size and scanned the whole clustered index. With `RECOMPILE` it is estimated within about 2% (3,467 against 3,396) and reads 25% fewer pages.
 - **The cost:** a compile on every run. These are reports run by hand, a few times a day at most, so that cost is negligible. For a statement run thousands of times, the fix is the one used in `usp_DailyBranchSales` instead: a parameter.
 
+### Investigation 4: one cached plan for every period length (`usp_BranchSalesForPeriod`)
+
+The reports page can show sales for a period, from one week to a whole year (at most 366 days). That runs `usp_BranchSalesForPeriod`; a single day still runs `usp_DailyBranchSales`. The new procedure takes the date bounds as parameters, as Investigation 1 recommends. That brings back Investigation 2's problem in a sharper form: a seven-day period at a small branch and a year at the flagship differ by about 3,000 times in rows.
+
+The procedure therefore ends with `OPTION (RECOMPILE)`. [`07-period-sales-recompile.sql`](database/perf/07-period-sales-recompile.sql) shows why. It runs the procedure as shipped, and a probe copy built from the deployed body with only the hint removed, which it drops at the end. Statistics were refreshed with a full scan and the plan cache was cleared first. Output: [`docs/performance/period-sales.txt`](docs/performance/period-sales.txt). A second run gave identical reads.
+
+| Call | Paid sales | Logical reads (`CounterTransactions` + `TransactionLines`) | Plan |
+|---|---|---|---|
+| As shipped, BR-0100, 7 days | 13 | 24 + 39 = **63** | Seek on the sales index, nested-loop seeks into the lines |
+| As shipped, BR-0001, 7 days | 708 | 80 + 2,143 = **2,223** | Same shape |
+| As shipped, BR-0001, 365 days | 40,000 | 748 + 4,092 = **4,840** | Compiled for a year: the range read once, the lines read in one pass (parallel) |
+| Without the hint, BR-0001, 365 days, reusing the plan compiled for BR-0100 / 7 days | 40,000 | 129,210 + 121,061 = **250,271** | The small-range plan: 40,000 single-row seeks into the lines |
+
+**Result.**
+- **Reusing a small period's plan for a year costs about 52 times the reads** (250,271 against 4,840).
+- **Recompiling costs one compile per report.** The reports page runs a few times a day per manager, so this is negligible, and it is cheaper than a plan built for the wrong number of rows. It is the trade-off `usp_LowStockReport` and the `/sql` reports already make.
+- **The period is capped at 366 days**, in the procedure (`THROW 50045`) and before the call (`BranchSalesPeriodReport.Validate`). Even the most expensive report stays a bounded read of one branch's year.
+- **No new index is needed.** Every call seeks `IX_CounterTransactions_BranchCode_OccurredAtUtc` on the branch and the half-open date range.
+
 ### Query Store: the same problems, recorded across executions
 
-`SET STATISTICS` shows one execution in one session. Query Store, on in `READ_WRITE` mode in `ApexPostDb` and `ApexPostDb_Perf`, keeps every plan of every query in the database with its runtime statistics. That is how both investigations above would be found in production. [`06-query-store.sql`](database/perf/06-query-store.sql) clears the store, replays both investigations and reads the results back from `sys.query_store_query`, `sys.query_store_plan` and `sys.query_store_runtime_stats`. The estimate and compiled parameter value are taken from the plan Query Store saved. Output: [`docs/performance/query-store.txt`](docs/performance/query-store.txt). Two consecutive runs gave identical plans, reads and estimates.
+`SET STATISTICS` shows one execution in one session. Query Store, on in `READ_WRITE` mode in `ApexPostDb` and `ApexPostDb_Perf`, keeps every plan of every query in the database with its runtime statistics. That is how Investigations 1 and 2 would be found in production. [`06-query-store.sql`](database/perf/06-query-store.sql) clears the store, replays both investigations and reads the results back from `sys.query_store_query`, `sys.query_store_plan` and `sys.query_store_runtime_stats`. The estimate and compiled parameter value are taken from the plan Query Store saved. Output: [`docs/performance/query-store.txt`](docs/performance/query-store.txt). Two consecutive runs gave identical plans, reads and estimates.
 
 | Query Store query | Plans | Executions | Estimated rows | Actual | Avg logical reads (min–max) | Avg CPU | Memory grant used |
 |---|---|---|---|---|---|---|---|
@@ -473,9 +492,10 @@ dotnet ef database update --project src/ApexPost.Infrastructure --connection "Se
 .\database\perf\Measure-Workloads.ps1 -Phase final
 # ...then the same three sqlcmd scripts
 
-# 4. The /sql report scripts (Investigation 3) and the Query Store readout
+# 4. The /sql report scripts (Investigation 3), the Query Store readout and the period procedure (Investigation 4)
 .\database\perf\Measure-SqlScripts.ps1 -Label after
 sqlcmd -S . -E -C -d ApexPostDb_Perf -I -W -s "|" -i database\perf\06-query-store.sql
+sqlcmd -S . -E -C -d ApexPostDb_Perf -I -W -i database\perf\07-period-sales-recompile.sql
 ```
 
 Open the `.sqlplan` files in SSMS to see the graphical plans with estimated and actual rows. The `E1-…` plans come from the parameter-sensitivity script: run it in SSMS with "Include Actual Execution Plan" on (Ctrl+M) and look at step 2.

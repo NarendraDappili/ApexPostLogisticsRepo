@@ -6,10 +6,40 @@
     <div class="col-md-5"><label asp-for="Name" class="form-label"></label><input asp-for="Name" class="form-control" /><span asp-validation-for="Name" class="field-validation"></span></div>
     <div class="col-md-4"><label asp-for="Region" class="form-label"></label><input asp-for="Region" class="form-control" /><span asp-validation-for="Region" class="field-validation"></span></div>
 </div>
-<div class="row g-3 mt-1">
-    <div class="col-md-6"><label asp-for="OpeningHours" class="form-label"></label><input asp-for="OpeningHours" class="form-control" placeholder="Mon-Fri 09:00-17:30" /><span asp-validation-for="OpeningHours" class="field-validation"></span></div>
-    @if (!isEdit)
+@* Opening hours are picked as times; the server writes them as text such as "Mon-Fri 09:00-17:30; Sat 09:00-12:30". *@
+<fieldset class="border rounded p-3 mt-3 opening-hours" aria-describedby="opening-hours-help">
+    <legend class="float-none w-auto px-2 mb-0">Opening hours</legend>
+    <p id="opening-hours-help" class="form-text mt-0 mb-2">Pick when the branch opens and closes. Leave both times empty on days the branch is closed.</p>
+    @if (Model.KeepsUnpickableHours)
     {
-        <div class="col-md-3"><label asp-for="CounterCount" class="form-label"></label><input asp-for="CounterCount" type="number" min="1" max="20" step="1" class="form-control" /><span asp-validation-for="CounterCount" class="field-validation"></span></div>
+        <p class="small mb-2">Current hours: <strong>@Model.OpeningHours</strong>. They are kept unless you pick times below.</p>
+        <input type="hidden" asp-for="OpeningHours" />
     }
-</div>
+    <span asp-validation-for="OpeningHours" class="field-validation"></span>
+    @foreach (var (day, open, openValue, close, closeValue) in new[]
+    {
+        ("Monday to Friday", nameof(Model.WeekdaysOpen), Model.WeekdaysOpen, nameof(Model.WeekdaysClose), Model.WeekdaysClose),
+        ("Saturday", nameof(Model.SaturdayOpen), Model.SaturdayOpen, nameof(Model.SaturdayClose), Model.SaturdayClose),
+        ("Sunday", nameof(Model.SundayOpen), Model.SundayOpen, nameof(Model.SundayClose), Model.SundayClose),
+    })
+    {
+        <div class="row g-2 align-items-end opening-hours-row">
+            <div class="col-12 col-sm-4 col-lg-3"><span class="fw-semibold" id="@(open)-day">@day</span></div>
+            <div class="col-6 col-sm-4 col-lg-2">
+                <label for="@open" class="form-label small mb-1">Opens</label>
+                <input id="@open" name="@open" type="time" step="300" class="form-control" value="@openValue?.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)" aria-describedby="@(open)-day" />
+            </div>
+            <div class="col-6 col-sm-4 col-lg-2">
+                <label for="@close" class="form-label small mb-1">Closes</label>
+                <input id="@close" name="@close" type="time" step="300" class="form-control" value="@closeValue?.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)" aria-describedby="@(open)-day" />
+            </div>
+            <div class="col-12 col-lg-5">@Html.ValidationMessage(open, new { @class = "field-validation" })@Html.ValidationMessage(close, new { @class = "field-validation" })</div>
+        </div>
+    }
+</fieldset>
+@if (!isEdit)
+{
+    <div class="row g-3 mt-1">
+        <div class="col-md-3"><label asp-for="CounterCount" class="form-label"></label><input asp-for="CounterCount" type="number" min="1" max="20" step="1" class="form-control" /><span asp-validation-for="CounterCount" class="field-validation"></span></div>
+    </div>
+}

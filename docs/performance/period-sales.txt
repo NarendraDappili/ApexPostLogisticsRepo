@@ -1,0 +1,18 @@
+﻿Output of database/perf/07-period-sales-recompile.sql on ApexPostDb_Perf (200,000 sales), 2 November 2026.
+STATISTICS IO per execution; lob, page-server and read-ahead counters omitted (all zero or warm-cache).
+
+=== A. As shipped (RECOMPILE): BR-0001, 7 days
+Table 'TransactionLines'. Scan count 708, logical reads 2143, physical reads 0
+Table 'CounterTransactions'. Scan count 8, logical reads 80, physical reads 0
+=== A. As shipped (RECOMPILE): BR-0001, 365 days
+Table 'CounterTransactions'. Scan count 10, logical reads 748, physical reads 0
+Table 'TransactionLines'. Scan count 5, logical reads 4092, physical reads 0
+=== A. As shipped (RECOMPILE): BR-0100, 7 days
+Table 'TransactionLines'. Scan count 13, logical reads 39, physical reads 0
+Table 'CounterTransactions'. Scan count 8, logical reads 24, physical reads 0
+=== B. Without the hint: BR-0100, 7 days (compiles the cached plan)
+Table 'TransactionLines'. Scan count 13, logical reads 39, physical reads 0
+Table 'CounterTransactions'. Scan count 8, logical reads 24, physical reads 0
+=== B. Without the hint: BR-0001, 365 days (reuses that plan)
+Table 'TransactionLines'. Scan count 40000, logical reads 121061, physical reads 0
+Table 'CounterTransactions'. Scan count 365, logical reads 129210, physical reads 0

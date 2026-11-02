@@ -57,7 +57,7 @@ dotnet ef database update --project src/ApexPost.Infrastructure
 
 This creates `ApexPostDb` if it does not exist and applies every migration:
 - tables, keys and constraints;
-- the three stored procedures;
+- the four stored procedures;
 - the workload indexes.
 
 EF Core creates the database with `READ_COMMITTED_SNAPSHOT ON`, which the application expects: readers never wait for writers (see [sql/README.md](sql/README.md)). The application itself never creates or migrates the schema.
@@ -120,7 +120,8 @@ Seeded values you can use: products `PRD-001` … `PRD-030` (`PRD-001`–`PRD-00
 - **Top bar:** shows where you are (breadcrumb), your home branch, your role, and Sign out.
 - **Branch:** clerks and branch managers work at their home branch only, so it is shown as fixed text marked "Your home branch". Administrators and auditors may view every branch, so they choose it from a dropdown.
 - **Forms:** codes that refer to stored records (counters, products, zones, payment methods, roles) are dropdowns, so you pick a valid value instead of typing one.
-- **Lists:** the catalogue highlights products at or below the low-stock threshold (`Inventory:LowStockThreshold`, the same value the dashboard and reports use). Staff and branch lists show each row's status and its actions side by side.
+- **Dates and times:** reports take a From and a To date from date pickers. A branch's opening hours are picked as times for Monday to Friday, Saturday and Sunday (leave both empty for a closed day) and saved as text such as "Mon-Fri 09:00-17:30; Sat 09:00-12:30".
+- **Lists:** in the catalogue, a product at or below the low-stock threshold (`Inventory:LowStockThreshold`, the same value the dashboard and reports use) gets a highlighted "Low stock" badge; the row itself keeps the normal list colours. Staff and branch lists show each row's status and its actions side by side.
 - **Look:** yellow, red and black (about 50/30/20), with the logo as a faint watermark. All styling is one stylesheet (`wwwroot/css/site.css`), so it works under the strict Content Security Policy. See [ADR 0023](docs/adr/0023-application-shell-and-theme-under-the-strict-csp.md).
 
 ### Suggested walkthrough
@@ -133,7 +134,7 @@ Seeded values you can use: products `PRD-001` … `PRD-030` (`PRD-001`–`PRD-00
 4. **Manager.** Sign in as `STF-MANAGER-01`.
    - Under **Transactions**, void or refund `TX-DEMO-1` with a reason; its stock is returned.
    - Under **Catalogue and stock**, adjust stock for a product (it runs `usp_AdjustStock` and records the history).
-   - Open **Reports** for daily sales (retail vs services), low stock, shipping volume, and money orders with their verifications.
+   - Open **Reports** for sales (retail vs services) on a day or over a from-to period, with a row per day, plus low stock, shipping volume, and money orders with their verifications. The quick links pick today, the last 7 or 30 days, or this month.
 5. **Administrator.** Sign in as `STF-ADMIN-01`.
    - Under **Staff** and **Branches**, add, edit, deactivate and reactivate.
    - Under **Catalogue and stock**, revise a category's prices by a percentage (one set-based `UPDATE`).
@@ -153,7 +154,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 286 tests passing (Domain 67, Application 86, Infrastructure 73, Web integration 60) and a zero-warning build.
+**Results:** the latest run had 292 tests passing (Domain 67, Application 86, Infrastructure 77, Web integration 62) and a zero-warning build.
 
 **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors, checks that every model change has a migration, starts a throwaway SQL Server container with a random password, and runs every test on each push and pull request to `master`, then reruns the error-handling tests with full JIT optimization. Every run on GitHub Actions so far has passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
 

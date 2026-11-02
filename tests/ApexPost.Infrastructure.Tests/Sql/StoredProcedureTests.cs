@@ -32,6 +32,53 @@ public sealed class StoredProcedureTests(SqlServerTestDatabase database)
     }
 
     [Fact]
+    public async Task Sales_for_a_period_are_grouped_by_day_and_leave_out_sales_outside_it()
+    {
+        var data = await SqlTestData.SeedAsync(database, stock: 20);
+        await using var db = database.CreateContext();
+        var checkout = SqlTestData.CheckoutService(db, taxRate: 0.1m);
+        var suffix = data.Branch.Value;
+        await checkout.CheckoutAsync(data.Sale($"TX-P1-{suffix}", 1));
+        await checkout.CheckoutAsync(data.Sale($"TX-P2-{suffix}", 2));
+        await checkout.CheckoutAsync(data.Sale($"TX-P3-{suffix}", 3));
+        await checkout.CheckoutAsync(data.Sale($"TX-P4-{suffix}", 4));
+        // Move sales to earlier days: two days ago, and ten days ago (outside a seven-day period).
+        await db.Database.ExecuteSqlAsync($"UPDATE dbo.CounterTransactions SET OccurredAtUtc = DATEADD(DAY, -2, OccurredAtUtc) WHERE TransactionCode = {"TX-P2-" + suffix}");
+        await db.Database.ExecuteSqlAsync($"UPDATE dbo.CounterTransactions SET OccurredAtUtc = DATEADD(DAY, -10, OccurredAtUtc) WHERE TransactionCode = {"TX-P4-" + suffix}");
+        var reports = new EfBranchReportQueries(db);
+
+        var week = await reports.GetSalesForPeriodAsync(data.Branch, Today.AddDays(-6), Today);
+        var oneDay = await reports.GetSalesForPeriodAsync(data.Branch, Today, Today);
+
+        // Today: sales 1 and 3 (40.00 retail, 4.00 tax); two days ago: sale 2 (20.00, 2.00). Days without a sale are left out.
+        Assert.Equal([(Today.AddDays(-2), 20m, 2m, 1), (Today, 40m, 4m, 2)],
+            week.Days.Select(day => (day.Day, day.RetailSales.Amount, day.Tax.Amount, day.PaidTransactionCount)));
+        Assert.Equal((60m, 0m, 6m, 66m, 3), (week.RetailSales.Amount, week.ServiceSales.Amount, week.Tax.Amount, week.TotalSales.Amount, week.PaidTransactionCount));
+        // One day gives the same figures as the daily procedure.
+        Assert.Equal([await reports.GetDailySalesAsync(data.Branch, Today)], oneDay.Days);
+    }
+
+    [Fact]
+    public async Task Sales_for_a_period_validate_the_branch_and_the_dates_in_the_database_too()
+    {
+        var data = await SqlTestData.SeedAsync(database, stock: 1);
+        await using var db = database.CreateContext();
+
+        var missing = await Assert.ThrowsAsync<SqlException>(() => db.Database.ExecuteSqlAsync($"EXEC dbo.usp_BranchSalesForPeriod @BranchCode = {(string?)null}, @FromDate = {Today}, @ToDate = {Today}"));
+        var reversed = await Assert.ThrowsAsync<SqlException>(() => db.Database.ExecuteSqlAsync($"EXEC dbo.usp_BranchSalesForPeriod @BranchCode = {data.Branch.Value}, @FromDate = {Today}, @ToDate = {Today.AddDays(-1)}"));
+        var tooLong = await Assert.ThrowsAsync<SqlException>(() => db.Database.ExecuteSqlAsync($"EXEC dbo.usp_BranchSalesForPeriod @BranchCode = {data.Branch.Value}, @FromDate = {Today.AddDays(-366)}, @ToDate = {Today}"));
+        var unknown = await Assert.ThrowsAsync<RuleViolationException>(() => new EfBranchReportQueries(db).GetSalesForPeriodAsync(new BranchCode("BR-NOWHERE"), Today.AddDays(-1), Today));
+        // The same period rules are checked before the database is called.
+        var refused = await Assert.ThrowsAsync<ArgumentException>(() => new EfBranchReportQueries(db).GetSalesForPeriodAsync(data.Branch, Today, Today.AddDays(-1)));
+
+        Assert.Equal((50041, 50044, 50045), (missing.Number, reversed.Number, tooLong.Number));
+        Assert.Equal("usp_BranchSalesForPeriod: the branch does not exist.", unknown.Message);
+        Assert.Equal("The start date must be on or before the end date.", refused.Message);
+        // 366 days (a leap year, both ends included) is still allowed; this branch has no sales.
+        Assert.Empty((await new EfBranchReportQueries(db).GetSalesForPeriodAsync(data.Branch, Today.AddDays(-365), Today)).Days);
+    }
+
+    [Fact]
     public async Task Low_stock_report_covers_one_branch_or_every_branch_when_the_branch_is_null()
     {
         var first = await SqlTestData.SeedAsync(database, stock: 2);
@@ -105,6 +152,7 @@ public sealed class StoredProcedureTests(SqlServerTestDatabase database)
 
     [Theory]
     [InlineData(StoredProcedureScripts.DailyBranchSales)]
+    [InlineData(StoredProcedureScripts.BranchSalesForPeriod)]
     [InlineData(StoredProcedureScripts.LowStockReport)]
     [InlineData(StoredProcedureScripts.AdjustStock)]
     public async Task The_migrated_database_runs_the_procedure_script_in_source_control(string procedure)

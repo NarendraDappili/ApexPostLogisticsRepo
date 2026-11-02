@@ -123,23 +123,73 @@ public sealed class StaffFormViewModel
     public bool IsActive { get; set; } = true;
 }
 
-public sealed class BranchFormViewModel
+/// <summary>
+/// The branch form. Opening hours are picked as times for weekdays, Saturday and Sunday (empty times mean closed that
+/// day) and stored as text, for example "Mon-Fri 09:00-17:30; Sat 09:00-12:30". <see cref="OpeningHours"/> carries the
+/// stored text: it is kept as it is when no time is picked, for hours in a format the pickers cannot show.
+/// </summary>
+public sealed class BranchFormViewModel : IValidatableObject
 {
     [Required, StringLength(48), Display(Name = "Branch code")] public string BranchCode { get; set; } = string.Empty;
     [Required, StringLength(160)] public string Name { get; set; } = string.Empty;
     [Required, StringLength(80)] public string Region { get; set; } = string.Empty;
-    [Required, StringLength(120), Display(Name = "Opening hours")] public string OpeningHours { get; set; } = string.Empty;
+    [StringLength(120), Display(Name = "Opening hours")] public string? OpeningHours { get; set; }
+    [Display(Name = "Monday to Friday: opens")] public TimeOnly? WeekdaysOpen { get; set; }
+    [Display(Name = "Monday to Friday: closes")] public TimeOnly? WeekdaysClose { get; set; }
+    [Display(Name = "Saturday: opens")] public TimeOnly? SaturdayOpen { get; set; }
+    [Display(Name = "Saturday: closes")] public TimeOnly? SaturdayClose { get; set; }
+    [Display(Name = "Sunday: opens")] public TimeOnly? SundayOpen { get; set; }
+    [Display(Name = "Sunday: closes")] public TimeOnly? SundayClose { get; set; }
     [Range(1, 20), Display(Name = "Counter terminals")] public int CounterCount { get; set; } = 2;
     public bool IsOpen { get; set; } = true;
+
+    /// <summary>The picked times as a schedule; days without both times are closed.</summary>
+    public OpeningHoursSchedule Schedule => new(Times(WeekdaysOpen, WeekdaysClose), Times(SaturdayOpen, SaturdayClose), Times(SundayOpen, SundayClose));
+
+    /// <summary>True when the stored text could not be shown in the pickers, so it is kept unless times are picked.</summary>
+    public bool KeepsUnpickableHours => !string.IsNullOrWhiteSpace(OpeningHours) && OpeningHoursSchedule.TryParse(OpeningHours) is null;
+
+    /// <summary>The opening-hours text to save: the picked schedule, or the stored text when no time was picked.</summary>
+    public string ResolvedOpeningHours => Schedule.IsEmpty ? OpeningHours?.Trim() ?? string.Empty : Schedule.ToText();
+
+    /// <summary>Fills the pickers from stored opening-hours text; text they cannot show stays in <see cref="OpeningHours"/>.</summary>
+    public void LoadOpeningHours(string openingHours)
+    {
+        OpeningHours = openingHours;
+        if (OpeningHoursSchedule.TryParse(openingHours) is not { } schedule) return;
+        (WeekdaysOpen, WeekdaysClose) = (schedule.Weekdays?.Opens, schedule.Weekdays?.Closes);
+        (SaturdayOpen, SaturdayClose) = (schedule.Saturday?.Opens, schedule.Saturday?.Closes);
+        (SundayOpen, SundayClose) = (schedule.Sunday?.Opens, schedule.Sunday?.Closes);
+    }
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        foreach (var (opens, closes, day, openField, closeField) in new[]
+        {
+            (WeekdaysOpen, WeekdaysClose, "Monday to Friday", nameof(WeekdaysOpen), nameof(WeekdaysClose)),
+            (SaturdayOpen, SaturdayClose, "Saturday", nameof(SaturdayOpen), nameof(SaturdayClose)),
+            (SundayOpen, SundayClose, "Sunday", nameof(SundayOpen), nameof(SundayClose)),
+        })
+        {
+            if (opens is null != closes is null)
+                yield return new ValidationResult($"Enter both the opening and the closing time for {day}, or leave both empty if the branch is closed.", [opens is null ? openField : closeField]);
+            else if (opens is { } open && closes is { } close && close <= open)
+                yield return new ValidationResult($"On {day} the branch must close after it opens.", [closeField]);
+        }
+
+        if (Schedule.IsEmpty && string.IsNullOrWhiteSpace(OpeningHours))
+            yield return new ValidationResult("Enter the opening and closing times for at least one day.", [nameof(WeekdaysOpen)]);
+    }
+
+    private static OpeningTimes? Times(TimeOnly? opens, TimeOnly? closes) =>
+        opens is { } open && closes is { } close && close > open ? new OpeningTimes(open, close) : null;
 }
 
-public sealed record ReportsViewModel(
-    string BranchCode,
-    DateOnly Day,
-    DailyBranchSalesReport DailySales,
-    LowStockReport LowStock,
-    ShippingVolumeReport Shipping,
-    MoneyOrderVerificationReport MoneyOrders);
+/// <summary>
+/// The reports page for one branch. Sales cover <see cref="From"/> to <see cref="To"/> (both included); the other reports
+/// are current. <see cref="Page"/> is null when the requested period is invalid, and <see cref="Error"/> says why.
+/// </summary>
+public sealed record ReportsViewModel(string BranchCode, DateOnly From, DateOnly To, DateOnly Today, BranchReportPage? Page, string? Error = null);
 
 public sealed class TransactionReversalViewModel
 {

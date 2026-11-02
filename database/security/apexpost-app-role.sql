@@ -11,7 +11,7 @@
 --   * AuditEntries: SELECT and INSERT only, so the audit trail is append-only for the application.
 --   * StockAdjustments: no table permission at all. History rows are written only by usp_AdjustStock, which reaches
 --     the table through ownership chaining (both are owned by dbo).
---   * EXECUTE on the three procedures; no other procedures, no DDL, no schema-wide grants.
+--   * EXECUTE on the four procedures; no other procedures, no DDL, no schema-wide grants.
 -- The script is re-runnable: GRANT is idempotent and the role is created only once.
 
 IF DATABASE_PRINCIPAL_ID(N'apexpost_app') IS NULL
@@ -45,5 +45,6 @@ GRANT SELECT, INSERT ON dbo.AuditEntries TO apexpost_app;
 
 -- Stored procedures
 GRANT EXECUTE ON dbo.usp_DailyBranchSales TO apexpost_app;
+GRANT EXECUTE ON dbo.usp_BranchSalesForPeriod TO apexpost_app;
 GRANT EXECUTE ON dbo.usp_LowStockReport TO apexpost_app;
 GRANT EXECUTE ON dbo.usp_AdjustStock TO apexpost_app;

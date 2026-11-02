@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 namespace ApexPost.Infrastructure.Queries;
 
 /// <summary>
-/// The branch reports. Daily sales and low stock call stored procedures (see ADR 0012); shipping volume and
+/// The branch reports. Daily sales, sales for a period and low stock call stored procedures (see ADR 0012); shipping volume and
 /// money orders are no-tracking LINQ projections. Every report is one statement that aggregates in SQL Server.
 /// </summary>
 public sealed class EfBranchReportQueries(ApexPostDbContext db) : IBranchReportQueries
@@ -21,6 +21,18 @@ public sealed class EfBranchReportQueries(ApexPostDbContext db) : IBranchReportQ
             .ToListAsync(cancellationToken)).ConfigureAwait(false);
         var row = rows.Single();
         return new DailyBranchSalesReport(branchCode, day, new Money(row.RetailSales), new Money(row.ServiceSales), new Money(row.Tax), row.PaidTransactionCount);
+    }
+
+    public async Task<BranchSalesPeriodReport> GetSalesForPeriodAsync(BranchCode branchCode, DateOnly from, DateOnly to, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(branchCode);
+        BranchSalesPeriodReport.Validate(from, to);
+        var rows = await StoredProcedureErrors.TranslateAsync(() => db.Database
+            .SqlQuery<PeriodSalesRow>($"EXEC dbo.usp_BranchSalesForPeriod @BranchCode = {branchCode.Value}, @FromDate = {from}, @ToDate = {to}")
+            .ToListAsync(cancellationToken)).ConfigureAwait(false);
+        return new BranchSalesPeriodReport(branchCode, from, to, rows
+            .Select(row => new DailyBranchSalesReport(branchCode, row.SalesDate, new Money(row.RetailSales), new Money(row.ServiceSales), new Money(row.Tax), row.PaidTransactionCount))
+            .ToArray());
     }
 
     public async Task<LowStockReport> GetLowStockAsync(BranchCode branchCode, int threshold, CancellationToken cancellationToken = default)
@@ -71,6 +83,15 @@ public sealed class EfBranchReportQueries(ApexPostDbContext db) : IBranchReportQ
     // Result shapes of the procedures; EF maps the result columns to these properties by name.
     private sealed class DailySalesRow
     {
+        public decimal RetailSales { get; init; }
+        public decimal ServiceSales { get; init; }
+        public decimal Tax { get; init; }
+        public int PaidTransactionCount { get; init; }
+    }
+
+    private sealed class PeriodSalesRow
+    {
+        public DateOnly SalesDate { get; init; }
         public decimal RetailSales { get; init; }
         public decimal ServiceSales { get; init; }
         public decimal Tax { get; init; }

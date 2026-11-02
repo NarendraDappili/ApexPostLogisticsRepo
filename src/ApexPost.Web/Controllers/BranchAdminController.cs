@@ -46,7 +46,9 @@ public sealed class BranchAdminController(BranchManagementService branchManageme
         try
         {
             var branch = await branchManagement.GetAsync(new BranchCode(id), cancellationToken);
-            return View(new BranchFormViewModel { BranchCode = branch.Code.Value, Name = branch.Name, Region = branch.Region, OpeningHours = branch.OpeningHours, IsOpen = branch.IsOpen });
+            var form = new BranchFormViewModel { BranchCode = branch.Code.Value, Name = branch.Name, Region = branch.Region, IsOpen = branch.IsOpen };
+            form.LoadOpeningHours(branch.OpeningHours);
+            return View(form);
         }
         catch (BranchNotFoundException) { return NotFound(); }
         catch (ArgumentException) { return BadRequest(); }
@@ -92,5 +94,5 @@ public sealed class BranchAdminController(BranchManagementService branchManageme
         catch (ArgumentException) { return BadRequest(); }
     }
 
-    private static BranchDetailsRequest ToRequest(BranchFormViewModel input) => new(input.BranchCode, input.Name, input.Region, input.OpeningHours);
+    private static BranchDetailsRequest ToRequest(BranchFormViewModel input) => new(input.BranchCode, input.Name, input.Region, input.ResolvedOpeningHours);
 }

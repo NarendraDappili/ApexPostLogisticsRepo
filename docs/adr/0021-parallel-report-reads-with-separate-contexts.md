@@ -9,7 +9,7 @@ In Week 2, checkout started its independent validation reads together and awaite
 [ADR 0017](0017-optimistic-concurrency-for-stock-and-transactions.md) made those reads sequential. They now share the request's scoped `DbContext`, and a `DbContext` runs one operation at a time: a second query started while the first is running throws `InvalidOperationException`.
 
 The reports page needs four reports for one branch:
-- daily sales (`usp_DailyBranchSales`);
+- sales for the chosen day (`usp_DailyBranchSales`) or period (`usp_BranchSalesForPeriod`);
 - low stock (`usp_LowStockReport`);
 - shipping volume (a LINQ `GROUP BY`);
 - money-order verification (a LINQ `LEFT JOIN` and `GROUP BY`).

@@ -1,6 +1,6 @@
 # SQL: reporting queries, transactions and integrity
 
-Hand-written T-SQL for Week 3, Part B. The application reaches the database through EF Core and the three stored procedures in `src/ApexPost.Infrastructure/Persistence/StoredProcedures/`. The scripts in this folder are for people who work in SSMS or `sqlcmd`: reporting, operations and teaching.
+Hand-written T-SQL for Week 3, Part B. The application reaches the database through EF Core and the four stored procedures in `src/ApexPost.Infrastructure/Persistence/StoredProcedures/`. The scripts in this folder are for people who work in SSMS or `sqlcmd`: reporting, operations and teaching.
 
 | File | Purpose | Writes data? |
 |---|---|---|

@@ -13,18 +13,22 @@ namespace ApexPost.Infrastructure.Queries;
 /// </summary>
 public sealed class ParallelBranchReportPageQueries(IDbContextFactory<ApexPostDbContext> contexts) : IBranchReportPageQueries
 {
-    public async Task<BranchReportPage> GetAsync(BranchCode branchCode, DateOnly day, int lowStockThreshold, CancellationToken cancellationToken = default)
+    public async Task<BranchReportPage> GetAsync(BranchCode branchCode, DateOnly from, DateOnly to, int lowStockThreshold, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(branchCode);
         ArgumentOutOfRangeException.ThrowIfNegative(lowStockThreshold);
+        BranchSalesPeriodReport.Validate(from, to);
 
-        var dailySales = RunAsync((reports, token) => reports.GetDailySalesAsync(branchCode, day, token), cancellationToken);
+        // One day is the brief's daily report (usp_DailyBranchSales); a longer period uses usp_BranchSalesForPeriod.
+        var sales = from == to
+            ? RunAsync(async (reports, token) => BranchSalesPeriodReport.ForDay(await reports.GetDailySalesAsync(branchCode, from, token).ConfigureAwait(false)), cancellationToken)
+            : RunAsync((reports, token) => reports.GetSalesForPeriodAsync(branchCode, from, to, token), cancellationToken);
         var lowStock = RunAsync((reports, token) => reports.GetLowStockAsync(branchCode, lowStockThreshold, token), cancellationToken);
         var shippingVolume = RunAsync((reports, token) => reports.GetShippingVolumeAsync(branchCode, token), cancellationToken);
         var moneyOrders = RunAsync((reports, token) => reports.GetMoneyOrderVerificationAsync(branchCode, token), cancellationToken);
 
-        await Task.WhenAll(dailySales, lowStock, shippingVolume, moneyOrders).ConfigureAwait(false);
-        return new BranchReportPage(await dailySales.ConfigureAwait(false), await lowStock.ConfigureAwait(false), await shippingVolume.ConfigureAwait(false), await moneyOrders.ConfigureAwait(false));
+        await Task.WhenAll(sales, lowStock, shippingVolume, moneyOrders).ConfigureAwait(false);
+        return new BranchReportPage(await sales.ConfigureAwait(false), await lowStock.ConfigureAwait(false), await shippingVolume.ConfigureAwait(false), await moneyOrders.ConfigureAwait(false));
     }
 
     private async Task<T> RunAsync<T>(Func<EfBranchReportQueries, CancellationToken, Task<T>> report, CancellationToken cancellationToken)

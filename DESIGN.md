@@ -7,7 +7,7 @@ ApexPost is an ASP.NET Core MVC application for post-office counters: retail sal
 | Storage | JSON files under `App_Data` | SQL Server `ApexPostDb`, 17 tables, code-first migrations |
 | Writes | Each repository saved its own file | Repositories stage; one unit of work commits once per use case |
 | Concurrency | Per-file and per-branch `SemaphoreSlim`, compensating writes | `rowversion` optimistic concurrency, database transactions (ADR 0017) |
-| Reads | Repositories loaded aggregates; reports summed in memory | Query services with no-tracking projections, and three stored procedures |
+| Reads | Repositories loaded aggregates; reports summed in memory | Query services with no-tracking projections, and four stored procedures |
 | Audit | JSON Lines file | `AuditEntries` table, written outside the unit of work (ADR 0011) |
 | Errors | Generic 500 | 409 / 404 / 400 / 500 Problem Details (ADR 0018) |
 
@@ -298,6 +298,7 @@ The tables are in third normal form. Each fact is stored once, in the table whos
 | `RedeployDailyBranchSales` | Fixes `usp_DailyBranchSales`'s cardinality misestimate; `Down` restores the previous body |
 | `RequirePositivePaymentAmount` | `CK_Payments_Amount` becomes `[Amount] > 0`, as the brief requires |
 | `AdjustStockRequiresBranchManager` | `usp_AdjustStock` accepts only an active Branch Manager of the branch; `Down` restores the previous body |
+| `AddBranchSalesForPeriod` | Adds `usp_BranchSalesForPeriod`, sales per day for a from-to period; `Down` drops it |
 
 - **Migrations are immutable snapshots.** A migration that deploys a procedure keeps the exact text it deployed, so replaying it on a new database always gives the same result. The `.sql` files hold the current version. `StoredProcedureMigrationTests` and `StoredProcedureTests` check both rules: the migrations keep their shipped text, and the migrated database runs exactly the files in source control.
 
@@ -358,7 +359,7 @@ flowchart LR
 - **Stock adjustment** (`StockAdjustmentService` → `IStockAdjustments` → `usp_AdjustStock`):
   - a first delivery inserts the stock row with `SaveChangesAsync`, then calls the procedure;
   - both run inside one `ExecuteInTransactionAsync`, so a failure in either rolls back both.
-- **Reports:** `usp_DailyBranchSales` and `usp_LowStockReport`.
+- **Reports:** `usp_DailyBranchSales` (one day), `usp_BranchSalesForPeriod` (a from-to period, `OPTION (RECOMPILE)`, PERFORMANCE.md Investigation 4) and `usp_LowStockReport`.
 - **Calls are always parameterised** (`SqlQuery`/`ExecuteSql` with interpolated values that become parameters). Procedure `THROW` errors become `RuleViolationException`, shown as 400.
 - **Least privilege:** the role `apexpost_app` (`database/security/apexpost-app-role.sql`) has no `DELETE` and no DDL, and can only append and read the audit trail ([ADR 0012](docs/adr/0012-stored-procedures-for-reports-and-stock-adjustment.md)).
 
@@ -473,6 +474,9 @@ The screens are server-rendered Razor views on Bootstrap 5.3. There is no client
 | Role-aware menu | `_Layout.cshtml` | Shows only the entries whose controller admits the role, and marks the current one with `aria-current="page"`. The server still enforces every rule |
 | Branch picker | `Views/Shared/_BranchPicker.cshtml`, `ReferenceDataLookup.ViewableBranchesAsync` | A dropdown for roles that may view every branch (administrators, auditors). For a single-branch role, the home branch as fixed text with a hidden `branchCode`. This mirrors `SameBranchOnly` |
 | Reference-data dropdowns | `ReferenceDataLookup` | Counters, products, zones and enums come from the query services, so users pick stored values. Enum labels are readable ("Counter Clerk"), and option values are unchanged |
+| Report period | `Views/Reports/Index.cshtml`, `ReportsController` | From and To date pickers, plus quick links (today, last 7 or 30 days, this month). One day runs `usp_DailyBranchSales`; a longer period runs `usp_BranchSalesForPeriod` and adds a "Sales by day" table. A reversed or longer-than-366-day period is shown as a message with a 400. The earlier `?day=` link still works |
+| Opening-hours pickers | `Views/BranchAdmin/_BranchFields.cshtml`, `OpeningHoursSchedule` | Time pickers for Monday to Friday, Saturday and Sunday. The server writes them as the stored text ("Mon-Fri 08:30-17:30; Sat 09:00-12:30"), so the domain and the schema are unchanged. Editing reads the text back into the pickers, and hours in any other format are kept unless new times are picked |
+| Low-stock badge | `Views/Catalogue/Index.cshtml`, `.badge-low-stock` | Only the badge is highlighted; the row keeps the list colours |
 | Icons | `Views/Shared/_Icons.cshtml` | One inline SVG sprite (`<symbol>` + `<use>`); no icon font or CDN |
 | Theme and watermark | `wwwroot/css/site.css`, `wwwroot/img/logo-watermark.svg` | About 50% yellow (surfaces), 30% red (actions and the current place) and 20% black (text, footer). List tables in a slate palette. The logo is drawn as a fixed watermark |
 

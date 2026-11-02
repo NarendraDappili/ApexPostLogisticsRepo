@@ -57,10 +57,6 @@ html {
 
 body {
   background-color: var(--ap-surface);
-  background-image:
-    radial-gradient(60rem 28rem at 100% 0, rgba(var(--ap-yellow-rgb), 0.16), transparent 70%),
-    radial-gradient(40rem 22rem at 0 100%, rgba(var(--ap-red-rgb), 0.05), transparent 70%);
-  background-attachment: fixed;
   color: var(--ap-ink);
 }
 
@@ -73,25 +69,41 @@ body {
   --ap-panel-bg: rgba(255, 255, 255, 0.8);
 }
 
-body::before {
+/* Two fixed layers behind the page: the soft yellow and red glow (::before), then the watermark (::after).
+   Each is its own compositor layer (will-change), so scrolling only moves the page over them. A fixed
+   background (background-attachment: fixed) would instead repaint the whole window on every scroll step,
+   which showed as flicker and stutter while scrolling. */
+body::before,
+body::after {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
+  pointer-events: none;
+  will-change: transform;
+}
+
+body::before {
+  background:
+    radial-gradient(60rem 28rem at 100% 0, rgba(var(--ap-yellow-rgb), 0.16), transparent 70%),
+    radial-gradient(40rem 22rem at 0 100%, rgba(var(--ap-red-rgb), 0.05), transparent 70%);
+}
+
+body::after {
   background: url("../img/logo-watermark.svg") no-repeat 50% 55% / var(--ap-watermark-size);
   opacity: var(--ap-watermark-opacity);
-  pointer-events: none;
 }
 
 @media (min-width: 992px) {
   /* Signed in, the sidebar takes the left of the screen, so centre the watermark in the rest. */
-  body:has(.app-shell)::before {
+  body:has(.app-shell)::after {
     left: var(--ap-sidebar-width);
   }
 }
 
 @media print {
-  body::before {
+  body::before,
+  body::after {
     content: none;
   }
 }
@@ -315,9 +327,8 @@ h2, .h2 {
   gap: 0.75rem;
   min-height: 3.75rem;
   padding: 0.5rem 1.5rem;
-  background: rgba(255, 255, 255, 0.82);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  /* Nearly opaque, without a backdrop blur: blurring the content that scrolls under a sticky bar is costly on every frame. */
+  background: rgba(255, 255, 255, 0.96);
   border-bottom: 3px solid rgba(var(--ap-red-rgb), 0.85);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
@@ -576,15 +587,13 @@ body:has(> .app-public-bar) {
   color: #5b6677;
 }
 
-/* Low-stock rows: a soft amber wash, so they still stand out among the slate rows. */
-.table-warning {
-  --bs-table-color: var(--ap-ink);
-  --bs-table-bg: rgba(var(--ap-yellow-rgb), 0.16);
-  --bs-table-striped-bg: rgba(var(--ap-yellow-rgb), 0.1);
-  --bs-table-striped-color: var(--ap-ink);
-  --bs-table-hover-bg: rgba(var(--ap-yellow-rgb), 0.18);
-  --bs-table-hover-color: var(--ap-ink);
-  --bs-table-border-color: rgba(var(--ap-yellow-rgb), 0.35);
+/* Low stock: the row keeps the normal list colours; only its badge is highlighted, solid yellow with a red edge. */
+.badge.badge-low-stock {
+  background-color: var(--ap-yellow);
+  box-shadow: inset 0 0 0 1px rgba(var(--ap-red-rgb), 0.55);
+  color: var(--ap-black);
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 /* Row actions in lists: Edit in the slate palette; Deactivate, Close and Reactivate use the soft outline buttons above. */

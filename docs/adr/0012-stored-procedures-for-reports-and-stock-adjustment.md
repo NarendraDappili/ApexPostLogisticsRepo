@@ -1,10 +1,10 @@
-# ADR 0012: Use stored procedures for two reports and for stock adjustment
+# ADR 0012: Use stored procedures for three reports and for stock adjustment
 
 Status: Accepted.
 
 ## Context
 
-Most data access goes through EF Core: repositories plus the unit of work for writes, and LINQ projections for reads. Three operations have needs that LINQ does not meet well. Speed alone is not the reason: a parameterised LINQ query is also compiled once and cached by SQL Server.
+Most data access goes through EF Core: repositories plus the unit of work for writes, and LINQ projections for reads. Four operations have needs that LINQ does not meet well. The fourth, sales for a period, was added on 2 November 2026 when the reports page gained a from-to date range. Speed alone is not the reason: a parameterised LINQ query is also compiled once and cached by SQL Server.
 
 ## Decision
 
@@ -15,6 +15,14 @@ Most data access goes through EF Core: repositories plus the unit of work for wr
   - Line prices live in an *owned* type mapped through a value converter. EF can neither `SUM` a converted value in SQL nor map that owned property as a complex type. The LINQ version had to bring the day's lines back and add them up in the application; the procedure does the whole aggregation in one statement.
   - Head office wants the same figures from SSMS and reporting tools. A procedure is one reviewed contract that those tools can run with `EXECUTE` permission and no read access to the tables.
 - **SARGable date filter:** the date becomes a half-open `datetime2` range, so the filter on `OccurredAtUtc` is index-friendly.
+
+### `usp_BranchSalesForPeriod (@BranchCode, @FromDate, @ToDate)`
+
+- **What it does:** the same totals as `usp_DailyBranchSales`, one row per UTC day from `@FromDate` to `@ToDate` (both included), for days with a paid sale. The reports page adds the rows up for the period's totals and lists them as "Sales by day".
+- **Why a procedure:** the same reasons as the daily report: the owned, converted line prices cannot be summed in LINQ, and head office can run it from SSMS.
+- **Why a new procedure rather than a changed one:** `usp_DailyBranchSales` is the brief's daily report, with measured evidence behind it (PERFORMANCE.md, Investigation 1). It stays unchanged and still serves a one-day request. A period runs the new procedure.
+- **`OPTION (RECOMPILE)`:** a period can be a week at a small branch or a year at the flagship, about 3,000 times more rows. A plan cached for a short period and reused for a year read 250,271 pages; recompiled, it read 4,840 (PERFORMANCE.md, Investigation 4).
+- **Limits:** the start must be on or before the end (`THROW 50044`), and a period is at most 366 days (`THROW 50045`). The application checks the same rules first (`BranchSalesPeriodReport.Validate`), so a user sees a message rather than a database error.
 
 ### `usp_LowStockReport (@BranchCode = NULL, @Threshold)`
 
@@ -57,7 +65,7 @@ Most data access goes through EF Core: repositories plus the unit of work for wr
 | `SELECT`/`INSERT`/`UPDATE` only on the tables the use cases write | `DELETE` on any table |
 | `SELECT` only on reference data | Any DDL |
 | `SELECT, INSERT` on `AuditEntries` (append-only for the app) | `UPDATE` or `DELETE` on `AuditEntries` |
-| `EXECUTE` on the three procedures | Any direct permission on `StockAdjustments` |
+| `EXECUTE` on the four procedures | Any direct permission on `StockAdjustments` |
 
 - History rows are written only by `usp_AdjustStock`, which reaches `StockAdjustments` through ownership chaining.
 - Migrations and the Development seed run under a separate deployment login.
@@ -66,6 +74,7 @@ Verified on a throwaway database with a member of the role:
 - **Allowed:** reads, the price-revision `UPDATE`, inserting audit rows, and both procedures.
 - **Refused with Msg 229 (no permission):** `UPDATE`/`DELETE` on `AuditEntries`, `DELETE` on `CounterTransactions`, and any direct access to `StockAdjustments`.
 - **Refused with Msg 262:** `CREATE TABLE`.
+- **Rechecked on 2 November 2026** for `usp_BranchSalesForPeriod`. A member of the role ran it, and `DELETE` on `CounterTransactions` was still refused (Msg 229).
 
 ## Consequences
 
@@ -75,4 +84,5 @@ Verified on a throwaway database with a member of the role:
   - `Up` deploys the body kept in the new migration.
   - `Down` deploys the body kept in the migration before it.
   - A migration's text never changes after it ships. A fresh database therefore passes through each version in order, exactly as an existing one did, and `database/ApexPostDb.idempotent.sql` shows each version in the migration that deployed it.
+- Adding a procedure follows the same pattern. `AddBranchSalesForPeriod` keeps the body it shipped, its `Down` drops the procedure, and a test checks both directions.
 - Shipping volume and the money-order summary stay as LINQ projections; they have none of the needs above.

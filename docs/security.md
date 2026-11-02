@@ -33,7 +33,7 @@ The committed configuration holds non-secret defaults only. Business data lives 
 | `SELECT`/`INSERT`/`UPDATE` only on the tables the use cases write | `DELETE` on any table (records are closed or deactivated, never deleted) |
 | `SELECT` on reference data | Any DDL |
 | `SELECT, INSERT` on `AuditEntries` (append-only for the app) | `UPDATE`/`DELETE` on `AuditEntries` |
-| `EXECUTE` on the three procedures | Any direct access to `StockAdjustments`: history is written only by `usp_AdjustStock`, through ownership chaining |
+| `EXECUTE` on the four procedures | Any direct access to `StockAdjustments`: history is written only by `usp_AdjustStock`, through ownership chaining |
 
 This was verified by impersonating a member of the role ([ADR 0012](adr/0012-stored-procedures-for-reports-and-stock-adjustment.md)):
 - **Allowed:** the reads, the price-revision `UPDATE`, the audit `INSERT` and the procedures.

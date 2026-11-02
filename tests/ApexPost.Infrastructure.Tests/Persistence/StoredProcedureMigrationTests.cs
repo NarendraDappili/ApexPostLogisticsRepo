@@ -26,6 +26,7 @@ public sealed class StoredProcedureMigrationTests
     public void The_latest_migration_for_each_procedure_deploys_the_current_script()
     {
         Assert.Equal(Exec(StoredProcedureScripts.DailyBranchSales), Assert.Single(Sql(new RedeployDailyBranchSales())));
+        Assert.Equal(Exec(StoredProcedureScripts.BranchSalesForPeriod), Assert.Single(Sql(new AddBranchSalesForPeriod())));
         Assert.Equal(Exec(StoredProcedureScripts.AdjustStock), Assert.Single(Sql(new AdjustStockRequiresBranchManager())));
         Assert.Contains(Exec(StoredProcedureScripts.LowStockReport), Sql(new AddStoredProcedures()));
     }
@@ -35,6 +36,8 @@ public sealed class StoredProcedureMigrationTests
     {
         Assert.Equal(Sql(new AddStoredProcedures())[0], Assert.Single(Sql(new RedeployDailyBranchSales(), down: true)));
         Assert.Equal(Sql(new AddStoredProcedures())[2], Assert.Single(Sql(new AdjustStockRequiresBranchManager(), down: true)));
+        // A procedure a migration added is dropped again when that migration is rolled back.
+        Assert.Equal("DROP PROCEDURE IF EXISTS dbo.usp_BranchSalesForPeriod;", Assert.Single(Sql(new AddBranchSalesForPeriod(), down: true)));
     }
 
     private static string Exec(string procedure) => Normalize(StoredProcedureScripts.AsExec(StoredProcedureScripts.Read(procedure).Trim()));

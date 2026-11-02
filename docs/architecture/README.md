@@ -14,7 +14,7 @@ flowchart LR
     App --> Domain[ApexPost.Domain]
     Infra[ApexPost.Infrastructure] -->|implements interfaces| App
     Web -->|composition root| Infra
-    Infra -->|EF Core 10, parameterised SQL, 3 stored procedures| Sql[(SQL Server ApexPostDb)]
+    Infra -->|EF Core 10, parameterised SQL, 4 stored procedures| Sql[(SQL Server ApexPostDb)]
 ```
 
 ## Project boundaries
