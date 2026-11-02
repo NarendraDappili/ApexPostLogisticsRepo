@@ -666,3 +666,19 @@ fieldset > legend {
     padding: 1.25rem 1rem 1.5rem;
   }
 }
+
+/* Row actions (Edit, Deactivate, Close...): side by side, on one line, centred in their table cell. */
+.table-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.table-actions form {
+  margin: 0;
+}
+
+.table > tbody > tr > * {
+  vertical-align: middle;
+}
