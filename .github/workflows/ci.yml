@@ -48,3 +48,13 @@ jobs:
 
       - name: Test
         run: dotnet test ApexPost.slnx --no-build --configuration Release --verbosity normal
+
+      # The 400/500 decision reads stack traces, and a running server inlines hot business code into its callers.
+      # Tests normally run on unoptimized first-call code, so run the error-handling tests again fully optimized
+      # (ADR 0018).
+      - name: Test error handling with full JIT optimization
+        env:
+          DOTNET_TieredCompilation: 0
+        run: >-
+          dotnet test tests/ApexPost.Web.IntegrationTests --no-build --configuration Release
+          --filter "FullyQualifiedName~ProblemDetailsMappingTests|FullyQualifiedName~AuthenticationTests"

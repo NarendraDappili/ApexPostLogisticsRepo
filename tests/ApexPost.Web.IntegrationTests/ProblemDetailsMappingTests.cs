@@ -1,12 +1,15 @@
 using System.Text.Json;
 using ApexPost.Application.Abstractions;
+using System.Runtime.CompilerServices;
 using ApexPost.Application.BranchManagement;
+using ApexPost.Application.MoneyOrders;
 using ApexPost.Application.Transactions;
 using ApexPost.Application.Validation;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Web.Middleware;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ApexPost.Web.IntegrationTests;
@@ -43,7 +46,8 @@ public sealed class ProblemDetailsMappingTests
     [Fact]
     public async Task A_guard_clause_in_business_code_is_400_without_the_parameter_name()
     {
-        var domain = await InvokeAsync(() => _ = new Money(-1m));
+        // Reached from a controller, as the application reaches it (see the inlining tests below).
+        var domain = await InvokeAsync(() => InliningProbeController.MoneyUnoptimized(-1m));
         var application = await InvokeAsync(() => RequestValidator.Validate(new BranchDetailsRequest(" ", "Name", "Region", "Hours")));
 
         Assert.Equal(400, domain.Status);
@@ -60,6 +64,49 @@ public sealed class ProblemDetailsMappingTests
         Assert.Equal((500, null), (problem.Status, problem.Detail));
         Assert.Equal("safe-correlation", problem.CorrelationId);
     }
+
+    // A fully optimized method inlines small business methods (Money's constructor, the guard helper inside it), so the
+    // stack trace no longer contains a Domain frame. Hot code in a running server is optimized like this after tiering up.
+    // The rule must give the same answer either way.
+    [Fact]
+    public async Task A_business_rule_reached_from_a_controller_is_400_whether_or_not_the_jit_inlines_it()
+    {
+        var guardOptimized = await InvokeAsync(() => InliningProbeController.MoneyOptimized(-1m));
+        var guardUnoptimized = await InvokeAsync(() => InliningProbeController.MoneyUnoptimized(-1m));
+        var ruleOptimized = await InvokeAsync(() => InliningProbeController.RemoveStockOptimized(Stock(1), 2));
+        var ruleUnoptimized = await InvokeAsync(() => InliningProbeController.RemoveStockUnoptimized(Stock(1), 2));
+
+        Assert.Equal(400, guardOptimized.Status);
+        Assert.Equal(guardUnoptimized, guardOptimized);
+        Assert.Equal((400, "Stock cannot be reduced below zero."), (ruleOptimized.Status, ruleOptimized.Detail));
+        Assert.Equal(ruleUnoptimized, ruleOptimized);
+    }
+
+    [Fact]
+    public void An_exception_type_declared_by_the_application_is_a_business_error_without_reading_a_stack_trace()
+    {
+        // Never thrown, so there is no stack trace at all: the type alone decides.
+        Assert.Equal(400, ExceptionProblemMapping.Map(new IdentityVerificationRequiredException("A verified identity is required."))?.Status);
+        Assert.Equal(400, ExceptionProblemMapping.Map(new RequestValidationException(["BranchCode is required."]))?.Status);
+        Assert.Null(ExceptionProblemMapping.Map(new InvalidOperationException("Not thrown, not ours.")));
+    }
+
+    [Fact]
+    public void Controllers_have_no_throw_statement_or_guard_of_their_own()
+    {
+        // The mapping counts a rule exception whose first frame is a controller as business code the JIT inlined into
+        // it. That is only sound while controllers never throw these exceptions themselves.
+        // The Web project folder, from the manifest WebApplicationFactory itself uses to find the content root.
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "MvcTestingAppManifest.json")));
+        var webProject = manifest.RootElement.EnumerateObject()
+            .Single(entry => new System.Reflection.AssemblyName(entry.Name).Name == typeof(Program).Assembly.GetName().Name).Value.GetString()!;
+        var controllers = Directory.GetFiles(Path.Combine(webProject, "Controllers"), "*.cs");
+
+        Assert.NotEmpty(controllers);
+        Assert.All(controllers, file => Assert.DoesNotMatch(@"(?m)^(?!\s*//).*(\bthrow\b|\.ThrowIf)", File.ReadAllText(file)));
+    }
+
+    private static BranchInventoryItem Stock(int quantity) => new(new BranchCode("BR-1"), new ProductId("P-1"), quantity);
 
     // The classification rule itself, with this test assembly standing in for Domain and Application: code here is
     // "business code", so each case is thrown from a business frame, exactly as it would be inside a domain method.
@@ -112,4 +159,24 @@ public sealed class ProblemDetailsMappingTests
             root.GetProperty("correlationId").GetString(),
             context.Response.ContentType);
     }
+}
+
+/// <summary>
+/// Calls business code from a controller, as actions do: once fully optimized, so the JIT inlines small business
+/// methods into it on the first call, and once unoptimized, so every frame stays on the stack. Never routed.
+/// </summary>
+[NonController]
+public sealed class InliningProbeController : Controller
+{
+    [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.NoInlining)]
+    public static void MoneyOptimized(decimal amount) => _ = new Money(amount);
+
+    [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
+    public static void MoneyUnoptimized(decimal amount) => _ = new Money(amount);
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.NoInlining)]
+    public static void RemoveStockOptimized(BranchInventoryItem item, int quantity) => item.RemoveStock(quantity);
+
+    [MethodImpl(MethodImplOptions.NoOptimization | MethodImplOptions.NoInlining)]
+    public static void RemoveStockUnoptimized(BranchInventoryItem item, int quantity) => item.RemoveStock(quantity);
 }

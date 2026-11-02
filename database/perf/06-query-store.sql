@@ -6,7 +6,8 @@
 --   B. The shipping report: one cached plan, compiled for BR-0100, reused by the flagship BR-0001.
 --
 -- Run once against the performance database; it changes nothing but Query Store and one probe procedure, which it
--- drops again:
+-- drops again. It leaves Query Store capturing every query (QUERY_CAPTURE_MODE = ALL), which suits a measurement
+-- database; production databases keep the default AUTO.
 --   sqlcmd -S . -E -C -d ApexPostDb_Perf -I -i database\perf\06-query-store.sql
 
 SET NOCOUNT ON;

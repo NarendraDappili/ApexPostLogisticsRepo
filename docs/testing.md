@@ -7,7 +7,7 @@ dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build
 ```
 
-The latest run had **282 tests passing, 0 failing, 0 skipped**, with a zero-warning build.
+The latest run had **285 tests passing, 0 failing, 0 skipped**, with a zero-warning build.
 
 ## CI on GitHub Actions
 
@@ -15,9 +15,10 @@ The latest run had **282 tests passing, 0 failing, 0 skipped**, with a zero-warn
 1. builds with `-warnaserror`;
 2. fails if the EF Core model has changed without a migration (`dotnet ef migrations has-pending-model-changes`);
 3. starts a throwaway SQL Server 2022 container with a random password;
-4. runs every test, including the SQL Server tests.
+4. runs every test, including the SQL Server tests;
+5. reruns the error-handling tests with `DOTNET_TieredCompilation=0`, so they also run on fully optimized, inlined code (ADR 0018).
 
-Every run of the workflow on GitHub has passed: 12 runs as of 2 November 2026. The [list of runs](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/workflows/ci.yml) is always current; the table below is a snapshot.
+Every run of the workflow on GitHub has passed: 13 runs as of 2 November 2026. The [list of runs](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/workflows/ci.yml) is always current; the table below is a snapshot.
 
 | Run | Trigger | Commit |
 |---|---|---|
@@ -28,6 +29,7 @@ Every run of the workflow on GitHub has passed: 12 runs as of 2 November 2026. T
 | [41312501953](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41312501953) | pull request #26 | `bfdf82a` |
 | [41313991662](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41313991662) | push to `master` | `b3e6f2e` |
 | [41332216362](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41332216362) | push to `master` (Week 3 review fixes) | `a15e376` |
+| [41396575257](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41396575257) | push to `master` (performance and security review) | `df17e7d` |
 
 The other five runs are the pushes to `master` that merged #22–#26.
 
@@ -38,7 +40,7 @@ The other five runs are the pushes to `master` that merged #22–#26.
 | `ApexPost.Domain.Tests` | 67 | No |
 | `ApexPost.Application.Tests` | 86 | No |
 | `ApexPost.Infrastructure.Tests` | 73 | SQL Server (except the model, migration and password-hasher tests) |
-| `ApexPost.Web.IntegrationTests` | 56 | SQL Server |
+| `ApexPost.Web.IntegrationTests` | 59 | SQL Server |
 
 Each test project references only the production project it tests. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
 
@@ -105,7 +107,7 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
 | Audit store (`EfAuditStoreTests`) | Round trip and staff stamping. A failed business save is audited but never committed by the audit write. A failed audit write does not undo a committed change. |
 | Seeding and caching (`SeedingAndRateCacheTests`) | The seed meets the brief's volumes (5 branches, 20 staff, 30 products, 10 zones/60 rates, 240 sales). It refuses an unmigrated database. Rates are cached, but an empty table is not. |
 
-### Web integration tests (56)
+### Web integration tests (59)
 
 `WebApplicationFactory` hosts the real `Program.cs` against a disposable test database, with cookies and antiforgery tokens handled as a browser would. The tests cover:
 
@@ -126,7 +128,7 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
   - an audit-store failure never breaks a committed sale;
   - **the recorded status is the one the client received**, for a sign-in redirect (302), an in-action `Forbid` (403), a mapped exception (404) and a 409 form. This test fails against the old action filter.
 
-`ProblemDetailsMappingTests` cover each row of the exception mapping, including framework exceptions of the same types staying 500 without detail. Two more tests pin the classification rule: the guard helpers count as business code, but the same exception types thrown inside `List`, `Dictionary`, `string`, `Nullable` or an enumerator called by business code do not.
+`ProblemDetailsMappingTests` cover each row of the exception mapping, including framework exceptions of the same types staying 500 without detail. Two more tests pin the classification rule: the guard helpers count as business code, but the same exception types thrown inside `List`, `Dictionary`, `string`, `Nullable` or an enumerator called by business code do not. Three more make the rule independent of JIT inlining: a probe controller calls the same business rule fully optimized (inlined) and unoptimized, and both must be 400; exception types the Application declares are 400 without a stack trace; and every controller is scanned for `throw` or `ThrowIf…`, which the rule relies on. CI reruns the error-handling tests with `DOTNET_TieredCompilation=0`.
 
 ## Not covered
 

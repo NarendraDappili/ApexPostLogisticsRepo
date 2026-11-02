@@ -26,10 +26,17 @@ public static partial class ExceptionProblemMapping
         ConflictException => new(StatusCodes.Status409Conflict, "The request conflicts with the current data.", exception.Message),
         NotFoundException => new(StatusCodes.Status404NotFound, "The requested record was not found.", exception.Message),
         RuleViolationException => new(StatusCodes.Status400BadRequest, "The request breaks a business rule.", exception.Message),
-        ArgumentException or InvalidOperationException when IsThrownByBusinessCode(exception) =>
+        ArgumentException or InvalidOperationException when IsBusinessError(exception) =>
             new(StatusCodes.Status400BadRequest, "The request breaks a business rule.", WithoutParameterName(exception.Message)),
         _ => null,
     };
+
+    /// <summary>
+    /// A type Domain or Application declares (RequestValidationException, IdentityVerificationRequiredException, ...)
+    /// is a business error wherever it was thrown. The .NET types the domain uses for its rules need the stack trace.
+    /// </summary>
+    internal static bool IsBusinessError(Exception exception) =>
+        BusinessAssemblies.Contains(exception.GetType().Assembly) || IsThrownByBusinessCode(exception);
 
     /// <summary>
     /// True when the exception was thrown by ApexPost.Domain or ApexPost.Application code itself, directly or through a
@@ -46,7 +53,21 @@ public static partial class ExceptionProblemMapping
             var type = frame.GetMethod()?.DeclaringType;
             if (type is null) continue;
             if (GuardHelperTypes.Contains(type)) continue;
-            return assemblies.Contains(type.Assembly);
+            return assemblies.Contains(type.Assembly) || IsController(type);
+        }
+
+        return false;
+    }
+
+    // Optimized code inlines small business methods (a value object's constructor, the guard inside it) into their
+    // caller, so the business frame disappears. Controllers are where the web layer calls business code directly, and
+    // they never throw these exceptions themselves (a test enforces it), so such an exception surfacing in a
+    // controller's frame, its async state machine or a lambda in it, came from business code inlined there.
+    private static bool IsController(Type type)
+    {
+        for (var current = type; current is not null; current = current.DeclaringType)
+        {
+            if (typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(current)) return true;
         }
 
         return false;

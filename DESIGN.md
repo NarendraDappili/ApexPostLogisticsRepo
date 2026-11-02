@@ -376,7 +376,7 @@ flowchart LR
 **Problem Details** ([ADR 0018](docs/adr/0018-exceptions-to-problem-details-status-codes.md)):
 - `ConflictException` (concurrency, duplicate key) → 409.
 - `NotFoundException` → 404.
-- `RuleViolationException`, and `ArgumentException`/`InvalidOperationException` thrown by Domain or Application code, directly or through a guard helper such as `ArgumentException.ThrowIfNullOrWhiteSpace`, → 400, with the business message. The same types thrown inside a .NET method that business code called (an index out of range, a modified collection) are bugs: 500 without details.
+- `RuleViolationException`, and `ArgumentException`/`InvalidOperationException` thrown by Domain or Application code, directly or through a guard helper such as `ArgumentException.ThrowIfNullOrWhiteSpace`, → 400, with the business message. The same types thrown inside a .NET method that business code called (an index out of range, a modified collection) are bugs: 500 without details. Exception types Application declares are 400 by type, and the rule also holds when the JIT inlines business code into a controller (ADR 0018).
 - Anything else → 500, with no detail.
 - MVC forms catch only the exceptions this mapping recognises and show its message, with status 409 for conflicts. Framework `InvalidOperationException`s are never shown. A refused void or refund redisplays the Manage page with the reason and its status code.
 
