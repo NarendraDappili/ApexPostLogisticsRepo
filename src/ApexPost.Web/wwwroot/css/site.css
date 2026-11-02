@@ -1,22 +1,25 @@
-/* ApexPost theme: charcoal chrome, yellow for primary actions and the current page, red for links and danger.
-   The brand colours are mostly used as see-through tints (the -rgb tokens with an alpha), so they read soft rather than loud.
+/* ApexPost theme, in roughly 50% yellow, 30% red and 20% black (DHL-style colouring):
+   yellow is the main surface (sidebar, header bar, highlights); red marks actions and the current place
+   (primary buttons, active menu item, accent edges, links); black carries text, icons and the footer.
+   Colours are often used as see-through tints (the -rgb tokens with an alpha), so they read soft rather than loud.
    List tables use their own cool slate palette, so the rows stand apart from the brand chrome.
-   Text on yellow is always black, and links on white use a dark red, so every pair passes WCAG AA contrast. */
+   Text on yellow is black, text on red is white, and links on white use a dark red: every pair passes WCAG AA contrast. */
 :root {
-  --ap-yellow: #ffc20e;
-  --ap-yellow-rgb: 255, 194, 14;
-  --ap-yellow-strong: #e6a800;
-  --ap-yellow-ink: #6b4f00;
-  --ap-yellow-soft: rgba(var(--ap-yellow-rgb), 0.14);
-  --ap-yellow-tint: rgba(var(--ap-yellow-rgb), 0.28);
-  --ap-red: #c8102e;
-  --ap-red-rgb: 200, 16, 46;
-  --ap-red-strong: #9e0b23;
+  --ap-yellow: #ffcc00;
+  --ap-yellow-rgb: 255, 204, 0;
+  --ap-yellow-light: #ffe580;
+  --ap-yellow-strong: #e6b800;
+  --ap-yellow-ink: #6b5400;
+  --ap-yellow-soft: rgba(var(--ap-yellow-rgb), 0.16);
+  --ap-yellow-tint: rgba(var(--ap-yellow-rgb), 0.3);
+  --ap-red: #d40511;
+  --ap-red-rgb: 212, 5, 17;
+  --ap-red-strong: #a8040e;
   --ap-red-soft: rgba(var(--ap-red-rgb), 0.09);
   --ap-black: #141414;
   --ap-black-rgb: 20, 20, 20;
   --ap-charcoal: #2a2a2a;
-  --ap-sidebar-line: rgba(255, 255, 255, 0.08);
+  --ap-sidebar-line: rgba(var(--ap-black-rgb), 0.12);
   --ap-ink: #1f1f1f;
   --ap-muted: #5f5f5f;
   --ap-surface: #f5f4f0;
@@ -34,12 +37,12 @@
   --bs-body-color: var(--ap-ink);
   --bs-body-bg: var(--ap-surface);
   --bs-link-color: var(--ap-red-strong);
-  --bs-link-color-rgb: 158, 11, 35;
+  --bs-link-color-rgb: 168, 4, 14;
   --bs-link-hover-color: var(--ap-red);
-  --bs-link-hover-color-rgb: 200, 16, 46;
+  --bs-link-hover-color-rgb: 212, 5, 17;
   --bs-border-color: var(--ap-border);
   --bs-secondary-color: var(--ap-muted);
-  --bs-focus-ring-color: rgba(200, 16, 46, 0.35);
+  --bs-focus-ring-color: rgba(var(--ap-red-rgb), 0.35);
 }
 
 html {
@@ -55,10 +58,42 @@ html {
 body {
   background-color: var(--ap-surface);
   background-image:
-    radial-gradient(60rem 28rem at 100% 0, rgba(var(--ap-yellow-rgb), 0.1), transparent 70%),
-    radial-gradient(40rem 22rem at 0 100%, rgba(var(--ap-red-rgb), 0.035), transparent 70%);
+    radial-gradient(60rem 28rem at 100% 0, rgba(var(--ap-yellow-rgb), 0.16), transparent 70%),
+    radial-gradient(40rem 22rem at 0 100%, rgba(var(--ap-red-rgb), 0.05), transparent 70%);
   background-attachment: fixed;
   color: var(--ap-ink);
+}
+
+/* The logo as a faint watermark behind every page. It is fixed to the viewport, so it stays in view
+   (centred in the content area) however far a long page scrolls. Tune it with the two variables. */
+:root {
+  --ap-watermark-opacity: 0.1;
+  --ap-watermark-size: clamp(12rem, 38vmin, 26rem);
+  /* Cards, tables and fieldsets are slightly see-through, so the watermark shows faintly behind them too. */
+  --ap-panel-bg: rgba(255, 255, 255, 0.8);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: url("../img/logo-watermark.svg") no-repeat 50% 55% / var(--ap-watermark-size);
+  opacity: var(--ap-watermark-opacity);
+  pointer-events: none;
+}
+
+@media (min-width: 992px) {
+  /* Signed in, the sidebar takes the left of the screen, so centre the watermark in the rest. */
+  body:has(.app-shell)::before {
+    left: var(--ap-sidebar-width);
+  }
+}
+
+@media print {
+  body::before {
+    content: none;
+  }
 }
 
 h1, .h1 {
@@ -120,17 +155,25 @@ h2, .h2 {
   min-height: 100vh;
 }
 
+/* The sidebar is the main yellow surface: full yellow at the top, fading to a lighter yellow. */
 .app-sidebar-panel {
-  --bs-offcanvas-bg: var(--ap-charcoal);
-  --bs-offcanvas-color: #e9e9e9;
+  --bs-offcanvas-bg: var(--ap-yellow);
+  --bs-offcanvas-color: var(--ap-ink);
   --bs-offcanvas-width: var(--ap-sidebar-width);
 }
 
-/* A faint yellow glow at the top of the sidebar (the large-screen sidebar gets it below). */
+/* On phones the menu slides in over the page, so it paints its own gradient and red edge
+   (the large-screen column is painted by .app-shell, below). */
 @media (max-width: 991.98px) {
   .app-sidebar-panel {
-    background-image: linear-gradient(180deg, rgba(var(--ap-yellow-rgb), 0.12), rgba(var(--ap-yellow-rgb), 0) 16rem);
+    background-image: linear-gradient(180deg, var(--ap-yellow), var(--ap-yellow-light));
+    border-right: 4px solid var(--ap-red) !important;
   }
+}
+
+/* The menu's close button is dark on the yellow panel. */
+.app-sidebar-panel .btn-close-white {
+  filter: none;
 }
 
 .app-sidebar-panel .offcanvas-header {
@@ -150,9 +193,9 @@ h2, .h2 {
     height: 100vh;
     flex-shrink: 0;
     overflow-y: auto;
-    /* The charcoal column and its yellow edge are painted by .app-shell (below), so they reach the bottom of long pages. */
-    background: linear-gradient(180deg, rgba(var(--ap-yellow-rgb), 0.12), rgba(var(--ap-yellow-rgb), 0) 16rem);
-    color: #e9e9e9;
+    /* The yellow column and its red edge are painted by .app-shell (below), so they reach the bottom of long pages. */
+    background: transparent;
+    color: var(--ap-ink);
     border-right: 4px solid transparent;
   }
 
@@ -167,19 +210,24 @@ h2, .h2 {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  color: #fff;
+  color: var(--ap-black);
   font-size: 1.15rem;
   font-weight: 700;
   text-decoration: none;
 }
 
 .app-brand:hover {
-  color: var(--ap-yellow);
+  color: var(--ap-red-strong);
+}
+
+/* The logo's yellow tile sits on the yellow sidebar and header bar, so a soft shadow keeps its outline. */
+.app-brand .app-logo {
+  filter: drop-shadow(0 1px 2px rgba(var(--ap-black-rgb), 0.3));
 }
 
 .app-brand small {
   display: block;
-  color: var(--ap-yellow);
+  color: var(--ap-red-strong);
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -194,7 +242,7 @@ h2, .h2 {
 
 .app-nav .nav-section {
   margin: 1rem 0.75rem 0.35rem;
-  color: #9a9a9a;
+  color: rgba(var(--ap-black-rgb), 0.62);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -209,25 +257,27 @@ h2, .h2 {
   padding: 0.55rem 0.75rem;
   border-radius: 0.5rem;
   border-left: 3px solid transparent;
-  color: #d9d9d9;
+  color: var(--ap-ink);
   font-weight: 500;
 }
 
 .app-nav .nav-link:hover,
 .app-nav .nav-link:focus-visible {
-  background: rgba(255, 255, 255, 0.06);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.45);
+  color: var(--ap-black);
 }
 
+/* The current page: a red pill with white text and a black edge. */
 .app-nav .nav-link[aria-current="page"] {
-  background: rgba(var(--ap-yellow-rgb), 0.18);
-  border-left-color: rgba(var(--ap-red-rgb), 0.9);
-  color: #ffd54a;
+  background: var(--ap-red);
+  border-left-color: var(--ap-black);
+  box-shadow: 0 2px 6px rgba(var(--ap-red-rgb), 0.3);
+  color: #fff;
   font-weight: 700;
 }
 
 .app-nav .nav-link:focus-visible {
-  outline-color: var(--ap-yellow);
+  outline-color: var(--ap-black);
 }
 
 .app-sidebar-user {
@@ -237,7 +287,7 @@ h2, .h2 {
   margin-top: auto;
   padding: 1rem 0.75rem 0.25rem;
   border-top: 1px solid var(--ap-sidebar-line);
-  color: #cfcfcf;
+  color: var(--ap-ink);
 }
 
 .app-sidebar-user .icon {
@@ -245,8 +295,8 @@ h2, .h2 {
   height: 2rem;
   padding: 0.35rem;
   border-radius: 50%;
-  background: rgba(var(--ap-yellow-rgb), 0.2);
-  color: var(--ap-yellow);
+  background: var(--ap-red);
+  color: #fff;
 }
 
 .app-main {
@@ -268,7 +318,7 @@ h2, .h2 {
   background: rgba(255, 255, 255, 0.82);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--ap-border);
+  border-bottom: 3px solid rgba(var(--ap-red-rgb), 0.85);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
@@ -320,9 +370,9 @@ h2, .h2 {
 }
 
 .app-chip-role {
-  background: rgba(var(--ap-black-rgb), 0.06);
-  border-color: rgba(var(--ap-black-rgb), 0.12);
-  color: var(--ap-ink);
+  background: var(--ap-charcoal);
+  border-color: var(--ap-charcoal);
+  color: #fff;
 }
 
 .app-signout {
@@ -350,33 +400,50 @@ h2, .h2 {
   outline: none;
 }
 
+/* The footer is the black band of the theme, with yellow links. */
 .app-footer {
   padding: 1rem 1.5rem;
-  border-top: 1px solid var(--ap-border);
-  color: var(--ap-muted);
+  background: var(--ap-charcoal);
+  border-top: 3px solid var(--ap-yellow);
+  color: #d4d4d4;
   font-size: 0.85rem;
 }
 
-/* Signed-out pages */
+.app-footer a {
+  color: var(--ap-yellow);
+}
+
+.app-footer a:hover {
+  color: #fff;
+}
+
+/* Signed-out pages: a yellow header bar (yellow fading to light yellow) with a red edge. */
 .app-public-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.85rem 1.5rem;
-  background: linear-gradient(90deg, rgba(var(--ap-yellow-rgb), 0.14), rgba(var(--ap-yellow-rgb), 0) 22rem), var(--ap-charcoal);
-  border-bottom: 4px solid rgba(var(--ap-yellow-rgb), 0.6);
+  background: linear-gradient(90deg, var(--ap-yellow) 0%, var(--ap-yellow) 35%, var(--ap-yellow-light) 100%);
+  border-bottom: 4px solid var(--ap-red);
+}
+
+/* Signed out, the page is a column whose content grows, so the footer always sits at the very bottom. */
+body:has(> .app-public-bar) {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 .app-public-content {
-  min-height: calc(100vh - 9rem);
+  flex: 1 0 auto;
   padding: 2.5rem 1rem;
 }
 
-.auth-card {
+.card.auth-card {
   max-width: 26rem;
   margin: 1.5rem auto;
   border: none;
-  border-top: 5px solid rgba(var(--ap-yellow-rgb), 0.7);
+  border-top: 5px solid var(--ap-red);
   border-radius: 0.75rem;
   box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.08);
 }
@@ -387,22 +454,22 @@ h2, .h2 {
 }
 
 /* ---------- Bootstrap components in the ApexPost colours ---------- */
-/* Yellow with a little transparency and a soft sheen, rather than flat bright yellow. */
+/* Primary actions are red with white text (as on DHL's site), with a soft sheen. */
 .btn-primary {
-  --bs-btn-color: var(--ap-black);
-  --bs-btn-bg: rgba(var(--ap-yellow-rgb), 0.82);
-  --bs-btn-border-color: rgba(var(--ap-yellow-rgb), 0.95);
-  --bs-btn-hover-color: var(--ap-black);
-  --bs-btn-hover-bg: rgba(var(--ap-yellow-rgb), 1);
-  --bs-btn-hover-border-color: var(--ap-yellow-strong);
-  --bs-btn-active-color: var(--ap-black);
-  --bs-btn-active-bg: var(--ap-yellow-strong);
-  --bs-btn-active-border-color: var(--ap-yellow-strong);
-  --bs-btn-disabled-color: var(--ap-black);
-  --bs-btn-disabled-bg: rgba(var(--ap-yellow-rgb), 0.4);
-  --bs-btn-disabled-border-color: rgba(var(--ap-yellow-rgb), 0.4);
-  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0));
-  box-shadow: 0 2px 6px rgba(var(--ap-yellow-rgb), 0.3);
+  --bs-btn-color: #fff;
+  --bs-btn-bg: var(--ap-red);
+  --bs-btn-border-color: var(--ap-red);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: var(--ap-red-strong);
+  --bs-btn-hover-border-color: var(--ap-red-strong);
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: var(--ap-red-strong);
+  --bs-btn-active-border-color: var(--ap-red-strong);
+  --bs-btn-disabled-color: #fff;
+  --bs-btn-disabled-bg: rgba(var(--ap-red-rgb), 0.45);
+  --bs-btn-disabled-border-color: rgba(var(--ap-red-rgb), 0.45);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0));
+  box-shadow: 0 2px 6px rgba(var(--ap-red-rgb), 0.28);
   font-weight: 600;
 }
 
@@ -462,7 +529,7 @@ h2, .h2 {
 .card {
   border: 1px solid var(--ap-border);
   border-radius: 0.75rem;
-  background-color: rgba(255, 255, 255, 0.92);
+  background-color: var(--ap-panel-bg);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
@@ -472,7 +539,7 @@ h2, .h2 {
 
 /* List tables: a cool slate palette of their own, light header, soft stripes and a blue-tinted hover. */
 .table {
-  --bs-table-bg: #fff;
+  --bs-table-bg: transparent;
   --bs-table-color: var(--ap-ink);
   --bs-table-border-color: var(--ap-list-line);
   --bs-table-striped-bg: var(--ap-list-stripe);
@@ -499,7 +566,7 @@ h2, .h2 {
 .table-responsive {
   border: 1px solid var(--ap-list-line);
   border-radius: 0.75rem;
-  background: #fff;
+  background: var(--ap-panel-bg);
   box-shadow: 0 1px 3px rgba(var(--ap-list-rgb), 0.08);
 }
 
@@ -512,7 +579,7 @@ h2, .h2 {
 /* Low-stock rows: a soft amber wash, so they still stand out among the slate rows. */
 .table-warning {
   --bs-table-color: var(--ap-ink);
-  --bs-table-bg: #fff8e1;
+  --bs-table-bg: rgba(var(--ap-yellow-rgb), 0.16);
   --bs-table-striped-bg: rgba(var(--ap-yellow-rgb), 0.1);
   --bs-table-striped-color: var(--ap-ink);
   --bs-table-hover-bg: rgba(var(--ap-yellow-rgb), 0.18);
@@ -589,7 +656,7 @@ h2, .h2 {
 fieldset.border {
   border-color: var(--ap-border) !important;
   border-radius: 0.75rem;
-  background: #fff;
+  background: var(--ap-panel-bg);
 }
 
 form .form-label {
@@ -644,7 +711,7 @@ form .form-label {
 
 /* Dashboard figures */
 .stat-card {
-  border-top: 4px solid rgba(var(--ap-yellow-rgb), 0.75);
+  border-top: 4px solid var(--ap-yellow);
 }
 
 .stat-card .stat-label {
@@ -666,18 +733,18 @@ form .form-label {
   height: 2.5rem;
   padding: 0.5rem;
   border-radius: 0.6rem;
-  background: rgba(var(--ap-yellow-rgb), 0.2);
-  color: var(--ap-yellow-ink);
+  background: var(--ap-red-soft);
+  color: var(--ap-red);
 }
 
 .stat-card-warning {
-  border-top-color: rgba(var(--ap-red-rgb), 0.75);
-  background-color: rgba(var(--ap-red-rgb), 0.035);
+  border-top-color: var(--ap-red);
+  background-color: rgba(var(--ap-red-rgb), 0.04);
 }
 
 .stat-card-warning .stat-icon {
-  background: rgba(var(--ap-red-rgb), 0.12);
-  color: var(--ap-red);
+  background: var(--ap-red);
+  color: #fff;
 }
 
 /* Home page shortcuts */
@@ -687,8 +754,8 @@ form .form-label {
 
 .shortcut:hover,
 .shortcut:focus-within {
-  border-color: rgba(var(--ap-yellow-rgb), 0.7);
-  box-shadow: 0 0.35rem 1rem rgba(var(--ap-yellow-rgb), 0.18);
+  border-color: rgba(var(--ap-red-rgb), 0.55);
+  box-shadow: 0 0.35rem 1rem rgba(var(--ap-red-rgb), 0.12);
   transform: translateY(-2px);
 }
 
@@ -698,8 +765,8 @@ form .form-label {
   padding: 0.6rem;
   margin-bottom: 0.75rem;
   border-radius: 0.6rem;
-  background: rgba(var(--ap-yellow-rgb), 0.2);
-  color: var(--ap-yellow-ink);
+  background: var(--ap-yellow);
+  color: var(--ap-black);
 }
 
 .shortcut .card-title a {
@@ -753,9 +820,11 @@ fieldset > legend {
 }
 
 @media (min-width: 992px) {
-  /* The sidebar column is charcoal, with a soft yellow edge, for the full page height, however long the page. */
+  /* The sidebar column is yellow (fading to light yellow), with a red edge, for the full page height, however long the page. */
   .app-shell {
-    background: linear-gradient(to right, var(--ap-charcoal) calc(var(--ap-sidebar-width) - 4px), rgba(var(--ap-yellow-rgb), 0.6) calc(var(--ap-sidebar-width) - 4px), rgba(var(--ap-yellow-rgb), 0.6) var(--ap-sidebar-width), transparent var(--ap-sidebar-width));
+    background:
+      linear-gradient(to right, transparent calc(var(--ap-sidebar-width) - 4px), var(--ap-red) calc(var(--ap-sidebar-width) - 4px), var(--ap-red) var(--ap-sidebar-width), transparent var(--ap-sidebar-width)),
+      linear-gradient(180deg, var(--ap-yellow), var(--ap-yellow-light)) 0 0 / var(--ap-sidebar-width) 100% no-repeat;
   }
 
   /* The signed-in user sits at the bottom of the sidebar. */

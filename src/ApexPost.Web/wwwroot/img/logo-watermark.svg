@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The ApexPost logo (the i-logo symbol in Views/Shared/_Icons.cshtml), used as the page watermark. -->
+  <rect width="32" height="32" rx="7" fill="#FFC20E" />
+  <path d="M7 23 15.5 8h1L25 23h-4.2l-1.8-3.4h-6.1L11.1 23z" fill="#141414" />
+  <path d="M14.2 16.6h3.6L16 13z" fill="#FFC20E" />
+  <rect x="7" y="24.5" width="18" height="2.2" rx="1.1" fill="#C8102E" />
+</svg>
