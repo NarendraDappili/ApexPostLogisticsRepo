@@ -1,0 +1,25 @@
+@model ApexPost.Web.Models.BranchPickerModel
+@* Several viewable branches: a dropdown. One (clerks and managers work at their home branch only): the branch as text,
+   submitted with the form through a hidden field, so nothing suggests a choice the server would refuse. *@
+<div class="@(Model.CanChoose ? Model.ColumnClass : "col-sm-auto")">
+    @if (Model.CanChoose)
+    {
+        <label for="branchCode" class="form-label">Branch</label>
+        <select id="branchCode" name="branchCode" class="form-select" required asp-items="Model.Branches"></select>
+    }
+    else if (Model.Branches.Count == 1)
+    {
+        var branch = Model.Branches[0];
+        <span class="form-label d-block" id="branchCode-label">Branch</span>
+        <p class="branch-fixed mb-0" aria-labelledby="branchCode-label">
+            <span class="fw-semibold text-nowrap">@branch.Text</span>
+            <span class="badge rounded-pill text-bg-light border">Your home branch</span>
+        </p>
+        <input type="hidden" id="branchCode" name="branchCode" value="@branch.Value" />
+    }
+    else
+    {
+        <span class="form-label d-block">Branch</span>
+        <p class="text-muted mb-0">No branch is available to your account.</p>
+    }
+</div>

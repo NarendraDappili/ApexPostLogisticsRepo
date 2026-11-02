@@ -12,8 +12,18 @@ namespace ApexPost.Web.Services;
 /// a valid code instead of typing one. Views inject this directly, which keeps the options available when the
 /// validation filter redisplays a form from the posted model alone. Options come from the read-side query services.
 /// </summary>
-public sealed class ReferenceDataLookup(IBranchQueries branches, ICatalogueQueries catalogue, IShippingRateProvider rates)
+public sealed class ReferenceDataLookup(IBranchQueries branches, ICatalogueQueries catalogue, IShippingRateProvider rates, IConfiguration configuration)
 {
+    /// <summary>The low-stock threshold the dashboard and reports use, so the catalogue can flag the same products.</summary>
+    public int LowStockThreshold => configuration.GetValue<int?>("ApexPost:Inventory:LowStockThreshold") ?? 10;
+
+    /// <summary>
+    /// Enum options with readable labels ("Counter Clerk", "Digital Wallet"). The values are the numeric enum values,
+    /// exactly as Html.GetEnumSelectList produces them, so model binding is unchanged.
+    /// </summary>
+    public static IReadOnlyList<SelectListItem> EnumOptions<TEnum>() where TEnum : struct, Enum =>
+        [.. Enum.GetValues<TEnum>().Select(value => new SelectListItem(DisplayText.Of(value), Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture).ToString(System.Globalization.CultureInfo.InvariantCulture)))];
+
     /// <summary>Branches the user may view: every branch for Administrators and Auditors, otherwise the home branch.</summary>
     public async Task<IReadOnlyList<SelectListItem>> ViewableBranchesAsync(ClaimsPrincipal user, string? selected, CancellationToken cancellationToken)
     {

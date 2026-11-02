@@ -7,7 +7,7 @@
 <div asp-validation-summary="ModelOnly" class="validation-summary text-danger" role="alert"></div>
 <div class="row g-3">
  <div class="col-md-4"><label asp-for="MoneyOrderId" class="form-label"></label><input asp-for="MoneyOrderId" class="form-control" /><span asp-validation-for="MoneyOrderId" class="field-validation"></span></div>
- <div class="col-md-4"><label asp-for="BranchCode" class="form-label"></label><input asp-for="BranchCode" class="form-control" readonly /><span asp-validation-for="BranchCode" class="field-validation"></span></div>
+ <div class="col-md-4"><label asp-for="BranchCode" class="form-label"></label><input asp-for="BranchCode" class="form-control-plaintext branch-fixed fw-semibold" readonly aria-describedby="branch-help" /><span asp-validation-for="BranchCode" class="field-validation"></span><small id="branch-help" class="form-text">Your home branch. The order is issued here.</small></div>
  <div class="col-md-4"><label asp-for="Amount" class="form-label"></label><input asp-for="Amount" type="number" min="0.01" step="0.01" inputmode="decimal" class="form-control" /><span asp-validation-for="Amount" class="field-validation"></span></div>
 </div>
 <div class="row g-3 mt-1">

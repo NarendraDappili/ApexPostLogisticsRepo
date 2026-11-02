@@ -8,10 +8,10 @@
  <div asp-validation-summary="ModelOnly" class="validation-summary text-danger" role="alert"></div>
  <div class="row g-3">
   <div class="col-md-4"><label asp-for="TransactionId" class="form-label"></label><input asp-for="TransactionId" class="form-control" /><span asp-validation-for="TransactionId" class="field-validation"></span></div>
-  <div class="col-md-4"><label asp-for="BranchCode" class="form-label"></label><input asp-for="BranchCode" class="form-control" readonly /><span asp-validation-for="BranchCode" class="field-validation"></span></div>
+  <div class="col-md-4"><label asp-for="BranchCode" class="form-label"></label><input asp-for="BranchCode" class="form-control-plaintext branch-fixed fw-semibold" readonly aria-describedby="branch-help" /><span asp-validation-for="BranchCode" class="field-validation"></span><small id="branch-help" class="form-text">Your home branch. Sales are recorded here.</small></div>
   <div class="col-md-4"><label asp-for="CounterCode" class="form-label"></label><select asp-for="CounterCode" asp-items="await Lookup.OpenCountersAsync(Model.BranchCode, Context.RequestAborted)" class="form-select"><option value="">Select a counter</option></select><span asp-validation-for="CounterCode" class="field-validation"></span></div>
  </div>
- <div class="row g-3 mt-1"><div class="col-md-4"><label asp-for="PaymentMethod" class="form-label"></label><select asp-for="PaymentMethod" asp-items="Html.GetEnumSelectList<PaymentMethod>()" class="form-select"></select><span asp-validation-for="PaymentMethod" class="field-validation"></span></div></div>
+ <div class="row g-3 mt-1"><div class="col-md-4"><label asp-for="PaymentMethod" class="form-label"></label><select asp-for="PaymentMethod" asp-items="ApexPost.Web.Services.ReferenceDataLookup.EnumOptions<PaymentMethod>()" class="form-select"></select><span asp-validation-for="PaymentMethod" class="field-validation"></span></div></div>
  <fieldset class="border p-3 mt-3"><legend class="float-none w-auto px-2">Retail items</legend>
   <span asp-validation-for="RetailLines" class="field-validation text-danger"></span>
   @{ var productOptions = await Lookup.ProductsAsync(Context.RequestAborted); }

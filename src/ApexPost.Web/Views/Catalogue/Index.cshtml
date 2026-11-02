@@ -1,11 +1,19 @@
 @model ApexPost.Web.Models.CatalogueViewModel
-@{ ViewData["Title"] = "Product catalogue"; }
-<h1>Product catalogue and branch stock</h1>
+@{
+    ViewData["Title"] = "Product catalogue";
+    var picker = new BranchPickerModel(await Lookup.ViewableBranchesAsync(User, Model.BranchCode, Context.RequestAborted));
+    var threshold = Lookup.LowStockThreshold;
+    var lowStockCount = Model.Products.Count(item => item.StockQuantity <= threshold);
+}
+<div class="page-header">
+    <h1>Product catalogue and branch stock</h1>
+    <p class="text-muted mb-0">Catalogue prices with the stock held at the branch.</p>
+</div>
 @if (TempData["Notice"] is string notice) { <div class="alert alert-success" role="status" aria-live="polite">@notice</div> }
 @if (TempData["Error"] is string error) { <div class="alert alert-danger" role="alert">@error</div> }
-<form method="get" class="row g-2 mb-3">
-    <div class="col-sm-4"><label for="branchCode" class="form-label">Branch</label><select id="branchCode" name="branchCode" class="form-select" asp-items="await Lookup.ViewableBranchesAsync(User, Model.BranchCode, Context.RequestAborted)"></select></div>
-    <div class="col-sm-2 align-self-end"><button class="btn btn-primary" type="submit">Load stock</button></div>
+<form method="get" class="row g-2 align-items-end mb-4">
+    <partial name="_BranchPicker" model="picker" />
+    <div class="col-sm-auto"><button class="btn btn-primary" type="submit">@(picker.CanChoose ? "Load stock" : "Refresh stock")</button></div>
 </form>
 @if (Model.Categories is { Count: > 0 } categories)
 {
@@ -45,14 +53,19 @@
 }
 else
 {
+    @if (lowStockCount > 0)
+    {
+        <p class="alert alert-warning py-2" role="status">@lowStockCount @(lowStockCount == 1 ? "product is" : "products are") at or below the low-stock threshold of @threshold units at @Model.BranchCode.</p>
+    }
     <div class="table-responsive">
-        <table class="table table-striped">
+        <table class="table table-striped table-hover align-middle">
             <caption>Products, unit prices and stock for @(!string.IsNullOrWhiteSpace(Model.BranchCode) ? Model.BranchCode : "the selected view")</caption>
             <thead><tr><th scope="col">Product ID</th><th scope="col">SKU</th><th scope="col">Name</th><th scope="col">Category</th><th scope="col">Unit price</th><th scope="col">Stock quantity</th></tr></thead>
             <tbody>
             @foreach (var item in Model.Products)
             {
-                <tr><th scope="row">@item.ProductId</th><td>@item.Sku</td><td>@item.Name</td><td>@item.CategoryCode</td><td>@item.UnitPrice.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td><td>@(item.StockQuantity?.ToString() ?? "Not loaded")</td></tr>
+                var isLow = item.StockQuantity <= threshold;
+                <tr class="@(isLow ? "table-warning" : null)"><th scope="row">@item.ProductId</th><td>@item.Sku</td><td>@item.Name</td><td>@item.CategoryCode</td><td>@item.UnitPrice.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td><td>@(item.StockQuantity?.ToString() ?? "Not loaded")@if (isLow) { <span class="badge text-bg-warning ms-2">Low stock</span> }</td></tr>
             }
             </tbody>
         </table>

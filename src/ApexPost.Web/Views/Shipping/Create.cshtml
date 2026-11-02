@@ -7,7 +7,7 @@
 <div asp-validation-summary="ModelOnly" class="validation-summary text-danger" role="alert"></div>
 <div class="row g-3">
  <div class="col-md-4"><label asp-for="ShipmentId" class="form-label"></label><input asp-for="ShipmentId" class="form-control" /><span asp-validation-for="ShipmentId" class="field-validation"></span></div>
- <div class="col-md-4"><label asp-for="OriginBranchCode" class="form-label"></label><input asp-for="OriginBranchCode" class="form-control" readonly /><span asp-validation-for="OriginBranchCode" class="field-validation"></span></div>
+ <div class="col-md-4"><label asp-for="OriginBranchCode" class="form-label"></label><input asp-for="OriginBranchCode" class="form-control-plaintext branch-fixed fw-semibold" readonly aria-describedby="origin-help" /><span asp-validation-for="OriginBranchCode" class="field-validation"></span><small id="origin-help" class="form-text">Your home branch. Shipments are accepted here.</small></div>
  <div class="col-md-4"><label asp-for="DestinationZoneCode" class="form-label"></label><select asp-for="DestinationZoneCode" asp-items="await Lookup.ZonesAsync(Context.RequestAborted)" class="form-select"><option value="">Select a zone</option></select><span asp-validation-for="DestinationZoneCode" class="field-validation"></span></div>
 </div>
 <div class="row g-3 mt-1">

@@ -14,9 +14,9 @@
                 <th scope="row">@member.StaffId</th>
                 <td>@member.Name</td>
                 <td>@member.Email</td>
-                <td>@member.Role</td>
+                <td>@ApexPost.Web.Services.DisplayText.Of(member.Role)</td>
                 <td>@member.BranchCode</td>
-                <td>@(member.IsActive ? "Active" : "Inactive")</td>
+                <td><span class="badge @(member.IsActive ? "text-bg-success" : "text-bg-secondary")">@(member.IsActive ? "Active" : "Inactive")</span></td>
                 <td class="d-flex gap-2">
                     <a class="btn btn-sm btn-outline-primary" asp-action="Edit" asp-route-id="@member.StaffId">Edit</a>
                     <form method="post" asp-action="@(member.IsActive ? "Deactivate" : "Activate")" asp-route-id="@member.StaffId">

@@ -1,18 +1,49 @@
 @model ApexPost.Web.Models.ReportsViewModel
-@{ ViewData["Title"] = "Branch reports"; }
-<h1>Branch reports</h1>
-<form method="get" class="row g-2 mb-3"><div class="col-md-3"><label for="branchCode" class="form-label">Branch</label><select id="branchCode" name="branchCode" class="form-select" required asp-items="await Lookup.ViewableBranchesAsync(User, Model?.BranchCode, Context.RequestAborted)"></select></div><div class="col-md-3"><label for="day" class="form-label">Sales day (UTC)</label><input id="day" name="day" type="date" value="@Model?.Day.ToString("yyyy-MM-dd")" class="form-control" /></div><div class="col-md-2 align-self-end"><button class="btn btn-primary" type="submit">Run reports</button></div></form>
+@{
+    ViewData["Title"] = "Branch reports";
+    var picker = new BranchPickerModel(await Lookup.ViewableBranchesAsync(User, Model?.BranchCode, Context.RequestAborted), "col-md-4");
+}
+<div class="page-header">
+    <h1>Branch reports</h1>
+    <p class="text-muted mb-0">Sales, stock, shipping and money-order figures, calculated by the database.</p>
+</div>
+<form method="get" class="row g-2 align-items-end mb-4">
+    <partial name="_BranchPicker" model="picker" />
+    <div class="col-md-3"><label for="day" class="form-label">Sales day (UTC)</label><input id="day" name="day" type="date" value="@Model?.Day.ToString("yyyy-MM-dd")" class="form-control" /></div>
+    <div class="col-md-auto"><button class="btn btn-primary" type="submit">Run reports</button></div>
+</form>
 @if (Model is null) { <p class="text-muted" role="status">Your account has no assigned branch.</p> }
-else {
-<p>Branch: <strong>@Model.BranchCode</strong></p>
-<h2>Daily sales: @Model.Day.ToString("yyyy-MM-dd")</h2><dl class="row"><dt class="col-sm-3">Retail</dt><dd class="col-sm-9">@Model.DailySales.RetailSales.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Services</dt><dd class="col-sm-9">@Model.DailySales.ServiceSales.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Tax</dt><dd class="col-sm-9">@Model.DailySales.Tax.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Paid transactions</dt><dd class="col-sm-9">@Model.DailySales.PaidTransactionCount</dd></dl>
-@if (Model.DailySales.PaidTransactionCount == 0) { <p role="status">No paid transactions were recorded for this branch on this day.</p> }
-<h2>Low stock (threshold: @Model.LowStock.Threshold)</h2>
-@if (Model.LowStock.Items.Count == 0) { <p role="status">No products are at or below the low-stock threshold.</p> }
-else { <ul>@foreach (var item in Model.LowStock.Items) { <li>@item.ProductId.Value - @item.Name: @item.Quantity units</li> }</ul> }
-<h2>Shipping volume</h2>
-@if (Model.Shipping.Items.Count == 0) { <p role="status">No shipments are recorded for this branch.</p> }
-else { <ul>@foreach (var item in Model.Shipping.Items) { <li>@item.DestinationZoneCode.Value / @item.ServiceLevel: @item.Count</li> }</ul> }
-<h2>Money orders and verification</h2><dl class="row"><dt class="col-sm-3">Orders</dt><dd class="col-sm-9">@Model.MoneyOrders.TotalCount</dd><dt class="col-sm-3">Verified</dt><dd class="col-sm-9">@Model.MoneyOrders.VerifiedCount</dd><dt class="col-sm-3">Failed</dt><dd class="col-sm-9">@Model.MoneyOrders.FailedCount</dd><dt class="col-sm-3">Pending</dt><dd class="col-sm-9">@Model.MoneyOrders.PendingCount</dd></dl>
-@if (Model.MoneyOrders.TotalCount == 0) { <p role="status">No money orders are recorded for this branch.</p> }
+else
+{
+    <p>Branch: <strong>@Model.BranchCode</strong></p>
+    <div class="row g-3">
+        <section class="col-lg-6" aria-labelledby="daily-sales-heading">
+            <div class="card report-card h-100"><div class="card-body">
+                <h2 id="daily-sales-heading" class="h5 card-title">Daily sales: @Model.Day.ToString("yyyy-MM-dd")</h2>
+                <dl class="row mb-0"><dt class="col-sm-3">Retail</dt><dd class="col-sm-9">@Model.DailySales.RetailSales.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Services</dt><dd class="col-sm-9">@Model.DailySales.ServiceSales.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Tax</dt><dd class="col-sm-9">@Model.DailySales.Tax.Amount.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</dd><dt class="col-sm-3">Paid transactions</dt><dd class="col-sm-9">@Model.DailySales.PaidTransactionCount</dd></dl>
+                @if (Model.DailySales.PaidTransactionCount == 0) { <p class="text-muted mt-2 mb-0" role="status">No paid transactions were recorded for this branch on this day.</p> }
+            </div></div>
+        </section>
+        <section class="col-lg-6" aria-labelledby="money-orders-heading">
+            <div class="card report-card h-100"><div class="card-body">
+                <h2 id="money-orders-heading" class="h5 card-title">Money orders and verification</h2>
+                <dl class="row mb-0"><dt class="col-sm-3">Orders</dt><dd class="col-sm-9">@Model.MoneyOrders.TotalCount</dd><dt class="col-sm-3">Verified</dt><dd class="col-sm-9">@Model.MoneyOrders.VerifiedCount</dd><dt class="col-sm-3">Failed</dt><dd class="col-sm-9">@Model.MoneyOrders.FailedCount</dd><dt class="col-sm-3">Pending</dt><dd class="col-sm-9">@Model.MoneyOrders.PendingCount</dd></dl>
+                @if (Model.MoneyOrders.TotalCount == 0) { <p class="text-muted mt-2 mb-0" role="status">No money orders are recorded for this branch.</p> }
+            </div></div>
+        </section>
+        <section class="col-lg-6" aria-labelledby="low-stock-heading">
+            <div class="card h-100 @(Model.LowStock.Items.Count > 0 ? "border-warning" : null)"><div class="card-body">
+                <h2 id="low-stock-heading" class="h5 card-title">Low stock (threshold: @Model.LowStock.Threshold)</h2>
+                @if (Model.LowStock.Items.Count == 0) { <p class="text-muted mb-0" role="status">No products are at or below the low-stock threshold.</p> }
+                else { <ul class="mb-0">@foreach (var item in Model.LowStock.Items) { <li>@item.ProductId.Value - @item.Name: @item.Quantity units</li> }</ul> }
+            </div></div>
+        </section>
+        <section class="col-lg-6" aria-labelledby="shipping-heading">
+            <div class="card h-100"><div class="card-body">
+                <h2 id="shipping-heading" class="h5 card-title">Shipping volume</h2>
+                @if (Model.Shipping.Items.Count == 0) { <p class="text-muted mb-0" role="status">No shipments are recorded for this branch.</p> }
+                else { <ul class="mb-0">@foreach (var item in Model.Shipping.Items) { <li>@item.DestinationZoneCode.Value / @item.ServiceLevel: @item.Count</li> }</ul> }
+            </div></div>
+        </section>
+    </div>
 }

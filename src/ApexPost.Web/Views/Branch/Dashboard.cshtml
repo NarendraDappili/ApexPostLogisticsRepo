@@ -1,28 +1,55 @@
 @model ApexPost.Web.Models.BranchDashboardViewModel
-@{ ViewData["Title"] = "Branch dashboard"; }
-<h1>Branch dashboard</h1>
-<form method="get" class="row g-2 mb-3">
-    <div class="col-sm-4"><label for="branchCode" class="form-label">Branch</label><select id="branchCode" name="branchCode" class="form-select" asp-items="await Lookup.ViewableBranchesAsync(User, Model.BranchCode, Context.RequestAborted)"></select></div>
-    <div class="col-sm-2 align-self-end"><button class="btn btn-primary" type="submit">View branch</button></div>
+@{
+    ViewData["Title"] = "Branch dashboard";
+    var picker = new BranchPickerModel(await Lookup.ViewableBranchesAsync(User, Model.BranchCode, Context.RequestAborted));
+}
+<div class="page-header">
+    <h1>Branch dashboard</h1>
+    <p class="text-muted mb-0">Today's activity at a glance. Figures are for the current UTC day.</p>
+</div>
+<form method="get" class="row g-2 align-items-end mb-4">
+    <partial name="_BranchPicker" model="picker" />
+    <div class="col-sm-auto"><button class="btn btn-primary" type="submit">@(picker.CanChoose ? "View branch" : "Refresh")</button></div>
 </form>
 @if (Model.Message is not null) { <p class="text-muted" role="status">@Model.Message</p> }
 @if (Model.Dashboard is { } branch)
 {
-    <section aria-labelledby="branch-details-heading">
-        <h2 id="branch-details-heading">Branch details</h2>
-        <dl>
-            <dt>Name</dt><dd>@branch.Name</dd>
-            <dt>Status</dt><dd>@(branch.IsOpen ? "Open" : "Closed")</dd>
-            <dt>Region</dt><dd>@branch.Region</dd>
-            <dt>Opening hours</dt><dd>@branch.OpeningHours</dd>
-        </dl>
+    <section aria-labelledby="branch-today-heading" class="mb-4">
+        <h2 id="branch-today-heading" class="h5">Today (UTC)</h2>
+        <div class="row g-3">
+            <div class="col-sm-4">
+                <div class="card stat-card h-100"><div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start"><p class="stat-label">Open counters</p><svg class="stat-icon" aria-hidden="true" focusable="false"><use href="#i-counter"></use></svg></div>
+                    <p class="stat-value">@branch.OpenCounters</p>
+                </div></div>
+            </div>
+            <div class="col-sm-4">
+                <div class="card stat-card h-100"><div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start"><p class="stat-label">Paid transactions</p><svg class="stat-icon" aria-hidden="true" focusable="false"><use href="#i-receipt"></use></svg></div>
+                    <p class="stat-value">@branch.PaidTransactionsToday</p>
+                </div></div>
+            </div>
+            <div class="col-sm-4">
+                <div class="card stat-card h-100 @(branch.LowStockProducts > 0 ? "stat-card-warning" : null)"><div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start"><p class="stat-label">Products at or below the low-stock threshold</p><svg class="stat-icon" aria-hidden="true" focusable="false"><use href="#i-alert"></use></svg></div>
+                    <p class="stat-value">@branch.LowStockProducts</p>
+                    @if (branch.LowStockProducts > 0)
+                    {
+                        <a class="stretched-link small" asp-controller="Catalogue" asp-action="Index" asp-route-branchCode="@Model.BranchCode">See which products</a>
+                    }
+                </div></div>
+            </div>
+        </div>
     </section>
-    <section aria-labelledby="branch-today-heading">
-        <h2 id="branch-today-heading">Today (UTC)</h2>
-        <dl>
-            <dt>Open counters</dt><dd>@branch.OpenCounters</dd>
-            <dt>Paid transactions</dt><dd>@branch.PaidTransactionsToday</dd>
-            <dt>Products at or below the low-stock threshold</dt><dd>@branch.LowStockProducts</dd>
-        </dl>
+    <section aria-labelledby="branch-details-heading" class="card">
+        <div class="card-body">
+            <h2 id="branch-details-heading" class="h5 card-title">Branch details</h2>
+            <dl class="row mb-0">
+                <dt class="col-sm-3">Name</dt><dd class="col-sm-9">@branch.Name</dd>
+                <dt class="col-sm-3">Status</dt><dd class="col-sm-9"><span class="badge @(branch.IsOpen ? "text-bg-success" : "text-bg-secondary")">@(branch.IsOpen ? "Open" : "Closed")</span></dd>
+                <dt class="col-sm-3">Region</dt><dd class="col-sm-9">@branch.Region</dd>
+                <dt class="col-sm-3">Opening hours</dt><dd class="col-sm-9 mb-0">@branch.OpeningHours</dd>
+            </dl>
+        </div>
     </section>
 }

@@ -9,11 +9,20 @@ namespace ApexPost.Web.Models;
 
 public sealed class LoginViewModel
 {
-    [Required, StringLength(80)] public string StaffId { get; set; } = string.Empty;
+    [Required, StringLength(80), Display(Name = "Staff ID")] public string StaffId { get; set; } = string.Empty;
     [Required, DataType(DataType.Password), StringLength(256)] public string Password { get; set; } = string.Empty;
 }
 
 public sealed record BranchDashboardViewModel(string BranchCode, BranchDashboard? Dashboard, string? Message = null);
+
+/// <summary>
+/// The branches a user may view. With one, the picker shows it as text (clerks and managers work at their home branch
+/// only); with several it is a dropdown (administrators and auditors).
+/// </summary>
+public sealed record BranchPickerModel(IReadOnlyList<Microsoft.AspNetCore.Mvc.Rendering.SelectListItem> Branches, string ColumnClass = "col-sm-4")
+{
+    public bool CanChoose => Branches.Count > 1;
+}
 public sealed record CatalogueItemViewModel(string ProductId, string Sku, string Name, string CategoryCode, decimal UnitPrice, int? StockQuantity);
 public sealed record CatalogueViewModel(string BranchCode, IReadOnlyCollection<CatalogueItemViewModel> Products, string? Message = null, IReadOnlyCollection<CategoryItem>? Categories = null);
 
@@ -34,10 +43,10 @@ public sealed class PriceRevisionViewModel
 
 public sealed class CounterBasketViewModel
 {
-    [Required, StringLength(48)] public string TransactionId { get; set; } = string.Empty;
-    [Required, StringLength(48)] public string BranchCode { get; set; } = string.Empty;
-    [Required, StringLength(48)] public string CounterCode { get; set; } = string.Empty;
-    public PaymentMethod PaymentMethod { get; set; }
+    [Required, StringLength(48), Display(Name = "Transaction ID")] public string TransactionId { get; set; } = string.Empty;
+    [Required, StringLength(48), Display(Name = "Branch")] public string BranchCode { get; set; } = string.Empty;
+    [Required, StringLength(48), Display(Name = "Counter")] public string CounterCode { get; set; } = string.Empty;
+    [Display(Name = "Payment method")] public PaymentMethod PaymentMethod { get; set; }
     public List<RetailLineInput> RetailLines { get; set; } = [];
     [StringLength(1000)] public string? ShipmentIds { get; set; }
     [StringLength(1000)] public string? MoneyOrderIds { get; set; }
@@ -68,24 +77,24 @@ public sealed record TransactionListViewModel(string BranchCode, IReadOnlyCollec
 
 public sealed class ShipmentFormViewModel
 {
-    [Required, StringLength(48)] public string ShipmentId { get; set; } = string.Empty;
+    [Required, StringLength(48), Display(Name = "Shipment ID")] public string ShipmentId { get; set; } = string.Empty;
     [Required, StringLength(48), Display(Name = "Transaction ID")] public string TransactionId { get; set; } = string.Empty;
-    [Required, StringLength(48)] public string OriginBranchCode { get; set; } = string.Empty;
-    [Required, StringLength(48)] public string DestinationZoneCode { get; set; } = string.Empty;
-    public ShipmentType ShipmentType { get; set; }
-    public ShippingServiceLevel ServiceLevel { get; set; }
-    [Range(0.001, ParcelWeight.MaximumKilograms)] public decimal WeightKilograms { get; set; }
-    [Range(typeof(decimal), "0.001", "100000")] public decimal LengthCentimetres { get; set; }
-    [Range(typeof(decimal), "0.001", "100000")] public decimal WidthCentimetres { get; set; }
-    [Range(typeof(decimal), "0.001", "100000")] public decimal HeightCentimetres { get; set; }
+    [Required, StringLength(48), Display(Name = "Origin branch")] public string OriginBranchCode { get; set; } = string.Empty;
+    [Required, StringLength(48), Display(Name = "Destination zone")] public string DestinationZoneCode { get; set; } = string.Empty;
+    [Display(Name = "Shipment type")] public ShipmentType ShipmentType { get; set; }
+    [Display(Name = "Service level")] public ShippingServiceLevel ServiceLevel { get; set; }
+    [Range(0.001, ParcelWeight.MaximumKilograms), Display(Name = "Weight (kg)")] public decimal WeightKilograms { get; set; }
+    [Range(typeof(decimal), "0.001", "100000"), Display(Name = "Length (cm)")] public decimal LengthCentimetres { get; set; }
+    [Range(typeof(decimal), "0.001", "100000"), Display(Name = "Width (cm)")] public decimal WidthCentimetres { get; set; }
+    [Range(typeof(decimal), "0.001", "100000"), Display(Name = "Height (cm)")] public decimal HeightCentimetres { get; set; }
 }
 
 public sealed record ShippingLabelViewModel(ShipmentLabel Label, decimal? Charge = null);
 
 public sealed class MoneyOrderFormViewModel
 {
-    [Required, StringLength(48)] public string MoneyOrderId { get; set; } = string.Empty;
-    [Required, StringLength(48)] public string BranchCode { get; set; } = string.Empty;
+    [Required, StringLength(48), Display(Name = "Money order ID")] public string MoneyOrderId { get; set; } = string.Empty;
+    [Required, StringLength(48), Display(Name = "Branch")] public string BranchCode { get; set; } = string.Empty;
     [Range(typeof(decimal), "0.01", "999999999.99")] public decimal Amount { get; set; }
     [Required, StringLength(160)] public string Sender { get; set; } = string.Empty;
     [Required, StringLength(160)] public string Recipient { get; set; } = string.Empty;

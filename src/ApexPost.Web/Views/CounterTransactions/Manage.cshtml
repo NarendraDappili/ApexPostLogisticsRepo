@@ -13,17 +13,17 @@ else
     <div class="table-responsive">
         <table class="table table-striped align-middle">
             <caption>Recent transactions for @Model.BranchCode</caption>
-            <thead><tr><th scope="col">Transaction</th><th scope="col">When (UTC)</th><th scope="col">Counter</th><th scope="col">Clerk</th><th scope="col">Total</th><th scope="col">Status</th><th scope="col">Manager action</th></tr></thead>
+            <thead><tr><th scope="col">Transaction</th><th scope="col">When (UTC)</th><th scope="col">Counter</th><th scope="col">Clerk</th><th scope="col" class="text-end">Total</th><th scope="col">Status</th><th scope="col">Manager action</th></tr></thead>
             <tbody>
             @foreach (var item in Model.Transactions)
             {
                 <tr>
                     <th scope="row">@item.TransactionId</th>
-                    <td>@item.OccurredAtUtc.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)</td>
+                    <td class="text-nowrap">@item.OccurredAtUtc.ToString("yyyy-MM-dd HH:mm", System.Globalization.CultureInfo.InvariantCulture)</td>
                     <td>@item.CounterCode</td>
-                    <td>@item.ClerkId</td>
-                    <td>@item.Total.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td>
-                    <td>@item.Status@(item.StatusReason is null ? "" : $" ({item.StatusReason})")</td>
+                    <td class="text-nowrap">@item.ClerkId</td>
+                    <td class="text-nowrap text-end">@item.Total.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td>
+                    <td><span class="status status-@item.Status.ToString().ToLowerInvariant()">@item.Status@(item.StatusReason is null ? "" : $" ({item.StatusReason})")</span></td>
                     <td>
                         @if (item.CanVoid || item.CanRefund)
                         {

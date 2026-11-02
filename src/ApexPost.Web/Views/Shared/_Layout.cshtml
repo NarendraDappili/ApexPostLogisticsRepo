@@ -1,77 +1,158 @@
-﻿<!DOCTYPE html>
+﻿@{
+    var signedIn = User.Identity?.IsAuthenticated == true;
+    // The page the user is on, marked in the navigation for sighted and screen-reader users alike.
+    var currentController = ViewContext.RouteData.Values["controller"] as string ?? string.Empty;
+    var currentAction = ViewContext.RouteData.Values["action"] as string ?? string.Empty;
+    string? Current(string controller) => string.Equals(currentController, controller, StringComparison.OrdinalIgnoreCase) ? "page" : null;
+    var roleClaim = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+    var roleName = Enum.TryParse<ApexPost.Domain.Enums.StaffRole>(roleClaim, out var role) ? ApexPost.Web.Services.DisplayText.Of(role) : roleClaim;
+    var homeBranch = User.FindFirst(ApexPost.Web.Security.ApexPostClaimTypes.BranchCode)?.Value;
+    var isClerk = User.IsInRole("CounterClerk");
+    var isManager = User.IsInRole("BranchManager");
+    var isAdmin = User.IsInRole("Administrator");
+    var canReport = isManager || User.IsInRole("Auditor") || isAdmin;
+    // The menu group of the current page, for the breadcrumb.
+    var menuGroup = currentController switch
+    {
+        "Branch" => "Overview",
+        "Catalogue" => "Inventory",
+        "Shipping" or "MoneyOrders" => "Counter",
+        "CounterTransactions" => currentAction == "Manage" ? "Management" : "Counter",
+        "Reports" => "Management",
+        "StaffAdmin" or "BranchAdmin" => "Administration",
+        _ => null,
+    };
+    var isHome = currentController == "Home" && currentAction == "Index";
+
+    // One menu entry. The label is the last text in the link, after the icon.
+    async Task NavItem(string controller, string action, string icon, string label)
+    {
+        <li class="nav-item"><a class="nav-link" aria-current="@Current(controller)" asp-controller="@controller" asp-action="@action"><svg class="icon" aria-hidden="true" focusable="false"><use href="#@icon"></use></svg>@label</a></li>
+    }
+}
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#141414" />
     <title>@ViewData["Title"] - ApexPost Logistics</title>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/ApexPost.Web.styles.css" asp-append-version="true" />
 </head>
-<body>
-    <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
-            <div class="container-fluid">
-                <a class="navbar-brand" asp-area="" asp-controller="Home" asp-action="Index">ApexPost Logistics</a>
-                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
-                        aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
-                    <ul class="navbar-nav flex-grow-1">
-                        <li class="nav-item">
-                            <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Index">Home</a>
-                        </li>
-                        @if (User.Identity?.IsAuthenticated == true)
+<body class="@(signedIn ? "app-signed-in" : "app-public")">
+    <a class="skip-link" href="#main-content">Skip to main content</a>
+    <partial name="_Icons" />
+@if (signedIn)
+{
+    <div class="app-shell">
+        <aside class="app-sidebar" aria-label="Main menu">
+            <div class="offcanvas-lg offcanvas-start app-sidebar-panel" tabindex="-1" id="app-menu" aria-labelledby="app-menu-title">
+                <div class="offcanvas-header">
+                    <span class="app-brand" id="app-menu-title"><svg class="app-logo" aria-hidden="true" focusable="false"><use href="#i-logo"></use></svg>ApexPost</span>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" data-bs-target="#app-menu" aria-label="Close menu"></button>
+                </div>
+                <div class="offcanvas-body flex-column">
+                    <a class="app-brand d-none d-lg-flex" asp-controller="Home" asp-action="Index"><svg class="app-logo" aria-hidden="true" focusable="false"><use href="#i-logo"></use></svg><span>ApexPost <small>Logistics</small></span></a>
+                    <nav class="app-nav" aria-label="Main">
+                        <p class="nav-section">Overview</p>
+                        <ul class="nav flex-column">
+                            @{ await NavItem("Home", "Index", "i-home", "Home"); }
+                            @{ await NavItem("Branch", "Dashboard", "i-dashboard", "Branch dashboard"); }
+                        </ul>
+                        @if (isClerk)
                         {
-                            <li class="nav-item"><a class="nav-link text-dark" asp-controller="Branch" asp-action="Dashboard">Branch dashboard</a></li>
-                            <li class="nav-item"><a class="nav-link text-dark" asp-controller="Catalogue" asp-action="Index">Catalogue and stock</a></li>
-                            @if (User.IsInRole("CounterClerk"))
-                            {
-                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="CounterTransactions" asp-action="New">Counter basket</a></li>
-                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="Shipping" asp-action="Create">Shipping</a></li>
-                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="MoneyOrders" asp-action="Create">Money orders</a></li>
-                            }
-                            @if (User.IsInRole("BranchManager"))
-                            {
-                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="CounterTransactions" asp-action="Manage">Transactions</a></li>
-                            }
-                            @if (User.IsInRole("BranchManager") || User.IsInRole("Auditor") || User.IsInRole("Administrator"))
-                            {
-                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="Reports" asp-action="Index">Reports</a></li>
-                            }
-                            @if (User.IsInRole("Administrator"))
-                            {
-                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="StaffAdmin" asp-action="Index">Staff</a></li>
-                                <li class="nav-item"><a class="nav-link text-dark" asp-controller="BranchAdmin" asp-action="Index">Branches</a></li>
-                            }
+                            <p class="nav-section">Counter</p>
+                            <ul class="nav flex-column">
+                                @{ await NavItem("CounterTransactions", "New", "i-basket", "Counter basket"); }
+                                @{ await NavItem("Shipping", "Create", "i-truck", "Shipping"); }
+                                @{ await NavItem("MoneyOrders", "Create", "i-money", "Money orders"); }
+                            </ul>
+                        }
+                        <p class="nav-section">Inventory</p>
+                        <ul class="nav flex-column">
+                            @{ await NavItem("Catalogue", "Index", "i-box", "Catalogue and stock"); }
+                        </ul>
+                        @if (isManager || canReport)
+                        {
+                            <p class="nav-section">Management</p>
+                            <ul class="nav flex-column">
+                                @if (isManager) { await NavItem("CounterTransactions", "Manage", "i-receipt", "Transactions"); }
+                                @if (canReport) { await NavItem("Reports", "Index", "i-chart", "Reports"); }
+                            </ul>
+                        }
+                        @if (isAdmin)
+                        {
+                            <p class="nav-section">Administration</p>
+                            <ul class="nav flex-column">
+                                @{ await NavItem("StaffAdmin", "Index", "i-users", "Staff"); }
+                                @{ await NavItem("BranchAdmin", "Index", "i-building", "Branches"); }
+                            </ul>
+                        }
+                    </nav>
+                    <div class="app-sidebar-user">
+                        <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-user"></use></svg>
+                        <div>
+                            <p class="mb-0 fw-semibold">@User.Identity!.Name</p>
+                            <p class="mb-0 small">@roleName</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+        <div class="app-main">
+            <header class="app-topbar">
+                <button class="btn app-menu-button d-lg-none" type="button" data-bs-toggle="offcanvas" data-bs-target="#app-menu" aria-controls="app-menu" aria-label="Open menu">
+                    <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg>
+                </button>
+                <nav aria-label="Breadcrumb" class="app-breadcrumb">
+                    <ol class="breadcrumb mb-0">
+                        @if (isHome)
+                        {
+                            <li class="breadcrumb-item active" aria-current="page">Home</li>
                         }
                         else
                         {
-                            <li class="nav-item"><a class="nav-link text-dark" asp-controller="Account" asp-action="Login">Login</a></li>
+                            <li class="breadcrumb-item"><a asp-controller="Home" asp-action="Index">Home</a></li>
+                            @if (menuGroup is not null) { <li class="breadcrumb-item d-none d-sm-list-item">@menuGroup</li> }
+                            <li class="breadcrumb-item active" aria-current="page">@ViewData["Title"]</li>
                         }
-                    </ul>
-                    @if (User.Identity?.IsAuthenticated == true)
+                    </ol>
+                </nav>
+                <div class="app-topbar-end">
+                    @if (!string.IsNullOrWhiteSpace(homeBranch))
                     {
-                        <form asp-controller="Account" asp-action="Logout" method="post" class="d-flex">
-                            <button type="submit" class="btn btn-link nav-link text-dark">Sign out (@User.Identity.Name)</button>
-                        </form>
+                        <span class="app-chip" title="Your home branch"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-pin"></use></svg>@homeBranch</span>
                     }
+                    <span class="app-chip app-chip-role d-none d-md-inline-flex">@roleName</span>
+                    <form asp-controller="Account" asp-action="Logout" method="post" class="d-flex">
+                        <button type="submit" class="btn btn-sm app-signout"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-logout"></use></svg><span class="d-none d-sm-inline">Sign out</span><span class="visually-hidden"><span class="d-sm-none">Sign out</span> (@User.Identity!.Name)</span></button>
+                    </form>
                 </div>
-            </div>
-        </nav>
-    </header>
-    <div class="container">
-        <main id="main-content" class="pb-3" tabindex="-1">
-            @RenderBody()
-        </main>
-    </div>
-
-    <footer class="border-top footer text-muted">
-        <div class="container">
-            &copy; 2026 - ApexPost.Web - <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
+            </header>
+            <main id="main-content" class="app-content" tabindex="-1">
+                @RenderBody()
+            </main>
+            <footer class="app-footer">
+                &copy; 2026 ApexPost Logistics &middot; <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
+            </footer>
         </div>
+    </div>
+}
+else
+{
+    <header class="app-public-bar">
+        <a class="app-brand" asp-controller="Home" asp-action="Index"><svg class="app-logo" aria-hidden="true" focusable="false"><use href="#i-logo"></use></svg><span>ApexPost <small>Logistics</small></span></a>
+        @if (currentController != "Account") { <a class="btn btn-sm btn-primary" asp-controller="Account" asp-action="Login">Sign in</a> }
+    </header>
+    <main id="main-content" class="app-public-content" tabindex="-1">
+        @RenderBody()
+    </main>
+    <footer class="app-footer text-center">
+        &copy; 2026 ApexPost Logistics &middot; <a asp-area="" asp-controller="Home" asp-action="Privacy">Privacy</a>
     </footer>
+}
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
