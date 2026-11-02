@@ -114,6 +114,15 @@ Only per-user PBKDF2 hashes are stored. The data is fictional, and the seeder ne
 
 Seeded values you can use: products `PRD-001` … `PRD-030` (`PRD-001`–`PRD-003` start at low stock), counters `C-01` and `C-02` at every branch, and zones `ZONE-01` … `ZONE-10`.
 
+## Using the application
+
+- **Navigation:** the left menu shows only the screens your role may use, grouped into Overview, Counter, Inventory, Management and Administration. The current screen is highlighted. On a phone, open the menu with the button at the top left.
+- **Top bar:** shows where you are (breadcrumb), your home branch, your role, and Sign out.
+- **Branch:** clerks and branch managers work at their home branch only, so it is shown as fixed text marked "Your home branch". Administrators and auditors may view every branch, so they choose it from a dropdown.
+- **Forms:** codes that refer to stored records (counters, products, zones, payment methods, roles) are dropdowns, so you pick a valid value instead of typing one.
+- **Lists:** the catalogue highlights products at or below the low-stock threshold (`Inventory:LowStockThreshold`, the same value the dashboard and reports use). Staff and branch lists show each row's status and its actions side by side.
+- **Look:** yellow, red and black (about 50/30/20), with the logo as a faint watermark. All styling is one stylesheet (`wwwroot/css/site.css`), so it works under the strict Content Security Policy. See [ADR 0023](docs/adr/0023-application-shell-and-theme-under-the-strict-csp.md).
+
 ### Suggested walkthrough
 
 1. **Shipment.** Sign in as `STF-CLERK-01-A`. Under **Shipping**, create shipment `SHP-DEMO-1` for transaction ID `TX-DEMO-1`, zone `ZONE-01`, 2 kg. The label shows the charge from the rate table.
@@ -123,11 +132,11 @@ Seeded values you can use: products `PRD-001` … `PRD-030` (`PRD-001`–`PRD-00
 3. **Sale.** Under **Counter basket**, use transaction ID `TX-DEMO-1`, counter `C-01`, a retail row (for example `PRD-004` × 2), shipment `SHP-DEMO-1` and money order `MO-DEMO-1`, then pay. Every price is calculated on the server, and the sale, its lines, its payment and the stock decrement are saved in one transaction.
 4. **Manager.** Sign in as `STF-MANAGER-01`.
    - Under **Transactions**, void or refund `TX-DEMO-1` with a reason; its stock is returned.
-   - Under **Catalogue**, adjust stock for a product (it runs `usp_AdjustStock` and records the history).
+   - Under **Catalogue and stock**, adjust stock for a product (it runs `usp_AdjustStock` and records the history).
    - Open **Reports** for daily sales (retail vs services), low stock, shipping volume, and money orders with their verifications.
 5. **Administrator.** Sign in as `STF-ADMIN-01`.
    - Under **Staff** and **Branches**, add, edit, deactivate and reactivate.
-   - Under **Catalogue**, revise a category's prices by a percentage (one set-based `UPDATE`).
+   - Under **Catalogue and stock**, revise a category's prices by a percentage (one set-based `UPDATE`).
 
 ## Tests
 
@@ -144,7 +153,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 285 tests passing (Domain 67, Application 86, Infrastructure 73, Web integration 59) and a zero-warning build.
+**Results:** the latest run had 286 tests passing (Domain 67, Application 86, Infrastructure 73, Web integration 60) and a zero-warning build.
 
 **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors, checks that every model change has a migration, starts a throwaway SQL Server container with a random password, and runs every test on each push and pull request to `master`, then reruns the error-handling tests with full JIT optimization. Every run on GitHub Actions so far has passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
 
@@ -186,7 +195,7 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 
 ## Documentation
 
-- [DESIGN.md](DESIGN.md): architecture, layer diagrams, ER diagram, normalisation, data access patterns, SOLID mapping, all ADRs.
+- [DESIGN.md](DESIGN.md): architecture, layer diagrams, ER diagram, normalisation, data access patterns, user interface, SOLID mapping, all ADRs.
 - [PERFORMANCE.md](PERFORMANCE.md): execution plans, before/after measurements, index trade-offs, generated SQL.
 - [sql/README.md](sql/README.md): reporting queries, the atomic T-SQL sale, the blocking demo, deadlock avoidance.
 - [docs/security.md](docs/security.md), [docs/testing.md](docs/testing.md), [docs/business-rules.md](docs/business-rules.md), [docs/architecture/README.md](docs/architecture/README.md).

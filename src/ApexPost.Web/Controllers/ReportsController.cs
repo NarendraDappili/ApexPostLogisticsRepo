@@ -1,3 +1,4 @@
+using ApexPost.Application.Inventory;
 using ApexPost.Application.Reports;
 using ApexPost.Domain.ValueObjects;
 using ApexPost.Web.Models;
@@ -8,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace ApexPost.Web.Controllers;
 
 [Authorize(Roles = "BranchManager,Auditor,Administrator", Policy = AuthorizationPolicies.SameBranchOnly)]
-public sealed class ReportsController(IBranchReportPageQueries reports, IConfiguration configuration, TimeProvider timeProvider) : Controller
+public sealed class ReportsController(IBranchReportPageQueries reports, InventoryServiceOptions inventoryOptions, TimeProvider timeProvider) : Controller
 {
     [HttpGet]
     public async Task<IActionResult> Index(string? branchCode, DateOnly? day, CancellationToken cancellationToken)
@@ -21,9 +22,8 @@ public sealed class ReportsController(IBranchReportPageQueries reports, IConfigu
         {
             var branch = new BranchCode(branchCode);
             var reportDay = day ?? DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
-            var threshold = configuration.GetValue<int?>("ApexPost:Inventory:LowStockThreshold") ?? 10;
             // The four reports are independent reads, run in parallel on separate contexts (ADR 0021).
-            var page = await reports.GetAsync(branch, reportDay, threshold, cancellationToken);
+            var page = await reports.GetAsync(branch, reportDay, inventoryOptions.LowStockThreshold, cancellationToken);
             return View(new ReportsViewModel(branch.Value, reportDay, page.DailySales, page.LowStock, page.ShippingVolume, page.MoneyOrders));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return StatusCode(499); }

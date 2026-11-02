@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using ApexPost.Application.Inventory;
 using ApexPost.Application.Pricing;
 using ApexPost.Application.Queries;
 using ApexPost.Domain.ValueObjects;
@@ -12,10 +13,10 @@ namespace ApexPost.Web.Services;
 /// a valid code instead of typing one. Views inject this directly, which keeps the options available when the
 /// validation filter redisplays a form from the posted model alone. Options come from the read-side query services.
 /// </summary>
-public sealed class ReferenceDataLookup(IBranchQueries branches, ICatalogueQueries catalogue, IShippingRateProvider rates, IConfiguration configuration)
+public sealed class ReferenceDataLookup(IBranchQueries branches, ICatalogueQueries catalogue, IShippingRateProvider rates, InventoryServiceOptions inventoryOptions)
 {
-    /// <summary>The low-stock threshold the dashboard and reports use, so the catalogue can flag the same products.</summary>
-    public int LowStockThreshold => configuration.GetValue<int?>("ApexPost:Inventory:LowStockThreshold") ?? 10;
+    /// <summary>The low-stock threshold the dashboard, reports and stock alerts use, so the catalogue flags the same products.</summary>
+    public int LowStockThreshold => inventoryOptions.LowStockThreshold;
 
     /// <summary>
     /// Enum options with readable labels ("Counter Clerk", "Digital Wallet"). The values are the numeric enum values,

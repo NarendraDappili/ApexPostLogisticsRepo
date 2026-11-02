@@ -133,6 +133,7 @@ builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddScoped<LocalStaffAuthenticator>();
 builder.Services.AddHostedService<DemoDataSeedHostedService>();
 
+// The one place the low-stock threshold is read: stock alerts, the dashboard, the reports and the catalogue all use this singleton.
 var inventoryThreshold = builder.Configuration.GetValue<int?>("ApexPost:Inventory:LowStockThreshold") ?? 10;
 var notificationRecipient = builder.Configuration["ApexPost:Inventory:LowStockRecipient"] ?? "operations-alerts@example.test";
 var highValueThreshold = builder.Configuration.GetValue<decimal?>("ApexPost:MoneyOrders:HighValueThreshold") ?? 1000m;

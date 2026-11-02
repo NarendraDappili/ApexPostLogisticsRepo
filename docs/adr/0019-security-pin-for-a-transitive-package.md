@@ -1,6 +1,6 @@
 # ADR 0019: Pin the transitive System.Security.Cryptography.Pkcs package to a patched version
 
-Status: Accepted by the team; **needs trainer approval**, because the package is outside the brief's allowed list.
+Status: Accepted. **Approved by the trainer on 2 November 2026**, as the brief requires for a package outside its allowed list.
 
 ## Context
 
@@ -32,4 +32,4 @@ Option 1. The reference is a security pin only:
 
 - **The build stays at zero warnings with no suppressed vulnerability warning.**
 - **The pin must be removed** once `Microsoft.Data.SqlClient` references a patched version by itself. Otherwise it can hold the package back from later fixes. `dotnet list package --vulnerable --include-transitive` shows when that point is reached.
-- **Pending approval:** until the trainer approves, this is the one dependency outside the allowed list. It is recorded here rather than hidden.
+- **Approved exception:** this is the one dependency outside the allowed list. The trainer approved it on 2 November 2026, on the reasoning above. The approval covers the security pin only: no code may start using the package directly without a new ADR.

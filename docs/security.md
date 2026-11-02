@@ -104,6 +104,8 @@ A full document number is accepted only as transient request input on the verifi
     - This works because the pages need none: every script is a file under `wwwroot`, and the layout's empty import map was removed, since no page uses JavaScript modules.
     - Bootstrap, Popper and jQuery validation still work: they change styles through the DOM (`element.style.display = …`), which the CSP allows. It blocks only style attributes and `<style>` elements.
     - A test scans every `.cshtml` file and the rendered layout, so adding an inline script or style attribute fails the build instead of silently breaking the page.
+    - **The UI shell keeps to the same policy** ([ADR 0023](adr/0023-application-shell-and-theme-under-the-strict-csp.md)). The theme is one same-origin stylesheet, the icons are an inline SVG sprite (markup, not script or style), and the logo watermark is a same-origin image (`img-src 'self'`). The policy did not need widening, and no CDN or font origin was added.
+    - **The menu and branch picker are not a security boundary.** They only stop offering what the server would refuse; `[Authorize]`, `SameBranchOnly` and `BranchManagerOnly` still decide every request.
 - **Rate limits:** a fixed-window limit per IP on sign-in. Integration requests must pass the API key before they consume the shared integration limit, which ignores the caller-supplied `X-Partner-Id`.
 - **IP allowlist:** it applies to the admin screens and the integration endpoint. It is loopback-only in Development and empty (deny) elsewhere.
   - It uses the direct connection address.

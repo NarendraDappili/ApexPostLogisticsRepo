@@ -7,7 +7,7 @@ dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build
 ```
 
-The latest run had **285 tests passing, 0 failing, 0 skipped**, with a zero-warning build.
+The latest run had **286 tests passing, 0 failing, 0 skipped**, with a zero-warning build.
 
 ## CI on GitHub Actions
 
@@ -18,7 +18,7 @@ The latest run had **285 tests passing, 0 failing, 0 skipped**, with a zero-warn
 4. runs every test, including the SQL Server tests;
 5. reruns the error-handling tests with `DOTNET_TieredCompilation=0`, so they also run on fully optimized, inlined code (ADR 0018).
 
-Every run of the workflow on GitHub has passed: 13 runs as of 2 November 2026. The [list of runs](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/workflows/ci.yml) is always current; the table below is a snapshot.
+Every run of the workflow on GitHub has passed: 18 runs as of 2 November 2026. The [list of runs](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/workflows/ci.yml) is always current; the table below is a snapshot.
 
 | Run | Trigger | Commit |
 |---|---|---|
@@ -30,6 +30,11 @@ Every run of the workflow on GitHub has passed: 13 runs as of 2 November 2026. T
 | [41313991662](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41313991662) | push to `master` | `b3e6f2e` |
 | [41332216362](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41332216362) | push to `master` (Week 3 review fixes) | `a15e376` |
 | [41396575257](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41396575257) | push to `master` (performance and security review) | `df17e7d` |
+| [41401825333](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41401825333) | push to `master` (error mapping independent of JIT inlining) | `8f11f06` |
+| [41409539228](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41409539228) | push to `master` (UI: sidebar layout) | `b3c1e09` |
+| [41419904714](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41419904714) | push to `master` (UI) | `792df4c` |
+| [41422278024](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41422278024) | push to `master` (UI: theme colours) | `2c2325c` |
+| [41425827372](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/41425827372) | push to `master` (UI: theme and watermark) | `6c8659a` |
 
 The other five runs are the pushes to `master` that merged #22–#26.
 
@@ -40,7 +45,7 @@ The other five runs are the pushes to `master` that merged #22–#26.
 | `ApexPost.Domain.Tests` | 67 | No |
 | `ApexPost.Application.Tests` | 86 | No |
 | `ApexPost.Infrastructure.Tests` | 73 | SQL Server (except the model, migration and password-hasher tests) |
-| `ApexPost.Web.IntegrationTests` | 59 | SQL Server |
+| `ApexPost.Web.IntegrationTests` | 60 | SQL Server |
 
 Each test project references only the production project it tests. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
 
@@ -107,7 +112,7 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
 | Audit store (`EfAuditStoreTests`) | Round trip and staff stamping. A failed business save is audited but never committed by the audit write. A failed audit write does not undo a committed change. |
 | Seeding and caching (`SeedingAndRateCacheTests`) | The seed meets the brief's volumes (5 branches, 20 staff, 30 products, 10 zones/60 rates, 240 sales). It refuses an unmigrated database. Rates are cached, but an empty table is not. |
 
-### Web integration tests (59)
+### Web integration tests (60)
 
 `WebApplicationFactory` hosts the real `Program.cs` against a disposable test database, with cookies and antiforgery tokens handled as a browser would. The tests cover:
 
@@ -120,6 +125,11 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
   - **A refused void or refund is shown on the Manage page** with its reason and the 404/400 status. It is not raw Problem Details JSON.
   - **A framework or library `InvalidOperationException` is never shown on a form.** It is a 500, and its text stays private.
 - **Over-posting:** posting status, identity, activity, password or audit fields has no effect on a sale or a staff edit.
+- **The UI offers only what the role may use:**
+  - A clerk's home branch is fixed text plus a hidden field; there is no one-item dropdown.
+  - An administrator gets a dropdown of every branch.
+  - The left menu shows each role its own screens, and marks exactly one entry as the current page (`aria-current="page"`).
+  - Stored values (counters, products, zones) are offered as dropdowns.
 - **Workflows:** a several-line basket; shipments and verified money orders billed in the basket; weight limits and verification errors shown; manager stock adjustment through the procedure; administrator price revision; staff and branch administration.
 - **Security pipeline:** sign-in with hashed passwords; inactive staff rejected and existing cookies invalidated; cross-branch denial; security headers and correlation ID; a CSP with no `unsafe-inline`, with every view scanned for inline script or style; Secure-only sign-in and antiforgery cookies outside Development; maintenance mode; API key; IP allowlist; shared integration rate limit; login rate limit; CORS; no exception details in Problem Details or logs; a client abort is not a 500.
 - **Audit:**
@@ -132,6 +142,6 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
 
 ## Not covered
 
-- **No browser automation.** There is no real-browser, screen-reader, keyboard-only or automated accessibility test.
+- **No browser automation in the suite.** There is no real-browser, screen-reader, keyboard-only or automated accessibility test. The UI round was checked by hand in headless Edge, as each role at desktop and phone widths, with no console or CSP errors. That check is not part of CI.
 - **No load or penetration test.** `PERFORMANCE.md` measures query cost with a reproducible data set; it is not a load test.
 - **No proxy or multi-host deployment test.** The concurrency tests use several contexts and connections against one SQL Server. That reproduces the conditions of several web servers, but not an actual farm.

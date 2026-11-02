@@ -695,6 +695,38 @@ public sealed class AuthenticationTests
     }
 
     [Fact]
+    public async Task Branch_picker_and_menu_offer_only_what_the_signed_in_role_may_use()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        await factory.SeedSouthBranchAsync();
+        using var clerk = factory.CreateClient();
+        using var admin = factory.CreateClient();
+        await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+
+        // A clerk works at the home branch only (SameBranchOnly), so it is shown as fixed text and posted in a hidden field.
+        var clerkDashboard = await clerk.GetStringAsync("/Branch/Dashboard");
+        Assert.Contains("<input type=\"hidden\" id=\"branchCode\" name=\"branchCode\" value=\"BR-NORTH\" />", clerkDashboard, StringComparison.Ordinal);
+        Assert.Contains("border\">Your home branch</span>", clerkDashboard, StringComparison.Ordinal);
+        Assert.DoesNotContain("<select id=\"branchCode\"", clerkDashboard, StringComparison.Ordinal);
+
+        // An administrator may view every branch, so the same picker is a dropdown.
+        var adminDashboard = await admin.GetStringAsync("/Branch/Dashboard");
+        Assert.Contains("<select id=\"branchCode\" name=\"branchCode\"", adminDashboard, StringComparison.Ordinal);
+        Assert.Contains("value=\"BR-SOUTH\"", adminDashboard, StringComparison.Ordinal);
+        Assert.DoesNotContain("border\">Your home branch</span>", adminDashboard, StringComparison.Ordinal);
+
+        // The menu shows each role its own screens, and marks exactly one entry as the current page.
+        var staffList = await admin.GetStringAsync("/StaffAdmin");
+        Assert.Contains(">Staff</a>", staffList, StringComparison.Ordinal);
+        Assert.Contains(">Reports</a>", staffList, StringComparison.Ordinal);
+        Assert.DoesNotContain("Counter basket", staffList, StringComparison.Ordinal);
+        Assert.Contains("class=\"nav-link\" aria-current=\"page\" href=\"/StaffAdmin\"", staffList, StringComparison.Ordinal);
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(staffList, "class=\"nav-link\" aria-current=\"page\""));
+    }
+
+    [Fact]
     public async Task An_audit_store_failure_is_logged_and_never_breaks_a_committed_sale()
     {
         await using var factory = new AuthWebApplicationFactory();

@@ -463,6 +463,21 @@ The order is security-significant; [ADR 0004](docs/adr/0004-order-security-middl
 | `ValidationActionFilter` | Action filter (-1000) | Invalid model: re-render the MVC view with the bound model, or `400 ValidationProblemDetails` for `[InvalidModelResponse]` actions and API controllers |
 | `PerformanceActionFilter` | Action filter (1000) | Warns when an action exceeds `ApexPost:Performance:WarningThresholdMilliseconds` |
 
+## User interface
+
+The screens are server-rendered Razor views on Bootstrap 5.3. There is no client framework and no extra package ([ADR 0023](docs/adr/0023-application-shell-and-theme-under-the-strict-csp.md)).
+
+| Part | Where | What it does |
+|---|---|---|
+| Application shell | `Views/Shared/_Layout.cshtml` | Left sidebar with grouped navigation, collapsing to an off-canvas menu on phones. Top bar with a breadcrumb, home-branch chip, role and Sign out. Skip link to the main content |
+| Role-aware menu | `_Layout.cshtml` | Shows only the entries whose controller admits the role, and marks the current one with `aria-current="page"`. The server still enforces every rule |
+| Branch picker | `Views/Shared/_BranchPicker.cshtml`, `ReferenceDataLookup.ViewableBranchesAsync` | A dropdown for roles that may view every branch (administrators, auditors). For a single-branch role, the home branch as fixed text with a hidden `branchCode`. This mirrors `SameBranchOnly` |
+| Reference-data dropdowns | `ReferenceDataLookup` | Counters, products, zones and enums come from the query services, so users pick stored values. Enum labels are readable ("Counter Clerk"), and option values are unchanged |
+| Icons | `Views/Shared/_Icons.cshtml` | One inline SVG sprite (`<symbol>` + `<use>`); no icon font or CDN |
+| Theme and watermark | `wwwroot/css/site.css`, `wwwroot/img/logo-watermark.svg` | About 50% yellow (surfaces), 30% red (actions and the current place) and 20% black (text, footer). List tables in a slate palette. The logo is drawn as a fixed watermark |
+
+Everything works under the strict CSP (`script-src 'self'; style-src 'self'`). The theme is one same-origin stylesheet, the icons are markup, and the watermark is a same-origin image. A test scans every view for inline script or style.
+
 ## Performance
 
 Measured on a 200,000-sale data set, the five workload indexes cut the per-branch screens and reports by one to three orders of magnitude in logical reads. Two examples: the dashboard went from 6,126 to 20 logical reads, and the daily sales report from 20,885 to 371. The cost is about 23 MB of index storage and about 30% more transaction log. The non-SARGable rewrite, the estimated-vs-actual and parameter-sensitivity investigations, and the generated SQL are in [PERFORMANCE.md](PERFORMANCE.md).
@@ -508,7 +523,7 @@ Measured on a 200,000-sale data set, the five workload indexes cut the per-branc
 | `ApexPost.Domain.Tests` | No database | Value objects, entities, state transitions (Week 2 tests unchanged) |
 | `ApexPost.Application.Tests` | Fakes + `SpyUnitOfWork` | Workflows commit once, or never on failure; pricing; stock adjustment; price revision |
 | `ApexPost.Infrastructure.Tests` | A disposable SQL Server database per run (`ApexPostDb_Test_<guid>`), built by the migrations | Mapping; rollback; concurrency; procedures; audit store; query shape and N+1; generated SQL; index definitions |
-| `ApexPost.Web.IntegrationTests` | `WebApplicationFactory` + a disposable database | Sales persist; voids need a manager; report totals; Problem Details; over-posting; security pipeline; audit statuses |
+| `ApexPost.Web.IntegrationTests` | `WebApplicationFactory` + a disposable database | Sales persist; voids need a manager; report totals; Problem Details; over-posting; security pipeline; audit statuses; role-aware menu and branch picker |
 
 A guard refuses to run tests against any database whose name is not a test database. See [docs/testing.md](docs/testing.md).
 
@@ -534,12 +549,13 @@ A guard refuses to run tests against any database whose name is not a test datab
 | [0016](docs/adr/0016-domain-and-persistence-model-separation.md) | **Where domain and persistence models are separated** | Accepted |
 | [0017](docs/adr/0017-optimistic-concurrency-for-stock-and-transactions.md) | **Concurrency strategy for stock and transactions** | Accepted |
 | [0018](docs/adr/0018-exceptions-to-problem-details-status-codes.md) | Exceptions to 409/404/400 Problem Details | Accepted |
-| [0019](docs/adr/0019-security-pin-for-a-transitive-package.md) | Security pin for a transitive package outside the allowed list | Needs trainer approval |
+| [0019](docs/adr/0019-security-pin-for-a-transitive-package.md) | Security pin for a transitive package outside the allowed list | Accepted (trainer approved, 2 November 2026) |
 | [0020](docs/adr/0020-single-or-split-queries.md) | Single queries by default; split queries only for several collections (measured) | Accepted |
 | [0021](docs/adr/0021-parallel-report-reads-with-separate-contexts.md) | Parallel report reads with `Task.WhenAll`, one `DbContext` per report | Accepted |
 | [0022](docs/adr/0022-week-2-business-rule-tests-in-week-3.md) | How the Week 2 business-rule tests carry into Week 3 | Accepted |
+| [0023](docs/adr/0023-application-shell-and-theme-under-the-strict-csp.md) | Application shell, role-aware navigation and theme under the strict CSP | Accepted |
 
-Week 3 added twelve ADRs (0011–0022). The seven the brief requires are in bold.
+Week 3 added thirteen ADRs (0011–0023). The seven the brief requires are in bold.
 
 ## Known limitations
 
