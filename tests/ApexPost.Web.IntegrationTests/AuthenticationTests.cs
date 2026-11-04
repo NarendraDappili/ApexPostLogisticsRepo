@@ -1133,6 +1133,15 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
     }
 
+    /// <summary>One more staff member with the test password, at a branch that is already seeded.</summary>
+    public async Task SeedStaffAsync(string staffId, StaffRole role, string branchCode)
+    {
+        using var scope = Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>()
+            .Add(WithPassword(new StaffMember(new StaffId(staffId), $"Test {role}", role, new BranchCode(branchCode)), scope.ServiceProvider.GetRequiredService<IPasswordHasher>()));
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+    }
+
     /// <summary>BR-SOUTH with its own clerk, for cross-branch access tests.</summary>
     public async Task SeedSouthClerkAsync()
     {

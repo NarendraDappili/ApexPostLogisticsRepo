@@ -58,6 +58,11 @@
             <h2 class="h5 card-title"><a class="stretched-link" asp-controller="Reports" asp-action="Index">Branch reports</a></h2>
                 <p class="card-text text-muted small">Daily sales, low stock, shipping volume and money orders.</p>
             </div></div></div>
+            <div class="col-md-4"><div class="card shortcut h-100"><div class="card-body">
+                <svg class="shortcut-icon" aria-hidden="true" focusable="false"><use href="#i-audit"></use></svg>
+            <h2 class="h5 card-title"><a class="stretched-link" asp-controller="AuditLog" asp-action="Requests">Audit log</a></h2>
+                <p class="card-text text-muted small">@(User.IsInRole("BranchManager") ? "Your branch's requests and data changes, with old and new values." : "Requests, data changes and security events for every branch.")</p>
+            </div></div></div>
         }
         @if (User.IsInRole("Administrator"))
         {

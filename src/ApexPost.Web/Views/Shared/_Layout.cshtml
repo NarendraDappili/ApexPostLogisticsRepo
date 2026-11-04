@@ -11,6 +11,8 @@
     var isManager = User.IsInRole("BranchManager");
     var isAdmin = User.IsInRole("Administrator");
     var canReport = isManager || User.IsInRole("Auditor") || isAdmin;
+    // The same roles read the audit log: Auditors and Administrators for every branch, a Branch Manager for their own.
+    var canAudit = canReport;
     // The menu group of the current page, for the breadcrumb.
     var menuGroup = currentController switch
     {
@@ -20,6 +22,7 @@
         "CounterTransactions" => currentAction == "Manage" ? "Management" : "Counter",
         "Reports" => "Management",
         "StaffAdmin" or "BranchAdmin" => "Administration",
+        "AuditLog" => "Audit",
         _ => null,
     };
     var isHome = currentController == "Home" && currentAction == "Index";
@@ -88,6 +91,13 @@
                             <ul class="nav flex-column">
                                 @{ await NavItem("StaffAdmin", "Index", "i-users", "Staff"); }
                                 @{ await NavItem("BranchAdmin", "Index", "i-building", "Branches"); }
+                            </ul>
+                        }
+                        @if (canAudit)
+                        {
+                            <p class="nav-section">Audit</p>
+                            <ul class="nav flex-column">
+                                @{ await NavItem("AuditLog", "Requests", "i-audit", "Audit log"); }
                             </ul>
                         }
                     </nav>

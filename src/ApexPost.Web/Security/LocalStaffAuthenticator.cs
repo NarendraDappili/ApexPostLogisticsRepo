@@ -13,16 +13,27 @@ public sealed class LocalStaffAuthenticator(IStaffMemberRepository staff, IPassw
     // and response timing does not reveal which staff IDs exist.
     private readonly string _timingEqualizerHash = passwordHasher.Hash(Guid.NewGuid().ToString("N"));
 
-    public async Task<ClaimsPrincipal?> AuthenticateAsync(string staffId, string password, CancellationToken cancellationToken = default)
+    public async Task<ClaimsPrincipal?> AuthenticateAsync(string staffId, string password, CancellationToken cancellationToken = default) =>
+        (await AuthenticateWithOutcomeAsync(staffId, password, cancellationToken).ConfigureAwait(false)).Principal;
+
+    /// <summary>
+    /// Authenticates and also says why a sign-in failed, for the security log only. The person signing in is
+    /// always told the same "Sign-in failed", whatever the reason.
+    /// </summary>
+    public async Task<StaffSignInOutcome> AuthenticateWithOutcomeAsync(string staffId, string password, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(staffId) || string.IsNullOrEmpty(password)) return null;
+        if (string.IsNullOrWhiteSpace(staffId) || string.IsNullOrEmpty(password)) return StaffSignInOutcome.Failed(null, "MissingCredentials");
 
         StaffId id;
         try { id = new StaffId(staffId); }
-        catch (ArgumentException) { return null; }
+        catch (ArgumentException) { return StaffSignInOutcome.Failed(null, "MalformedStaffId"); }
         var member = await staff.FindByIdAsync(id, cancellationToken).ConfigureAwait(false);
         var passwordMatches = passwordHasher.Verify(password, member?.PasswordHash ?? _timingEqualizerHash);
-        if (member is null || member.PasswordHash is null || !passwordMatches || !member.IsActive) return null;
+        // What was typed is kept only when it is a real staff ID: an unknown "ID" may be a password typed into the wrong field.
+        if (member is null) return StaffSignInOutcome.Failed(null, "UnknownStaff");
+        if (member.PasswordHash is null) return StaffSignInOutcome.Failed(id.Value, "NoPasswordSet");
+        if (!passwordMatches) return StaffSignInOutcome.Failed(id.Value, "WrongPassword");
+        if (!member.IsActive) return StaffSignInOutcome.Failed(id.Value, "Inactive");
 
         var claims = new[]
         {
@@ -32,6 +43,14 @@ public sealed class LocalStaffAuthenticator(IStaffMemberRepository staff, IPassw
             new Claim(ApexPostClaimTypes.StaffId, member.Id.Value),
             new Claim(ApexPostClaimTypes.BranchCode, member.AssignedBranchCode.Value)
         };
-        return new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
+        return new StaffSignInOutcome(new ClaimsPrincipal(new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme)), id.Value, null);
     }
+}
+
+/// <param name="Principal">The signed-in staff member, or null when the sign-in failed.</param>
+/// <param name="StaffId">The staff ID that was typed, only when it belongs to a real staff member.</param>
+/// <param name="FailureReason">Why the sign-in failed, for the security log only.</param>
+public sealed record StaffSignInOutcome(ClaimsPrincipal? Principal, string? StaffId, string? FailureReason)
+{
+    public static StaffSignInOutcome Failed(string? staffId, string reason) => new(null, staffId, reason);
 }

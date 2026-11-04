@@ -16,7 +16,7 @@ namespace ApexPost.Infrastructure.Auditing;
 /// </list>
 /// The store offers no update or delete.
 /// </summary>
-public sealed class EfAuditStore(DbContextOptions<ApexPostDbContext> options) : IAuditStore
+public sealed class EfAuditStore(DbContextOptions<ApexPostDbContext> options, AuditTrailLogger? auditLog = null) : IAuditStore
 {
     private static readonly JsonSerializerOptions RouteValueJson = new(JsonSerializerDefaults.Web);
 
@@ -41,6 +41,7 @@ public sealed class EfAuditStore(DbContextOptions<ApexPostDbContext> options) : 
         });
         // The audited action has already happened; once started, the write finishes even if the client disconnects.
         await db.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
+        auditLog?.Request(record);
     }
 
     public async Task<IReadOnlyList<AuditRecord>> ReadAsync(CancellationToken cancellationToken = default)

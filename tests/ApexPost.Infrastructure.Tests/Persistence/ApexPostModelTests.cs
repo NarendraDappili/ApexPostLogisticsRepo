@@ -80,6 +80,53 @@ public sealed class ApexPostModelTests
         Assert.Equal(included, string.Join(',', (index.GetIncludeProperties() ?? []).Select(property => type.FindProperty(property)!.GetColumnName(storeObject))));
     }
 
+    // The audit log screen's filters: a branch and a period, one record's history, one staff member's or one event type's events.
+    [Theory]
+    [InlineData("AuditEntries", "IX_AuditEntries_BranchCode_OccurredAtUtc", "BranchCode,OccurredAtUtc")]
+    [InlineData("DataChanges", "IX_DataChanges_BranchCode_OccurredAtUtc", "BranchCode,OccurredAtUtc")]
+    [InlineData("DataChanges", "IX_DataChanges_TableName_RecordKey", "TableName,RecordKey")]
+    [InlineData("SecurityEvents", "IX_SecurityEvents_StaffCode_OccurredAtUtc", "StaffCode,OccurredAtUtc")]
+    [InlineData("SecurityEvents", "IX_SecurityEvents_EventType_OccurredAtUtc", "EventType,OccurredAtUtc")]
+    [InlineData("AuditEntries", "IX_AuditEntries_OccurredAtUtc", "OccurredAtUtc")]
+    [InlineData("DataChanges", "IX_DataChanges_OccurredAtUtc", "OccurredAtUtc")]
+    [InlineData("SecurityEvents", "IX_SecurityEvents_OccurredAtUtc", "OccurredAtUtc")]
+    [InlineData("AuditEntries", "IX_AuditEntries_CorrelationId", "CorrelationId")]
+    [InlineData("DataChanges", "IX_DataChanges_CorrelationId", "CorrelationId")]
+    [InlineData("SecurityEvents", "IX_SecurityEvents_CorrelationId", "CorrelationId")]
+    public void Audit_tables_are_indexed_for_the_audit_log_filters(string table, string name, string keys)
+    {
+        var type = Model.GetEntityTypes().Single(entity => entity.GetTableName() == table);
+        var index = Assert.Single(type.GetIndexes(), candidate => candidate.GetDatabaseName() == name);
+
+        Assert.Equal(keys, string.Join(',', index.Properties.Select(property => property.GetColumnName(StoreObjectIdentifier.Table(table)))));
+    }
+
+    [Theory]
+    [InlineData(typeof(AuditEntryEntity))]
+    [InlineData(typeof(DataChangeEntity))]
+    [InlineData(typeof(SecurityEventEntity))]
+    public void Audit_tables_have_no_foreign_keys_so_the_history_outlives_the_rows_it_describes(Type entity)
+    {
+        var type = Model.FindEntityType(entity)!;
+
+        Assert.Empty(type.GetForeignKeys());
+        Assert.Empty(type.GetReferencingForeignKeys());
+    }
+
+    [Fact]
+    public void Audit_operation_and_event_type_checks_allow_exactly_the_enum_names()
+    {
+        var operation = Assert.Single(Model.FindEntityType(typeof(DataChangeEntity))!.GetCheckConstraints(), check => check.Name == "CK_DataChanges_Operation");
+        var eventType = Assert.Single(Model.FindEntityType(typeof(SecurityEventEntity))!.GetCheckConstraints(), check => check.Name == "CK_SecurityEvents_EventType");
+
+        Assert.Equal("[Operation] IN ('Insert', 'Update', 'Delete')", operation.Sql);
+        Assert.All(Enum.GetNames<Application.Auditing.SecurityEventType>(), name => Assert.Contains($"'{name}'", eventType.Sql, StringComparison.Ordinal));
+        Assert.Contains(Model.FindEntityType(typeof(DataChangeEntity))!.GetCheckConstraints(), check => check.Name == "CK_DataChanges_ChangesJson");
+        // The longest event type name must fit its column.
+        Assert.True(Enum.GetNames<Application.Auditing.SecurityEventType>().Max(name => name.Length)
+            <= Model.FindEntityType(typeof(SecurityEventEntity))!.FindProperty(nameof(SecurityEventEntity.EventType))!.GetMaxLength());
+    }
+
     [Fact]
     public void The_shipment_workload_index_replaces_the_single_column_branch_index()
     {

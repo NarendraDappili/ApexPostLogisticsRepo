@@ -122,3 +122,62 @@ public sealed class AuditEntryEntity
 
     public string Outcome { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// One inserted, updated or deleted row, written in the same SaveChanges (and so the same transaction) as the
+/// change itself. Secrets such as password hashes are never stored, only the fact that they changed.
+/// </summary>
+public sealed class DataChangeEntity
+{
+    public long DataChangeId { get; set; }
+
+    public DateTimeOffset OccurredAtUtc { get; set; }
+
+    public string? StaffId { get; set; }
+
+    /// <summary>The branch the row belongs to, when it has one; otherwise the branch of the staff member.</summary>
+    public string? BranchCode { get; set; }
+
+    public string TableName { get; set; } = string.Empty;
+
+    /// <summary>The row's business key, such as <c>TransactionCode=TX-1</c>, never its surrogate identity.</summary>
+    public string RecordKey { get; set; } = string.Empty;
+
+    public string Operation { get; set; } = string.Empty;
+
+    /// <summary>A JSON array of <c>{ column, old, new }</c> objects.</summary>
+    public string ChangesJson { get; set; } = "[]";
+
+    public string? CorrelationId { get; set; }
+}
+
+/// <summary>One sign-in or access event. No password or request body is ever stored.</summary>
+public sealed class SecurityEventEntity
+{
+    public long SecurityEventId { get; set; }
+
+    public DateTimeOffset OccurredAtUtc { get; set; }
+
+    public string EventType { get; set; } = string.Empty;
+
+    /// <summary>The signed-in staff member, or for a failed sign-in the staff ID that was typed.</summary>
+    public string? StaffId { get; set; }
+
+    public string? Role { get; set; }
+
+    public string? BranchCode { get; set; }
+
+    public string HttpMethod { get; set; } = string.Empty;
+
+    /// <summary>The request path without its query string.</summary>
+    public string Path { get; set; } = string.Empty;
+
+    public int StatusCode { get; set; }
+
+    public string? RemoteIpAddress { get; set; }
+
+    /// <summary>A short reason for auditors, such as <c>UnknownStaff</c>; never shown to the person signing in.</summary>
+    public string? Detail { get; set; }
+
+    public string CorrelationId { get; set; } = string.Empty;
+}

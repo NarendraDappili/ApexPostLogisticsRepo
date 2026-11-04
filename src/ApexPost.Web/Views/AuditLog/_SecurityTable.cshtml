@@ -1,0 +1,24 @@
+@model IReadOnlyList<ApexPost.Application.Auditing.SecurityEventItem>
+@using ApexPost.Web.Services
+<div class="table-responsive">
+    <table class="table table-striped table-hover align-middle audit-table">
+        <caption>Security events, newest first. Passwords, keys and query strings are never recorded.</caption>
+        <thead><tr><th scope="col">When (UTC)</th><th scope="col">Event</th><th scope="col">Staff</th><th scope="col">Branch</th><th scope="col">Request</th><th scope="col">Status</th><th scope="col">Reason</th><th scope="col">Client IP</th><th scope="col">Trace</th></tr></thead>
+        <tbody>
+        @foreach (var row in Model)
+        {
+            <tr>
+                <th scope="row" class="audit-time">@AuditDisplay.Time(row.OccurredAt)</th>
+                <td><span class="badge @AuditDisplay.EventBadge(row.EventType)">@DisplayText.Of(row.EventType)</span></td>
+                <td><span class="d-block fw-semibold text-nowrap">@(row.StaffId ?? "Anonymous")</span>@if (row.Role is not null) { <span class="d-block small text-muted">@row.Role</span> }</td>
+                <td class="text-nowrap">@row.BranchCode</td>
+                <td class="text-nowrap"><span class="fw-semibold">@row.HttpMethod</span> <span class="audit-route">@row.Path</span></td>
+                <td><span class="badge @AuditDisplay.StatusBadge(row.StatusCode)">@row.StatusCode</span></td>
+                <td>@row.Detail</td>
+                <td class="text-nowrap">@row.RemoteIpAddress</td>
+                <td><a class="audit-trace-link" asp-controller="AuditLog" asp-action="Trace" asp-route-id="@row.CorrelationId" title="Everything request @row.CorrelationId left in the audit trail">@AuditDisplay.ShortId(row.CorrelationId)</a></td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
