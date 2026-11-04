@@ -133,6 +133,36 @@ public sealed class DataChangeAuditTests(SqlServerTestDatabase database)
     }
 
     [Fact]
+    public async Task A_synchronous_save_records_an_insert_and_a_delete_keeps_every_old_value()
+    {
+        var data = await SqlTestData.SeedAsync(database, stock: 1);
+        var correlation = Correlation();
+        var counterCode = new CounterCode($"C-{Suffix()[..6]}");
+        await using (var db = Context(correlation, new StaffId("STF-ADMIN-01")))
+        {
+            var counter = new Counter(counterCode, data.Branch);
+            db.Counters.Add(counter);
+            // The synchronous SaveChanges goes through the same interceptors as the async one.
+            db.SaveChanges();
+            counter.Close();
+            db.SaveChanges();
+            db.Counters.Remove(counter);
+            db.SaveChanges();
+        }
+
+        var changes = (await ChangesAsync(correlation)).OrderBy(change => change.DataChangeId).ToArray();
+        Assert.Equal(["Insert", "Update", "Delete"], changes.Select(change => change.Operation));
+        Assert.All(changes, change => Assert.Equal(($"BranchCode={data.Branch.Value}, CounterCode={counterCode.Value}", data.Branch.Value), (change.RecordKey, change.BranchCode)));
+        Assert.Equal([new DataChangeColumn("IsOpen", "True", "False")], DataChangeJson.Deserialize(changes[1].ChangesJson));
+        var deleted = DataChangeJson.Deserialize(changes[2].ChangesJson);
+        Assert.All(deleted, column => Assert.Null(column.New));
+        Assert.Contains(new DataChangeColumn("IsOpen", "False", null), deleted);
+        Assert.Contains(new DataChangeColumn("CounterCode", counterCode.Value, null), deleted);
+        await using var check = database.CreateContext();
+        Assert.Equal(3, await check.Database.SqlQuery<int>($"SELECT COUNT(*) AS [Value] FROM DataChanges WHERE CorrelationId = {correlation} AND CreatedBy = 'STF-ADMIN-01'").SingleAsync());
+    }
+
+    [Fact]
     public async Task A_change_made_without_a_signed_in_staff_member_is_attributed_to_the_system()
     {
         var correlation = Correlation();
