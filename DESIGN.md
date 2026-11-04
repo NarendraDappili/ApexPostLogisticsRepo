@@ -4,11 +4,11 @@ ApexPost is an ASP.NET Core MVC application for post-office counters: retail sal
 
 | | Week 2 | Week 3 |
 |---|---|---|
-| Storage | JSON files under `App_Data` | SQL Server `ApexPostDb`, 17 tables, code-first migrations |
+| Storage | JSON files under `App_Data` | SQL Server `ApexPostDb`, 19 tables (17 + 2 audit tables after the final review), code-first migrations |
 | Writes | Each repository saved its own file | Repositories stage; one unit of work commits once per use case |
 | Concurrency | Per-file and per-branch `SemaphoreSlim`, compensating writes | `rowversion` optimistic concurrency, database transactions (ADR 0017) |
 | Reads | Repositories loaded aggregates; reports summed in memory | Query services with no-tracking projections, and four stored procedures |
-| Audit | JSON Lines file | `AuditEntries` table, written outside the unit of work (ADR 0011) |
+| Audit | JSON Lines file | `AuditEntries` per request, outside the unit of work (ADR 0011); `DataChanges` with old → new values in the business transaction, and `SecurityEvents`; an Audit log screen by role; the `ApexPost.Audit` log category (ADR 0024) |
 | Errors | Generic 500 | 409 / 404 / 400 / 500 Problem Details (ADR 0018) |
 
 Related documents:
@@ -64,6 +64,8 @@ flowchart LR
     Queries --> Ctx
     Ctx --> Sql[(SQL Server ApexPostDb)]
     Controllers -. audit resource filter .-> Audit[EfAuditStore<br/>own context per append] --> Sql
+    Ctx -. SavingChanges .-> History[DataChangeAuditInterceptor<br/>history rows in the same SaveChanges]
+    Pipeline -. sign-in, refusals .-> Security[SecurityEventRecorder<br/>own context per append] --> Sql
 ```
 
 ### A write, end to end (checkout)
@@ -242,7 +244,30 @@ erDiagram
         int StatusCode "CHECK 100-599"
         varchar Outcome "CHECK IN"
     }
+    DataChanges {
+        bigint DataChangeId PK
+        datetime2 OccurredAtUtc
+        varchar StaffCode "no FK"
+        varchar BranchCode "no FK"
+        varchar TableName
+        nvarchar RecordKey "business key"
+        varchar Operation "CHECK IN"
+        nvarchar ChangesJson "CHECK ISJSON"
+        varchar CorrelationId
+    }
+    SecurityEvents {
+        bigint SecurityEventId PK
+        datetime2 OccurredAtUtc
+        varchar EventType "CHECK IN"
+        varchar StaffCode "no FK, null if unknown"
+        nvarchar Path "no query string"
+        int StatusCode "CHECK 100-599"
+        nvarchar Detail "fixed reason"
+        varchar CorrelationId
+    }
 ```
+
+The three audit tables have no relationships; they must outlive the rows they mention ([ADR 0024](docs/adr/0024-complete-audit-trail-and-audit-log-screen.md)).
 
 **Columns every table has (left out of the diagram):**
 - `CreatedAtUtc` (`DEFAULT SYSUTCDATETIME()`), `CreatedBy` (`DEFAULT 'system'`) and `ModifiedAtUtc`, stamped by `AuditColumnsInterceptor` from the signed-in staff member.
@@ -287,6 +312,7 @@ The tables are in third normal form. Each fact is stored once, in the table whos
   - **Private constructors** so EF Core can materialise the entities.
 - **Money orders have their own persistence model.** `MoneyOrderEntity` and `IdentityVerificationEntity`, with `MoneyOrderMapper`, make sure only a masked document reference can be stored or read back.
 - **`AuditColumnsInterceptor`** stamps `CreatedAtUtc`, `CreatedBy` and `ModifiedAtUtc` on every `SaveChanges`, using `ICurrentStaffContext`.
+- **`DataChangeAuditInterceptor`** adds a `DataChanges` row for every inserted, updated or deleted row to the same `SaveChanges`, with the business key and the old and new values of the changed columns. The password hash is recorded only as `(hidden)` ([ADR 0024](docs/adr/0024-complete-audit-trail-and-audit-log-screen.md)). It is registered before `AuditColumnsInterceptor`, and it skips the audit columns that interceptor sets.
 
 ### Migrations
 
@@ -299,6 +325,7 @@ The tables are in third normal form. Each fact is stored once, in the table whos
 | `RequirePositivePaymentAmount` | `CK_Payments_Amount` becomes `[Amount] > 0`, as the brief requires |
 | `AdjustStockRequiresBranchManager` | `usp_AdjustStock` accepts only an active Branch Manager of the branch; `Down` restores the previous body |
 | `AddBranchSalesForPeriod` | Adds `usp_BranchSalesForPeriod`, sales per day for a from-to period; `Down` drops it |
+| `AddAuditTrail` | Adds `DataChanges` and `SecurityEvents` with their CHECKs, plus the eleven audit-screen indexes on the three audit tables; `Down` drops them ([ADR 0024](docs/adr/0024-complete-audit-trail-and-audit-log-screen.md)) |
 
 - **Migrations are immutable snapshots.** A migration that deploys a procedure keeps the exact text it deployed, so replaying it on a new database always gives the same result. The `.sql` files hold the current version. `StoredProcedureMigrationTests` and `StoredProcedureTests` check both rules: the migrations keep their shipped text, and the migrated database runs exactly the files in source control.
 
@@ -360,6 +387,7 @@ flowchart LR
   - a first delivery inserts the stock row with `SaveChangesAsync`, then calls the procedure;
   - both run inside one `ExecuteInTransactionAsync`, so a failure in either rolls back both.
 - **Reports:** `usp_DailyBranchSales` (one day), `usp_BranchSalesForPeriod` (a from-to period, `OPTION (RECOMPILE)`, PERFORMANCE.md Investigation 4) and `usp_LowStockReport`.
+- **Their history is recorded by decorators.** `AuditedCatalogueBulkUpdates` and `AuditedStockAdjustments` wrap the two ports. They write the `DataChanges` rows that `SaveChanges` cannot see, in the same transaction: the old and new price of each repriced product, and the stock quantity with its adjustment row. The inner classes, and the single `UPDATE`, are unchanged (ADR 0024).
 - **Calls are always parameterised** (`SqlQuery`/`ExecuteSql` with interpolated values that become parameters). Procedure `THROW` errors become `RuleViolationException`, shown as 400.
 - **Least privilege:** the role `apexpost_app` (`database/security/apexpost-app-role.sql`) has no `DELETE` and no DDL, and can only append and read the audit trail ([ADR 0012](docs/adr/0012-stored-procedures-for-reports-and-stock-adjustment.md)).
 
@@ -385,6 +413,15 @@ flowchart LR
 - **What is recorded:** `AuditResourceFilter` records every MVC request: staff, role, branch, controller and action, allow-listed route IDs, status, duration, correlation ID and outcome. It never records bodies, arguments or headers.
 - **Correct status:** as a resource filter it runs after the result, so the status is the one the client received, including redirects, `Forbid`, 409 pages and mapped exceptions.
 - **Separate commit:** `EfAuditStore` appends each record with its own short-lived context. An audit write can neither commit a failed business change nor undo a committed one.
+
+**The complete trail** ([ADR 0024](docs/adr/0024-complete-audit-trail-and-audit-log-screen.md)):
+- **Data changes:** `DataChanges` records the old and new values of every changed row, in the business transaction.
+- **Security events:** `SecurityEvents` records sign-ins (with a fixed failure reason), sign-outs, 403s and Access Denied redirects, refused API keys and IPs, rate limits and rejected cookies.
+- **Application log:** every record also goes to `ILogger` under `ApexPost.Audit`; data changes are logged with column names only.
+- **The Audit log screen** reads all three:
+  - Auditors and Administrators see every branch;
+  - Branch Managers see their own branch, without security events;
+  - Counter Clerks get 403.
 
 ## Domain model
 
@@ -477,6 +514,7 @@ The screens are server-rendered Razor views on Bootstrap 5.3. There is no client
 | Report period | `Views/Reports/Index.cshtml`, `ReportsController` | From and To date pickers, plus quick links (today, last 7 or 30 days, this month). One day runs `usp_DailyBranchSales`; a longer period runs `usp_BranchSalesForPeriod` and adds a "Sales by day" table. A reversed or longer-than-366-day period is shown as a message with a 400. The earlier `?day=` link still works |
 | Opening-hours pickers | `Views/BranchAdmin/_BranchFields.cshtml`, `OpeningHoursSchedule` | Time pickers for Monday to Friday, Saturday and Sunday. The server writes them as the stored text ("Mon-Fri 08:30-17:30; Sat 09:00-12:30"), so the domain and the schema are unchanged. Editing reads the text back into the pickers, and hours in any other format are kept unless new times are picked |
 | Low-stock badge | `Views/Catalogue/Index.cshtml`, `.badge-low-stock` | Only the badge is highlighted; the row keeps the list colours |
+| Audit log | `Views/AuditLog/`, `AuditLogController`, `.audit-*` in `site.css` | Tabs for requests, data changes (old value struck through, new value highlighted) and security events. Filters, paging, CSV export and a per-request trace. The shell, colours and icon sprite are the same as every other screen. Shown in the menu to Auditors, Administrators and Branch Managers only |
 | Icons | `Views/Shared/_Icons.cshtml` | One inline SVG sprite (`<symbol>` + `<use>`); no icon font or CDN |
 | Theme and watermark | `wwwroot/css/site.css`, `wwwroot/img/logo-watermark.svg` | About 50% yellow (surfaces), 30% red (actions and the current place) and 20% black (text, footer). List tables in a slate palette. The logo is drawn as a fixed watermark |
 
@@ -507,7 +545,7 @@ Measured on a 200,000-sale data set, the five workload indexes cut the per-branc
 | Principle | Where | Why it applies |
 |---|---|---|
 | Single responsibility | Repositories only stage; `EfUnitOfWork` only commits and translates errors; query services only read; `AuditColumnsInterceptor` only stamps audit columns; controllers only translate HTTP | Each class changes for one reason; a change to commit behaviour touches one class |
-| Open/closed | `IStockAdjustments`, `ICatalogueBulkUpdates`, `IShippingRateProvider`, `IAuditStore`, `IEventObserver` | Swapping the JSON adapters for EF Core, or a LINQ report for a procedure, did not change the services that use them |
+| Open/closed | `IStockAdjustments`, `ICatalogueBulkUpdates`, `IShippingRateProvider`, `IAuditStore`, `IEventObserver` | Swapping the JSON adapters for EF Core, or a LINQ report for a procedure, did not change the services that use them. The audit trail wraps the two set-based ports in decorators, so neither the services nor the inner adapters changed |
 | Liskov substitution | EF repositories and the in-memory fakes; `EfUnitOfWork` and `SpyUnitOfWork` | Application tests run the services against fakes, and the Week 2 web workflow tests run the same services against SQL Server |
 | Interface segregation | Separate repository per aggregate; `IUnitOfWork` separate from repositories; query interfaces per screen area; `IAuditStore` with append and read only | Consumers depend only on what they call; no "god repository" |
 | Dependency inversion | Application defines every port; Infrastructure implements them; `Program.cs` binds them | Business code does not reference EF Core, SQL Server or ASP.NET Core |
@@ -516,8 +554,8 @@ Measured on a 200,000-sale data set, the five workload indexes cut the per-branc
 
 | Lifetime | Registrations | Why |
 |---|---|---|
-| Scoped | `ApexPostDbContext`, `AuditColumnsInterceptor`, `ICurrentStaffContext`, every repository, `IUnitOfWork`, query services, `IStockAdjustments`, `ICatalogueBulkUpdates`, `EfShippingRateProvider`, `IAuditStore`, application services, `DemoDataSeeder`, MVC filters | One `DbContext` per request, shared by the repositories and the unit of work of that request; nothing scoped is captured by a singleton |
-| Singleton | `ShippingRateCache`, policies and options, `IPasswordHasher`, event publisher and observers, notification sender, simulated verifier and courier client, `TimeProvider` | Stateless or process-wide state that holds no `DbContext` |
+| Scoped | `ApexPostDbContext`, `AuditColumnsInterceptor`, `DataChangeAuditInterceptor`, `ICurrentStaffContext`, `ICorrelationContext`, every repository, `IUnitOfWork`, query services (including `IAuditLogQueries`), `IStockAdjustments`, `ICatalogueBulkUpdates` and their inner adapters, `EfShippingRateProvider`, `IAuditStore`, `ISecurityEventStore`, `SecurityEventRecorder`, application services (including `AuditLogService`), `DemoDataSeeder`, MVC filters | One `DbContext` per request, shared by the repositories and the unit of work of that request; nothing scoped is captured by a singleton |
+| Singleton | `ShippingRateCache`, policies and options, `IPasswordHasher`, event publisher and observers, notification sender, simulated verifier and courier client, `TimeProvider`, `AuditTrailLogger` | Stateless or process-wide state that holds no `DbContext` |
 | Hosted service | `DemoDataSeedHostedService` | Creates its own scope for the seeder at startup, in Development only |
 
 ## Tests
@@ -526,8 +564,8 @@ Measured on a 200,000-sale data set, the five workload indexes cut the per-branc
 |---|---|---|
 | `ApexPost.Domain.Tests` | No database | Value objects, entities, state transitions (Week 2 tests unchanged) |
 | `ApexPost.Application.Tests` | Fakes + `SpyUnitOfWork` | Workflows commit once, or never on failure; pricing; stock adjustment; price revision |
-| `ApexPost.Infrastructure.Tests` | A disposable SQL Server database per run (`ApexPostDb_Test_<guid>`), built by the migrations | Mapping; rollback; concurrency; procedures; audit store; query shape and N+1; generated SQL; index definitions |
-| `ApexPost.Web.IntegrationTests` | `WebApplicationFactory` + a disposable database | Sales persist; voids need a manager; report totals; Problem Details; over-posting; security pipeline; audit statuses; role-aware menu and branch picker |
+| `ApexPost.Infrastructure.Tests` | A disposable SQL Server database per run (`ApexPostDb_Test_<guid>`), built by the migrations | Mapping; rollback; concurrency; procedures; audit store; data-change history and audit-log queries; query shape and N+1; generated SQL; index definitions |
+| `ApexPost.Web.IntegrationTests` | `WebApplicationFactory` + a disposable database | Sales persist; voids need a manager; report totals; Problem Details; over-posting; security pipeline; audit statuses; security events; Audit log access by role; role-aware menu and branch picker |
 
 A guard refuses to run tests against any database whose name is not a test database. See [docs/testing.md](docs/testing.md).
 
@@ -558,12 +596,14 @@ A guard refuses to run tests against any database whose name is not a test datab
 | [0021](docs/adr/0021-parallel-report-reads-with-separate-contexts.md) | Parallel report reads with `Task.WhenAll`, one `DbContext` per report | Accepted |
 | [0022](docs/adr/0022-week-2-business-rule-tests-in-week-3.md) | How the Week 2 business-rule tests carry into Week 3 | Accepted |
 | [0023](docs/adr/0023-application-shell-and-theme-under-the-strict-csp.md) | Application shell, role-aware navigation and theme under the strict CSP | Accepted |
+| [0024](docs/adr/0024-complete-audit-trail-and-audit-log-screen.md) | A complete audit trail (data changes, security events, `ApexPost.Audit` log) and an Audit log screen by role | Accepted |
 
-Week 3 added thirteen ADRs (0011–0023). The seven the brief requires are in bold.
+Week 3 added thirteen ADRs (0011–0023). The seven the brief requires are in bold. ADR 0024 answers the final review's remark that auditing was not visible anywhere.
 
 ## Known limitations
 
-- **Audit is best-effort.** A crash between the business commit and the audit insert loses that record; an outbox would be needed for guaranteed audit (ADR 0011).
+- **The request and security audit are best-effort.** A crash between the business commit and the request's audit insert loses that record (ADR 0011). The data-change history does not have this gap: it commits with the change (ADR 0024).
+- **Audit rows are kept forever.** Nothing deletes them, and the history adds about 7 KB of log per one-line sale (PERFORMANCE.md). Retention or partitioning is a deployment decision.
 - **Simulated services.** Notifications are log entries. Identity verification and courier tracking are simulated. There is no payment processing, MFA, account lockout or password rotation.
 - **IP allowlist and proxies.** The allowlist uses the direct connection address. Behind a reverse proxy, trusted forwarded headers must be configured first.
 - **Applying the index migration.** It blocks writes on the indexed tables while the indexes build. Apply it in a quiet period, or with online index creation where the edition supports it (PERFORMANCE.md).

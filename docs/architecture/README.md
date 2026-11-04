@@ -31,7 +31,11 @@ flowchart LR
 - **Writes:** repositories stage changes, and the unit of work commits **once per use case** in one database transaction. Stock and sales use `rowversion` optimistic concurrency, so a conflict is a 409, never a lost update ([ADR 0015](../adr/0015-repository-and-unit-of-work-boundaries.md), [ADR 0017](../adr/0017-optimistic-concurrency-for-stock-and-transactions.md)).
 - **Reads:** query services use no-tracking projections, one SQL statement per screen query, or the reporting stored procedures. There is one database; no separate read store.
 - **Lifetimes:** one scoped `DbContext` per request, shared by that request's repositories and unit of work.
-- **Audit:** `AuditResourceFilter` writes one record per MVC request with its own context, outside the request's unit of work ([ADR 0011](../adr/0011-audit-store-outside-the-unit-of-work.md)).
+- **Audit:**
+  - **Requests:** `AuditResourceFilter` writes one record per MVC request with its own context, outside the request's unit of work ([ADR 0011](../adr/0011-audit-store-outside-the-unit-of-work.md)).
+  - **Data changes:** `DataChangeAuditInterceptor` records the old and new values of every changed row, in the same transaction as the change.
+  - **Security events:** `SecurityEventRecorder` records sign-ins, sign-outs and refusals.
+  - **Log and screen:** every record also goes to the `ApexPost.Audit` log category. The Audit log screen shows all three by role ([ADR 0024](../adr/0024-complete-audit-trail-and-audit-log-screen.md)).
 - **Schema changes:** reviewed EF Core migrations, plus a generated idempotent script. The application never creates or migrates the schema itself.
 
 ## HTTP pipeline

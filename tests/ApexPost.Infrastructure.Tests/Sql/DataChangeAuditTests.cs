@@ -93,6 +93,29 @@ public sealed class DataChangeAuditTests(SqlServerTestDatabase database)
     }
 
     [Fact]
+    public async Task The_history_rows_ride_in_the_sales_own_batches_and_commit_so_a_sale_makes_no_extra_round_trip()
+    {
+        var data = await SqlTestData.SeedAsync(database, stock: 20);
+        var withoutHistory = new SqlCommandLog();
+        var withHistory = new SqlCommandLog();
+        await using (var db = database.CreateContext(new FixedStaff(data.Clerk, null), null, withoutHistory))
+        {
+            await SqlTestData.CheckoutService(db).CheckoutAsync(data.Sale($"TX-RT-{Suffix()}", 1));
+        }
+
+        var correlation = Correlation();
+        await using (var db = Context(correlation, data.Clerk, withHistory))
+        {
+            await SqlTestData.CheckoutService(db).CheckoutAsync(data.Sale($"TX-RT-{Suffix()}", 1));
+        }
+
+        // PERFORMANCE.md measures what the four rows cost in log and time; this pins that they cost no round trip.
+        Assert.Equal(4, (await ChangesAsync(correlation)).Count);
+        Assert.Equal((withoutHistory.Commands.Count, 1), (withHistory.Commands.Count, withHistory.Commits));
+        Assert.Equal(1, withoutHistory.Commits);
+    }
+
+    [Fact]
     public async Task A_shipments_dimensions_are_part_of_the_shipment_row_change()
     {
         var data = await SqlTestData.SeedAsync(database, stock: 1);

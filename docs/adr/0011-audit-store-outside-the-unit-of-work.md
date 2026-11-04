@@ -1,6 +1,6 @@
 # ADR 0011: Write audit entries outside the request's unit of work
 
-Status: Accepted. Supersedes the storage part of ADR 0005.
+Status: Accepted. Supersedes the storage part of ADR 0005. Extended by ADR 0024, which adds data-change history in the business transaction, security events and the Audit log screen; the request audit described here is unchanged.
 
 ## Context
 

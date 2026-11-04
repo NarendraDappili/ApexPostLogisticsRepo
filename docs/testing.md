@@ -7,7 +7,27 @@ dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build
 ```
 
-The latest run had **292 tests passing, 0 failing, 0 skipped**, with a zero-warning build.
+The latest run had **428 tests passing, 0 failing, 0 skipped**, with a zero-warning build. The error-handling tests also pass with `DOTNET_TieredCompilation=0` (55 tests).
+
+### Line coverage
+
+Coverage is measured with the collector built into `Microsoft.NET.Test.Sdk`, so no package is needed:
+
+```powershell
+dotnet test ApexPost.slnx -c Release --no-build --collect "Code Coverage;Format=cobertura"
+```
+
+Line coverage on 4 November 2026, excluding migrations, Razor views and `Program.cs`:
+
+| Project | Before the final-review round | After |
+|---|---|---|
+| Domain | 90% | 94% |
+| Application | 98% | 99% |
+| Infrastructure | 96% | 99% |
+| Web | 85% | 93% |
+| **Total** | **92%** | **97%** |
+
+Most of the remaining lines are the `catch (OperationCanceledException) … StatusCode(499)` branches for a client disconnect, and the demo seeder's seeding path.
 
 ## CI on GitHub Actions
 
@@ -42,10 +62,17 @@ The other five runs are the pushes to `master` that merged #22–#26.
 
 | Project | Tests | Needs a database |
 |---|---|---|
-| `ApexPost.Domain.Tests` | 67 | No |
-| `ApexPost.Application.Tests` | 86 | No |
-| `ApexPost.Infrastructure.Tests` | 77 | SQL Server (except the model, migration and password-hasher tests) |
-| `ApexPost.Web.IntegrationTests` | 62 | SQL Server |
+| `ApexPost.Domain.Tests` | 81 | No |
+| `ApexPost.Application.Tests` | 109 | No |
+| `ApexPost.Infrastructure.Tests` | 128 | SQL Server (except the model, migration, simulation, design-time factory and password-hasher tests) |
+| `ApexPost.Web.IntegrationTests` | 110 | SQL Server (except the CSV, display and demo-seed guard tests) |
+
+The final-review round added 136 tests:
+- 117 in new test files;
+- 15 audit-schema tests appended to `ApexPostModelTests`;
+- 4 branch-check tests appended to `AuthenticationTests`.
+
+No existing test was changed or removed: since `1b2a090`, `git diff --numstat -- tests` shows additions only.
 
 Each test project references only the production project it tests. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
 
@@ -65,7 +92,7 @@ No test uses a real credential, external service or arbitrary delay. All data is
 
 ### Unit tests: no database
 
-**Domain (67).** These are the Week 2 business-rule tests, which **pass unchanged** against the new persistence layer. They cover:
+**Domain (81).** 67 are the Week 2 business-rule tests, which **pass unchanged** against the new persistence layer. They cover:
 - value objects;
 - stock that never goes negative;
 - staff eligibility;
@@ -75,11 +102,25 @@ No test uses a real credential, external service or arbitrary delay. All data is
 
 `PersistenceReadyDomainTests` cover the Week 3 additions: SKU, category, payment (always more than zero), stock adjustment, and the 30 kg limit.
 
-**Application (86).** Services run against in-memory fake repositories and a `SpyUnitOfWork`. The spy records commits and explicit transactions, can fail a commit, and can cancel one. The tests show:
+`IdentityAndCodeTests` (14, final-review round) cover:
+- identity by business key for counters, stock rows, transactions and categories;
+- opening and closing a counter;
+- codes trimmed, upper-cased and printed, and blank codes refused;
+- a document number of four characters or fewer reveals nothing;
+- an unmasked stored reference is refused;
+- a verification recorded for another money-order context is refused.
+
+**Application (109).** Services run against in-memory fake repositories and a `SpyUnitOfWork`. The spy records commits and explicit transactions, can fail a commit, and can cancel one. The tests show:
 - **One commit per use case, or none on failure.** Checkout commits the stock, the sale, the lines and the payment once. A failed validation or a failed commit leaves nothing committed.
 - **The same business assertions as Week 2.** Only the wiring changed (the spy unit of work), and every Week 2 business assertion is unchanged.
 - **Stock adjustments.** There is one transaction per adjustment. A first delivery saves the stock row before the procedure runs. Only a manager of the same branch may adjust. The domain rules run first.
 - **Price revision.** The percentage limits are enforced, and the request reaches the set-based port.
+- **Audit log access** (`AuditLogServiceTests`, 19):
+  - Auditors and Administrators read every branch and the security events;
+  - a Branch Manager is pinned to the home branch, and is refused another branch or the security events;
+  - a Counter Clerk is refused everything;
+  - periods are validated (reversed, more than 366 days), and the page size is clamped.
+- **Shipment acceptance** (`ShipmentAcceptanceRuleTests`, 4): a closed branch accepts no shipment; a duplicate shipment ID is refused and the first is kept; rate guards.
 
 ### The Week 2 tests after the refactor
 
@@ -96,7 +137,7 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
 | `Reports_group_actual_branch_data_without_identity_details` | The in-memory `BranchReportService` | `The_week_2_report_scenario_gives_the_same_figures_from_sql_server` (SQL Server). It seeds the same scenario and keeps the same ten assertions and expected figures. It also checks that the report type holds counts only, never identity data. |
 | `Reports_propagate_cancellation` | Same service | `Daily_sales_include_the_tax_charged_and_every_report_honours_cancellation`, covering all four reports |
 
-### SQL Server integration tests (Infrastructure, 77)
+### SQL Server integration tests (Infrastructure, 128)
 
 | Area | Tests show |
 |---|---|
@@ -111,8 +152,12 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
 | Checkout constraints (`CheckoutPersistenceTests`) | `CK_Payments_Amount` rejects a payment that is not greater than zero, even from a write that bypasses the domain. |
 | Audit store (`EfAuditStoreTests`) | Round trip and staff stamping. A failed business save is audited but never committed by the audit write. A failed audit write does not undo a committed change. |
 | Seeding and caching (`SeedingAndRateCacheTests`) | The seed meets the brief's volumes (5 branches, 20 staff, 30 products, 10 zones/60 rates, 240 sales). It refuses an unmigrated database. Rates are cached, but an empty table is not. |
+| Audit trail schema (`AuditTrailSchemaTests`, `ApexPostModelTests`) | `DataChanges` and `SecurityEvents` exist with their CHECKs (operation, event type, `ISJSON`, status range) and no foreign keys. The eleven audit indexes have the pinned key order. |
+| Data-change history (`DataChangeAuditTests`) | An insert is named by its business key, with the password hash `(hidden)`. An update records only the changed columns, old → new. A sale records its transaction, line, payment and stock in one commit, **with no extra round trip**. A failed save keeps no history, and a retry does not double it. A synchronous save is recorded too. The price revision stays one `UPDATE` and records each product's old and new price. A rolled-back revision leaves neither prices nor history. A stock adjustment records the quantity and its history row; a refused one records nothing. The audit log gets column names, never values. |
+| Audit log queries (`AuditLogQueryTests`) | Newest first, a period that includes both days whole and nothing either side, every filter, a page past the end shown as the last page, a trace across all three logs limited to the viewer's branch, and a table filter that lists the business tables but not the audit tables. |
+| Simulations and tooling (`SimulatedExternalServiceTests`, `DesignTimeFactoryTests`, `CatalogueAndRepositoryGuardTests`) | The courier's concurrency limit, stable status and cancellable wait. The identity verifier's rules. `dotnet ef` reads its connection from the environment and finds every migration in order. Stock levels, and the money-order repository's detached-update guard. |
 
-### Web integration tests (62)
+### Web integration tests (110)
 
 `WebApplicationFactory` hosts the real `Program.cs` against a disposable test database, with cookies and antiforgery tokens handled as a browser would. The tests cover:
 
@@ -138,6 +183,32 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
   - no password, document number or API key in records or logs;
   - an audit-store failure never breaks a committed sale;
   - **the recorded status is the one the client received**, for a sign-in redirect (302), an in-action `Forbid` (403), a mapped exception (404) and a 409 form. This test fails against the old action filter.
+- **The complete audit trail** (`AuditTrailTests`, final-review round):
+  - **Security events:**
+    - sign-ins, sign-outs and failed sign-ins are recorded with the reason and never the password;
+    - refused pages, policy refusals and an action's own branch check are `AccessDenied`;
+    - a deactivated staff member's session is `SessionRejected` with the reason;
+    - rate-limited sign-ins and refused partner requests (missing or wrong key, IP outside the allow-list) are recorded without the key.
+  - **Data history from the screens:**
+    - an administrator's staff change has its old and new values, a `(hidden)` password and the request's correlation ID;
+    - a stock adjustment and a price revision appear in the history.
+- **The Audit log screen by role** (`AuditLogScreenTests`):
+  - a Counter Clerk has no menu entry and is refused every audit page;
+  - a Branch Manager reads their branch's requests and changes, but not security events or another branch;
+  - an Auditor reads every list for every branch, including failed sign-ins;
+  - an administrator's change shows its old and new values, and its trace ties the request to the change;
+  - the CSV export has its header and the filtered rows, and neutralises spreadsheet formulas;
+  - a reversed period or an unreadable date is a 400 with the form and a reason;
+  - long lists are paged in the theme's colours, and the pages keep to the strict CSP.
+- **Branch checks on the label and verification screens** (`AuthenticationTests`): another branch's shipping label and money-order verification are refused; a blank or unknown ID is a 400 or 404, never a 500.
+- **Edge paths** (`PartnerApiTests`, `ScreenEdgeCaseTests`, `DemoSeedHostedServiceTests`, `AuditDisplayAndCsvTests`):
+  - **Partner API success path:** the parcel-status API with a valid key, its audit row, and a slow courier degrading to "Unavailable" within the timeout. This path was not covered before, because the earlier tests only reached its refusals.
+  - **Public pages:** the public and error pages (request ID only, `no-store`).
+  - **Stock JSON:** own branch only.
+  - **Money orders:** a low-value money order's fee, and a repeated verification refused.
+  - **Admin screens:** 404 and duplicate answers, and an administrator who cannot deactivate their own account.
+  - **Demo seeder:** never seeds outside Development or without a password.
+  - **Audit display and export:** badge colours and CSV formats, including formula neutralisation.
 
 `ProblemDetailsMappingTests` cover each row of the exception mapping, including framework exceptions of the same types staying 500 without detail. Two more tests pin the classification rule: the guard helpers count as business code, but the same exception types thrown inside `List`, `Dictionary`, `string`, `Nullable` or an enumerator called by business code do not. Three more make the rule independent of JIT inlining: a probe controller calls the same business rule fully optimized (inlined) and unoptimized, and both must be 400; exception types the Application declares are 400 without a stack trace; and every controller is scanned for `throw` or `ThrowIf…`, which the rule relies on. CI reruns the error-handling tests with `DOTNET_TieredCompilation=0`.
 

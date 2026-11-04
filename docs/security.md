@@ -32,13 +32,17 @@ The committed configuration holds non-secret defaults only. Business data lives 
 |---|---|
 | `SELECT`/`INSERT`/`UPDATE` only on the tables the use cases write | `DELETE` on any table (records are closed or deactivated, never deleted) |
 | `SELECT` on reference data | Any DDL |
-| `SELECT, INSERT` on `AuditEntries` (append-only for the app) | `UPDATE`/`DELETE` on `AuditEntries` |
+| `SELECT, INSERT` on `AuditEntries`, `DataChanges` and `SecurityEvents` (append-only for the app) | `UPDATE`/`DELETE` on any audit table |
 | `EXECUTE` on the four procedures | Any direct access to `StockAdjustments`: history is written only by `usp_AdjustStock`, through ownership chaining |
 
 This was verified by impersonating a member of the role ([ADR 0012](adr/0012-stored-procedures-for-reports-and-stock-adjustment.md)):
 - **Allowed:** the reads, the price-revision `UPDATE`, the audit `INSERT` and the procedures.
 - **Refused with Msg 229 (no permission):** `UPDATE`/`DELETE` on audit rows, `DELETE` on sales, and direct access to `StockAdjustments`.
 - **Refused with Msg 262 (no DDL permission):** `CREATE TABLE`.
+
+The check was repeated for the audit trail of [ADR 0024](adr/0024-complete-audit-trail-and-audit-log-screen.md), on a new database built by the idempotent script, with the role script run twice:
+- **Allowed:** `INSERT` into `DataChanges` and `SecurityEvents`, `SELECT` from all three audit tables, and the `UPDLOCK, HOLDLOCK` read of `Products` that the audited price revision uses.
+- **Refused with Msg 229:** `UPDATE` and `DELETE` on `DataChanges` and `SecurityEvents`, `DELETE` on `AuditEntries`, and `SELECT` on `StockAdjustments`.
 
 ### No SQL injection surface
 
@@ -130,6 +134,41 @@ Records are stored in the `AuditEntries` table ([ADR 0011](adr/0011-audit-store-
 - **Append-only for the application.** The least-privilege role grants only `SELECT, INSERT`, so the application cannot alter or delete audit rows. A database administrator still can. Where tamper evidence is required, use SQL Server Ledger tables, SQL Server Audit, or ship the records to an off-host, write-once store.
 - **Best-effort.** A failed append is logged with the controller and action and does not change the response. Monitor those log entries. A crash between the business commit and the audit insert loses that record; an outbox would be needed for guaranteed audit.
 
+### Data changes and security events
+
+[ADR 0024](adr/0024-complete-audit-trail-and-audit-log-screen.md) adds two more append-only records.
+
+**`DataChanges`: one row per inserted, updated or deleted table row.**
+- **What a row holds:** the business key, the operation, the staff member, the branch, the correlation ID, and the old and new value of each changed column.
+- **Same transaction as the change.** A rolled-back change leaves no history.
+- **What it never holds:**
+  - **Password hash:** recorded only as `(hidden)`, so a password change is visible without its hash.
+  - **Identity documents:** only the masked reference exists to be recorded.
+  - **Audit columns and row versions:** left out.
+
+**`SecurityEvents`: sign-ins, sign-outs and refusals.**
+- **What is recorded:**
+  - successful and failed sign-ins, with a fixed reason such as `WrongPassword` or `Inactive`;
+  - sign-outs;
+  - 403s and Access Denied redirects;
+  - refused API keys and IP addresses;
+  - rate-limited requests;
+  - rejected sign-in cookies.
+- **What a row holds:** method, path without the query string, status, client IP, correlation ID, and the staff member when known.
+- **Unknown IDs are not stored.** For an unknown staff ID the attempted ID is not stored, because it may be a password typed into the wrong field.
+- **Never recorded:** passwords, API keys and request bodies.
+
+**The application log.** Every audit record is also written to `ILogger` under the category `ApexPost.Audit`. A data change is logged with its column names only, never the values, because log destinations may be less protected than the database.
+
+**Who can read the trail.** The Audit log screen (`/AuditLog`):
+- **Auditors and Administrators:** every branch and all three logs.
+- **Branch Managers:** requests and data changes of their home branch only, and no security events.
+- **Counter Clerks:** refused (403).
+
+`SameBranchOnly`, a role check on the Security tab, and `AuditLogService` each enforce this, including for the CSV export and the trace view.
+
+**CSV export.** The export quotes every field and neutralises spreadsheet formulas: a value starting with `=`, `+`, `-`, `@`, tab or carriage return gets a leading `'`.
+
 ## Data integrity under concurrency
 
 - **Concurrent changes are refused, not merged.** Stock and sales use `rowversion` optimistic concurrency, and each use case commits in one database transaction ([ADR 0017](adr/0017-optimistic-concurrency-for-stock-and-transactions.md)). A concurrent change is refused with 409 and nothing is half-saved.
@@ -142,4 +181,6 @@ Records are stored in the `AuditEntries` table ([ADR 0011](adr/0011-audit-store-
 - Create a database user for the app in the `apexpost_app` role. Run migrations under a separate login.
 - Serve over TLS, and configure trusted proxies before relying on the IP allowlist behind a proxy.
 - Keep `ApexPost:DemoSeed:Enabled` off outside Development. The seeder runs only in Development regardless.
-- Monitor the logs for "Unable to append MVC audit record".
+- Monitor the logs for "Unable to append MVC audit record" and "Unable to append security event".
+- Route the `ApexPost.Audit` log category to the monitoring or write-once store, and alert on its `Warning` entries (refused sign-ins, access denied, rate limits).
+- Decide a retention period for `AuditEntries`, `DataChanges` and `SecurityEvents`; the application never deletes their rows.

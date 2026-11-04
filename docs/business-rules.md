@@ -39,4 +39,5 @@ Everything is fictional and only masked document references are stored. The refe
 
 - External payment, identity-verification, notification and shipping-carrier services. The verifier and the courier lookup are simulated, and notifications are log entries.
 - Production account provisioning, MFA, account lockout and password rotation.
-- Guaranteed audit. An audit write failure is logged and never undoes a sale (ADR 0011); an outbox would be needed to guarantee every record.
+- Guaranteed request and security audit. Such an audit write failure is logged and never undoes a sale (ADR 0011); an outbox would be needed to guarantee every record. The data-change history is guaranteed: it commits with the change (ADR 0024).
+- Audit retention. Audit rows are never deleted by the application; how long to keep them is a deployment decision.
