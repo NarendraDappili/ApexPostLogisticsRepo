@@ -42,9 +42,14 @@ public sealed class ShippingController(ShippingWorkflowService shipping, IShippi
             // Read side: a no-tracking projection of the label columns, not the Shipment aggregate.
             var label = await shipments.GetLabelAsync(new ShipmentId(id), cancellationToken);
             if (label is null) return NotFound();
+            // A clerk may only open labels for shipments that originate at their own branch.
+            if (!IsOwnBranch(label)) return Forbid();
             decimal? charge = decimal.TryParse(TempData["Charge"] as string, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
             return View(new ShippingLabelViewModel(label, charge));
         }
         catch (ArgumentException) { return BadRequest(); }
     }
+
+    private bool IsOwnBranch(ShipmentLabel label) =>
+        string.Equals(User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value, label.OriginBranchCode, StringComparison.OrdinalIgnoreCase);
 }
