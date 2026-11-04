@@ -116,12 +116,18 @@ Seeded values you can use: products `PRD-001` … `PRD-030` (`PRD-001`–`PRD-00
 
 ## Using the application
 
-- **Navigation:** the left menu shows only the screens your role may use, grouped into Overview, Counter, Inventory, Management and Administration. The current screen is highlighted. On a phone, open the menu with the button at the top left.
+- **Navigation:** the left menu shows only the screens your role may use, grouped into Overview, Counter, Inventory, Management, Administration and Audit. The current screen is highlighted. On a phone, open the menu with the button at the top left.
 - **Top bar:** shows where you are (breadcrumb), your home branch, your role, and Sign out.
 - **Branch:** clerks and branch managers work at their home branch only, so it is shown as fixed text marked "Your home branch". Administrators and auditors may view every branch, so they choose it from a dropdown.
 - **Forms:** codes that refer to stored records (counters, products, zones, payment methods, roles) are dropdowns, so you pick a valid value instead of typing one.
 - **Dates and times:** reports take a From and a To date from date pickers. A branch's opening hours are picked as times for Monday to Friday, Saturday and Sunday (leave both empty for a closed day) and saved as text such as "Mon-Fri 09:00-17:30; Sat 09:00-12:30".
 - **Lists:** in the catalogue, a product at or below the low-stock threshold (`Inventory:LowStockThreshold`, the same value the dashboard and reports use) gets a highlighted "Low stock" badge; the row itself keeps the normal list colours. Staff and branch lists show each row's status and its actions side by side.
+- **Audit log:** under **Audit**, three tabs:
+  - **Requests:** every screen request, with its status;
+  - **Data changes:** every row inserted, updated or deleted, with its old and new values;
+  - **Security:** sign-ins, sign-outs and refusals.
+
+  Each tab has filters, paging and a CSV export, and a correlation ID opens a trace of one request across all three. Auditors and administrators see every branch and all three tabs. Branch managers see their own branch's requests and data changes. Clerks have no access. See [ADR 0024](docs/adr/0024-complete-audit-trail-and-audit-log-screen.md).
 - **Look:** yellow, red and black (about 50/30/20), with the logo as a faint watermark. All styling is one stylesheet (`wwwroot/css/site.css`), so it works under the strict Content Security Policy. See [ADR 0023](docs/adr/0023-application-shell-and-theme-under-the-strict-csp.md).
 
 ### Suggested walkthrough
@@ -138,6 +144,11 @@ Seeded values you can use: products `PRD-001` … `PRD-030` (`PRD-001`–`PRD-00
 5. **Administrator.** Sign in as `STF-ADMIN-01`.
    - Under **Staff** and **Branches**, add, edit, deactivate and reactivate.
    - Under **Catalogue and stock**, revise a category's prices by a percentage (one set-based `UPDATE`).
+6. **Auditor.** Sign in as `STF-AUDITOR-01`, and open **Audit log**.
+   - **Data changes** shows the sale from step 3, the stock it took (`Quantity` old → new), the void, the adjustment and the repriced products. A password change shows as `(hidden)`.
+   - **Security** shows the sign-ins and sign-outs of the walkthrough. A wrong password shows as `SignInFailed` with the reason `WrongPassword`.
+   - Select a correlation ID to see everything that one request recorded.
+   - The console log shows the same records under the `ApexPost.Audit` category, without the values.
 
 ## Tests
 
@@ -154,7 +165,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 292 tests passing (Domain 67, Application 86, Infrastructure 77, Web integration 62) and a zero-warning build.
+**Results:** the latest run had 428 tests passing (Domain 81, Application 109, Infrastructure 128, Web integration 110) and a zero-warning build. Line coverage is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 
 **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors, checks that every model change has a migration, starts a throwaway SQL Server container with a random password, and runs every test on each push and pull request to `master`, then reruns the error-handling tests with full JIT optimization. Every run on GitHub Actions so far has passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
 
@@ -205,5 +216,6 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 ## Known limitations
 
 - **Simulated services.** Notifications are log entries; identity verification and courier tracking are simulated. There is no payment processing, MFA, account lockout or password rotation.
-- **Audit is best-effort.** An audit write failure is logged and never undoes a committed sale (ADR 0011).
+- **Request and security audit are best-effort.** Such an audit write failure is logged and never undoes a committed sale (ADR 0011). Data-change history is written in the same transaction as the change, so it is never lost for a committed change (ADR 0024).
+- **Audit history is never pruned.** Nothing deletes audit rows; retention is a deployment decision.
 - **IP allowlist and proxies.** The allowlist uses the direct connection address. Behind a reverse proxy, configure trusted forwarded headers first.

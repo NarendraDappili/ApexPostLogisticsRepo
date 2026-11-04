@@ -1106,3 +1106,155 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE TABLE [DataChanges] (
+        [DataChangeId] bigint NOT NULL IDENTITY,
+        [OccurredAtUtc] datetime2(3) NOT NULL,
+        [StaffCode] varchar(48) NULL,
+        [BranchCode] varchar(48) NULL,
+        [TableName] varchar(128) NOT NULL,
+        [RecordKey] nvarchar(200) NOT NULL,
+        [Operation] varchar(10) NOT NULL,
+        [ChangesJson] nvarchar(max) NOT NULL,
+        [CorrelationId] varchar(64) NULL,
+        [CreatedAtUtc] datetime2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
+        [CreatedBy] varchar(48) NOT NULL DEFAULT 'system',
+        [ModifiedAtUtc] datetime2(3) NULL,
+        CONSTRAINT [PK_DataChanges] PRIMARY KEY ([DataChangeId]),
+        CONSTRAINT [CK_DataChanges_ChangesJson] CHECK (ISJSON([ChangesJson]) = 1),
+        CONSTRAINT [CK_DataChanges_Operation] CHECK ([Operation] IN ('Insert', 'Update', 'Delete'))
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE TABLE [SecurityEvents] (
+        [SecurityEventId] bigint NOT NULL IDENTITY,
+        [OccurredAtUtc] datetime2(3) NOT NULL,
+        [EventType] varchar(20) NOT NULL,
+        [StaffCode] varchar(48) NULL,
+        [Role] varchar(30) NULL,
+        [BranchCode] varchar(48) NULL,
+        [HttpMethod] varchar(10) NOT NULL,
+        [Path] nvarchar(256) NOT NULL,
+        [StatusCode] int NOT NULL,
+        [RemoteIpAddress] varchar(45) NULL,
+        [Detail] nvarchar(200) NULL,
+        [CorrelationId] varchar(64) NOT NULL,
+        [CreatedAtUtc] datetime2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
+        [CreatedBy] varchar(48) NOT NULL DEFAULT 'system',
+        [ModifiedAtUtc] datetime2(3) NULL,
+        CONSTRAINT [PK_SecurityEvents] PRIMARY KEY ([SecurityEventId]),
+        CONSTRAINT [CK_SecurityEvents_EventType] CHECK ([EventType] IN ('SignInSucceeded', 'SignInFailed', 'SignedOut', 'AccessDenied', 'RateLimited', 'SessionRejected')),
+        CONSTRAINT [CK_SecurityEvents_StatusCode] CHECK ([StatusCode] BETWEEN 100 AND 599)
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE INDEX [IX_AuditEntries_BranchCode_OccurredAtUtc] ON [AuditEntries] ([BranchCode], [OccurredAtUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE INDEX [IX_AuditEntries_CorrelationId] ON [AuditEntries] ([CorrelationId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE INDEX [IX_AuditEntries_OccurredAtUtc] ON [AuditEntries] ([OccurredAtUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE INDEX [IX_DataChanges_BranchCode_OccurredAtUtc] ON [DataChanges] ([BranchCode], [OccurredAtUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE INDEX [IX_DataChanges_CorrelationId] ON [DataChanges] ([CorrelationId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE INDEX [IX_DataChanges_OccurredAtUtc] ON [DataChanges] ([OccurredAtUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE INDEX [IX_DataChanges_TableName_RecordKey] ON [DataChanges] ([TableName], [RecordKey]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE INDEX [IX_SecurityEvents_CorrelationId] ON [SecurityEvents] ([CorrelationId]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE INDEX [IX_SecurityEvents_EventType_OccurredAtUtc] ON [SecurityEvents] ([EventType], [OccurredAtUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE INDEX [IX_SecurityEvents_OccurredAtUtc] ON [SecurityEvents] ([OccurredAtUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    CREATE INDEX [IX_SecurityEvents_StaffCode_OccurredAtUtc] ON [SecurityEvents] ([StaffCode], [OccurredAtUtc]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261104070956_AddAuditTrail'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261104070956_AddAuditTrail', N'10.0.13');
+END;
+
+COMMIT;
+GO
+

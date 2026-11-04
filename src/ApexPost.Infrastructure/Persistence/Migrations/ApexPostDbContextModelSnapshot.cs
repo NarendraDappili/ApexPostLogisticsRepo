@@ -747,6 +747,15 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
 
                     b.HasKey("AuditEntryId");
 
+                    b.HasIndex("CorrelationId")
+                        .HasDatabaseName("IX_AuditEntries_CorrelationId");
+
+                    b.HasIndex("OccurredAtUtc")
+                        .HasDatabaseName("IX_AuditEntries_OccurredAtUtc");
+
+                    b.HasIndex("BranchCode", "OccurredAtUtc")
+                        .HasDatabaseName("IX_AuditEntries_BranchCode_OccurredAtUtc");
+
                     b.ToTable("AuditEntries", null, t =>
                         {
                             t.HasCheckConstraint("CK_AuditEntries_DurationMilliseconds", "[DurationMilliseconds] >= 0");
@@ -756,6 +765,92 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_AuditEntries_RouteValuesJson", "ISJSON([RouteValuesJson]) = 1");
 
                             t.HasCheckConstraint("CK_AuditEntries_StatusCode", "[StatusCode] BETWEEN 100 AND 599");
+                        });
+                });
+
+            modelBuilder.Entity("ApexPost.Infrastructure.Persistence.Entities.DataChangeEntity", b =>
+                {
+                    b.Property<long>("DataChangeId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("DataChangeId"));
+
+                    b.Property<string>("BranchCode")
+                        .HasMaxLength(48)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(48)");
+
+                    b.Property<string>("ChangesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(48)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(48)")
+                        .HasDefaultValue("system");
+
+                    b.Property<DateTime?>("ModifiedAtUtc")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<string>("RecordKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("StaffId")
+                        .HasMaxLength(48)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(48)")
+                        .HasColumnName("StaffCode");
+
+                    b.Property<string>("TableName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)");
+
+                    b.HasKey("DataChangeId");
+
+                    b.HasIndex("CorrelationId")
+                        .HasDatabaseName("IX_DataChanges_CorrelationId");
+
+                    b.HasIndex("OccurredAtUtc")
+                        .HasDatabaseName("IX_DataChanges_OccurredAtUtc");
+
+                    b.HasIndex("BranchCode", "OccurredAtUtc")
+                        .HasDatabaseName("IX_DataChanges_BranchCode_OccurredAtUtc");
+
+                    b.HasIndex("TableName", "RecordKey")
+                        .HasDatabaseName("IX_DataChanges_TableName_RecordKey");
+
+                    b.ToTable("DataChanges", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_DataChanges_ChangesJson", "ISJSON([ChangesJson]) = 1");
+
+                            t.HasCheckConstraint("CK_DataChanges_Operation", "[Operation] IN ('Insert', 'Update', 'Delete')");
                         });
                 });
 
@@ -959,6 +1054,106 @@ namespace ApexPost.Infrastructure.Persistence.Migrations
                             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
                             CreatedBy = "migration",
                             Name = "Administrator"
+                        });
+                });
+
+            modelBuilder.Entity("ApexPost.Infrastructure.Persistence.Entities.SecurityEventEntity", b =>
+                {
+                    b.Property<long>("SecurityEventId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("SecurityEventId"));
+
+                    b.Property<string>("BranchCode")
+                        .HasMaxLength(48)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(48)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2(3)")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(48)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(48)")
+                        .HasDefaultValue("system");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(20)");
+
+                    b.Property<string>("HttpMethod")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(10)");
+
+                    b.Property<DateTime?>("ModifiedAtUtc")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("datetime2(3)");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("RemoteIpAddress")
+                        .HasMaxLength(45)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(45)");
+
+                    b.Property<string>("Role")
+                        .HasMaxLength(30)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(30)");
+
+                    b.Property<string>("StaffId")
+                        .HasMaxLength(48)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(48)")
+                        .HasColumnName("StaffCode");
+
+                    b.Property<int>("StatusCode")
+                        .HasColumnType("int");
+
+                    b.HasKey("SecurityEventId");
+
+                    b.HasIndex("CorrelationId")
+                        .HasDatabaseName("IX_SecurityEvents_CorrelationId");
+
+                    b.HasIndex("OccurredAtUtc")
+                        .HasDatabaseName("IX_SecurityEvents_OccurredAtUtc");
+
+                    b.HasIndex("EventType", "OccurredAtUtc")
+                        .HasDatabaseName("IX_SecurityEvents_EventType_OccurredAtUtc");
+
+                    b.HasIndex("StaffId", "OccurredAtUtc")
+                        .HasDatabaseName("IX_SecurityEvents_StaffCode_OccurredAtUtc");
+
+                    b.ToTable("SecurityEvents", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_SecurityEvents_EventType", "[EventType] IN ('SignInSucceeded', 'SignInFailed', 'SignedOut', 'AccessDenied', 'RateLimited', 'SessionRejected')");
+
+                            t.HasCheckConstraint("CK_SecurityEvents_StatusCode", "[StatusCode] BETWEEN 100 AND 599");
                         });
                 });
 

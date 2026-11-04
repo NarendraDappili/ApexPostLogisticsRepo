@@ -1,0 +1,144 @@
+@model ApexPost.Web.Models.AuditLogViewModel
+@using ApexPost.Web.Models
+@{
+    ViewData["Title"] = "Audit log";
+    var invariant = System.Globalization.CultureInfo.InvariantCulture;
+    string Iso(DateOnly date) => date.ToString("yyyy-MM-dd", invariant);
+    var action = Model.Tab.ToString();
+    string? Current(AuditLogTab tab) => tab == Model.Tab ? "page" : null;
+    var (kindLabel, kindAll, resultLabel) = Model.Tab switch
+    {
+        AuditLogTab.Requests => ("Area", "All areas", "Outcome"),
+        AuditLogTab.Changes => ("Table", "All tables", "Operation"),
+        _ => ("Event", "All events", (string?)null),
+    };
+    var description = Model.Tab switch
+    {
+        AuditLogTab.Requests => "Every page and action a staff member used, with the status they received.",
+        AuditLogTab.Changes => "Every record that was added, changed or removed, with its old and new values, saved in the same transaction as the change.",
+        _ => "Sign-ins, sign-outs and refused requests: failed passwords, pages a role may not open, rate limits and rejected sessions.",
+    };
+    var tabValues = Model.RouteValues(keepKindAndResult: false);
+    var exportValues = new Dictionary<string, string>(Model.RouteValues()) { ["tab"] = action };
+    // Auditors and Administrators pick a branch or all of them; a Branch Manager sees their home branch as text.
+    var branches = await Lookup.ViewableBranchesAsync(User, Model.Filter.BranchCode, Context.RequestAborted);
+    var first = Model.TotalCount == 0 ? 0 : (Model.Page - 1) * Model.PageSize + 1;
+    var last = Math.Min(Model.Page * Model.PageSize, Model.TotalCount);
+}
+<div class="page-header">
+    <h1>Audit log</h1>
+    <p class="text-muted mb-0">
+        Read-only. Times are UTC.
+        @if (Model.CanViewAllBranches) { <text>You can read every branch.</text> }
+        else { <text>You can read your own branch's requests and data changes.</text> }
+    </p>
+</div>
+
+<nav aria-label="Audit log lists">
+    <ul class="nav audit-tabs mb-2">
+        <li class="nav-item"><a class="nav-link" aria-current="@Current(AuditLogTab.Requests)" asp-action="Requests" asp-all-route-data="tabValues"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-receipt"></use></svg>Requests</a></li>
+        <li class="nav-item"><a class="nav-link" aria-current="@Current(AuditLogTab.Changes)" asp-action="Changes" asp-all-route-data="tabValues"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-audit"></use></svg>Data changes</a></li>
+        @if (Model.CanViewSecurityEvents)
+        {
+            <li class="nav-item"><a class="nav-link" aria-current="@Current(AuditLogTab.Security)" asp-action="Security" asp-all-route-data="tabValues"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-shield"></use></svg>Security events</a></li>
+        }
+    </ul>
+</nav>
+<p class="small text-muted mb-3">@description</p>
+
+<form method="get" asp-action="@action" class="card audit-filter mb-3" aria-label="Filter the audit log">
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            @if (Model.CanViewAllBranches)
+            {
+                <div class="col-md-4 col-lg-3">
+                    <label for="branchCode" class="form-label">Branch</label>
+                    <select id="branchCode" name="branchCode" class="form-select">
+                        <option value="">All branches</option>
+                        @foreach (var branch in branches)
+                        {
+                            <option value="@branch.Value" selected="@branch.Selected">@branch.Text</option>
+                        }
+                    </select>
+                </div>
+            }
+            else
+            {
+                <partial name="_BranchPicker" model="new BranchPickerModel(branches)" />
+            }
+            <div class="col-sm-6 col-md-2"><label for="from" class="form-label">From (UTC)</label><input id="from" name="from" type="date" value="@Iso(Model.Filter.From)" max="@Iso(Model.Today)" class="form-control" required /></div>
+            <div class="col-sm-6 col-md-2"><label for="to" class="form-label">To (UTC)</label><input id="to" name="to" type="date" value="@Iso(Model.Filter.To)" max="@Iso(Model.Today)" class="form-control" required /></div>
+            <div class="col-sm-6 col-md-2"><label for="staffId" class="form-label">Staff ID</label><input id="staffId" name="staffId" value="@Model.Filter.StaffId" maxlength="48" class="form-control" autocomplete="off" /></div>
+            <div class="col-sm-6 col-md-2">
+                <label for="kind" class="form-label">@kindLabel</label>
+                <select id="kind" name="kind" class="form-select">
+                    <option value="">@kindAll</option>
+                    @foreach (var option in Model.KindOptions)
+                    {
+                        <option value="@option.Value" selected="@(string.Equals(option.Value, Model.Filter.Kind, StringComparison.Ordinal))">@option.Text</option>
+                    }
+                </select>
+            </div>
+            @if (resultLabel is not null)
+            {
+                <div class="col-sm-6 col-md-2">
+                    <label for="result" class="form-label">@resultLabel</label>
+                    <select id="result" name="result" class="form-select">
+                        <option value="">Any</option>
+                        @foreach (var option in Model.ResultOptions)
+                        {
+                            <option value="@option.Value" selected="@(string.Equals(option.Value, Model.Filter.Result, StringComparison.Ordinal))">@option.Text</option>
+                        }
+                    </select>
+                </div>
+            }
+            <div class="col-sm-6 col-md-3"><label for="correlationId" class="form-label">Correlation ID</label><input id="correlationId" name="correlationId" value="@Model.Filter.CorrelationId" maxlength="64" class="form-control" autocomplete="off" /></div>
+            <div class="col-md-auto d-flex gap-2">
+                <button class="btn btn-primary" type="submit">Apply filters</button>
+                <a class="btn btn-outline-secondary" asp-action="@action">Clear</a>
+            </div>
+        </div>
+    </div>
+</form>
+
+@if (Model.Error is not null)
+{
+    <div class="alert alert-danger" role="alert">@Model.Error</div>
+}
+else
+{
+    <div class="audit-summary mb-2">
+        <p class="mb-0" role="status">
+            @if (Model.TotalCount == 0) { <text>No records match this filter.</text> }
+            else { <text>Showing <strong>@first&ndash;@last</strong> of <strong>@Model.TotalCount</strong> records, @Iso(Model.Filter.From) to @Iso(Model.Filter.To)@(Model.Filter.BranchCode is { } shownBranch ? $", branch {shownBranch}" : ", all branches").</text> }
+        </p>
+        @if (Model.TotalCount > 0)
+        {
+            <a class="btn btn-sm btn-outline-secondary" asp-action="Export" asp-all-route-data="exportValues" title="The newest @ApexPost.Web.Controllers.AuditLogController.ExportLimit.ToString("N0", invariant) matching records">Download CSV</a>
+        }
+    </div>
+
+    @if (Model.TotalCount == 0)
+    {
+        <div class="card"><div class="card-body text-muted">Try a longer period, another branch or fewer filters.</div></div>
+    }
+    else if (Model.Requests is { } requests) { <partial name="_RequestTable" model="requests.Items" /> }
+    else if (Model.Changes is { } changes) { <partial name="_ChangeTable" model="changes.Items" /> }
+    else if (Model.SecurityEvents is { } securityEvents) { <partial name="_SecurityTable" model="securityEvents.Items" /> }
+
+    @if (Model.TotalPages > 1)
+    {
+        var start = Math.Max(1, Model.Page - 2);
+        var end = Math.Min(Model.TotalPages, start + 4);
+        <nav class="mt-3" aria-label="Audit log pages">
+            <ul class="pagination flex-wrap mb-0">
+                <li class="page-item @(Model.Page == 1 ? "disabled" : null)"><a class="page-link" asp-action="@action" asp-all-route-data="Model.RouteValues(Model.Page - 1)" aria-disabled="@(Model.Page == 1 ? "true" : null)">Previous</a></li>
+                @for (var number = start; number <= end; number++)
+                {
+                    <li class="page-item @(number == Model.Page ? "active" : null)"><a class="page-link" asp-action="@action" asp-all-route-data="Model.RouteValues(number)" aria-current="@(number == Model.Page ? "page" : null)">@number</a></li>
+                }
+                <li class="page-item @(Model.Page == Model.TotalPages ? "disabled" : null)"><a class="page-link" asp-action="@action" asp-all-route-data="Model.RouteValues(Model.Page + 1)" aria-disabled="@(Model.Page == Model.TotalPages ? "true" : null)">Next</a></li>
+            </ul>
+        </nav>
+    }
+}

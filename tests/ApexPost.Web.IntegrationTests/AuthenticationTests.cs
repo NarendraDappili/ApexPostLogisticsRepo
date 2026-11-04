@@ -502,6 +502,75 @@ public sealed class AuthenticationTests
     }
 
     [Fact]
+    public async Task A_clerk_cannot_open_another_branchs_shipping_label_by_direct_url()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        await factory.SeedSouthClerkAsync();
+        using var north = factory.CreateClient();
+        await SignInAsync(north, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        var shipmentId = $"SHP-WEB-{Guid.NewGuid():N}".ToUpperInvariant();
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await CreateShipmentAsync(north, shipmentId, "TX-WEB-OWN-LABEL", weight: "2")).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.OK, (await north.GetAsync($"/Shipping/Label/{shipmentId}")).StatusCode);
+
+        using var south = factory.CreateClient();
+        await SignInAsync(south, "STF-SOUTH-CLERK", AuthWebApplicationFactory.TestPassword);
+        var refused = await south.GetAsync($"/Shipping/Label/{shipmentId}");
+
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, refused.StatusCode);
+        Assert.StartsWith("/Account/AccessDenied", refused.Headers.Location?.AbsolutePath);
+        Assert.DoesNotContain(shipmentId, await refused.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_shipping_label_that_does_not_exist_or_has_a_malformed_id_is_not_found_or_bad_request()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var client = factory.CreateClient();
+        await SignInAsync(client, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await client.GetAsync("/Shipping/Label/SHP-NEVER-CREATED")).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, (await client.GetAsync("/Shipping/Label/%20")).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_blank_id_on_a_page_that_shows_one_record_is_a_bad_request_not_a_server_error()
+    {
+        // A blank ID fails binding before the action runs; the page must not be rendered without its model.
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        using var clerk = factory.CreateClient();
+        await SignInAsync(clerk, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        using var admin = factory.CreateClient();
+        await SignInAsync(admin, "STF-ADMIN-01", AuthWebApplicationFactory.TestPassword);
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, (await clerk.GetAsync("/MoneyOrders/Verify/%20")).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, (await admin.GetAsync("/StaffAdmin/Edit/%20")).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, (await admin.GetAsync("/BranchAdmin/Edit/%20")).StatusCode);
+        Assert.DoesNotContain(factory.LogMessages, message => message.Contains("Unhandled request failure", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_clerk_cannot_open_another_branchs_money_order_verification_by_direct_url()
+    {
+        await using var factory = new AuthWebApplicationFactory();
+        await factory.SeedAsync();
+        await factory.SeedSouthClerkAsync();
+        using var north = factory.CreateClient();
+        await SignInAsync(north, "STF-CLERK-01", AuthWebApplicationFactory.TestPassword);
+        var orderId = $"MO-WEB-{Guid.NewGuid():N}".ToUpperInvariant();
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, (await CreateMoneyOrderAsync(north, orderId, $"TX-WEB-{Guid.NewGuid():N}".ToUpperInvariant(), "1500")).StatusCode);
+
+        using var south = factory.CreateClient();
+        await SignInAsync(south, "STF-SOUTH-CLERK", AuthWebApplicationFactory.TestPassword);
+        var refused = await south.GetAsync($"/MoneyOrders/Verify/{orderId}");
+
+        Assert.Equal(System.Net.HttpStatusCode.Redirect, refused.StatusCode);
+        Assert.StartsWith("/Account/AccessDenied", refused.Headers.Location?.AbsolutePath);
+    }
+
+    [Fact]
     public async Task High_value_money_order_is_verified_in_a_separate_step_and_completed_in_the_basket()
     {
         await using var factory = new AuthWebApplicationFactory();
@@ -1061,6 +1130,25 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         using var scope = Services.CreateScope();
         scope.ServiceProvider.GetRequiredService<IBranchRepository>()
             .Add(new Branch(new BranchCode("BR-SOUTH"), "Demo South Branch"));
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+    }
+
+    /// <summary>One more staff member with the test password, at a branch that is already seeded.</summary>
+    public async Task SeedStaffAsync(string staffId, StaffRole role, string branchCode)
+    {
+        using var scope = Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>()
+            .Add(WithPassword(new StaffMember(new StaffId(staffId), $"Test {role}", role, new BranchCode(branchCode)), scope.ServiceProvider.GetRequiredService<IPasswordHasher>()));
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
+    }
+
+    /// <summary>BR-SOUTH with its own clerk, for cross-branch access tests.</summary>
+    public async Task SeedSouthClerkAsync()
+    {
+        await SeedSouthBranchAsync();
+        using var scope = Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IStaffMemberRepository>()
+            .Add(WithPassword(new StaffMember(new StaffId("STF-SOUTH-CLERK"), "South Clerk", StaffRole.CounterClerk, new BranchCode("BR-SOUTH")), scope.ServiceProvider.GetRequiredService<IPasswordHasher>()));
         await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync();
     }
 

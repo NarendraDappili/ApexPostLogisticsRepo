@@ -339,6 +339,30 @@ It ran three times before and three times after the index migration, each series
 - A new index is 100% full. A stock change moves the row to its new `Quantity` position inside a full page, which splits the page. After the first wave of splits, pages have free space and later changes fit.
 - A `FILLFACTOR` below 100 on that index would avoid the first wave at the cost of more pages. It was not measured, so it is not applied; it remains an option if the log spike after a rebuild matters in production.
 
+## Write overhead of the audit trail
+
+The data-change history ([ADR 0024](docs/adr/0024-complete-audit-trail-and-audit-log-screen.md)) adds one `DataChanges` row per changed table row to the same `SaveChanges`.
+
+**Method.** This was measured through the real code path, not a replay script:
+- the production checkout service sold one catalogue line, 200 times with `DataChangeAuditInterceptor` and 200 times without, alternating, after 20 warm-up sales of each;
+- each sale had its own context and transaction, and the transaction's log bytes were read from `sys.dm_tran_database_transactions` just before `COMMIT`;
+- three runs, Release build, on a disposable database built by the migrations.
+
+Raw output: [`audit-write-overhead.txt`](docs/performance/audit-write-overhead.txt). The measuring test was a one-off and is not part of the suite, because timings do not belong in a pass/fail test; the round-trip result is kept as a test (below).
+
+| Per one-line sale | Without history | With history | Change |
+|---|---|---|---|
+| SQL commands (round trips) | 8 | **8** | none |
+| History rows | 0 | 4 (stock, sale, line, payment) | +4 |
+| Transaction log | 2,554–2,613 bytes | 9,853–9,999 bytes | **about +7.3 KB (×3.8)** |
+| Elapsed (local server) | 11.0–12.4 ms | 13.4–15.0 ms | about +2.4–3.2 ms |
+
+- **No extra round trip.** EF Core batches the history inserts into the commands the sale already sends, and they commit in its one transaction. `The_history_rows_ride_in_the_sales_own_batches_and_commit_so_a_sale_makes_no_extra_round_trip` pins this.
+- **Most of the cost is log.** Each history row carries its JSON old/new values and is written to five indexes: the clustered key and the four screen indexes, so 20 index row inserts per one-line sale. A sale's own rows are small, which is why the ratio is large; the absolute cost is about 7 KB per sale.
+- **Most index inserts land at an end.** `PK_DataChanges` and `IX_DataChanges_OccurredAtUtc` grow at their end, because the keys and times only increase, and `IX_DataChanges_BranchCode_OccurredAtUtc` grows at the end of each branch's range. `IX_DataChanges_CorrelationId` and `IX_DataChanges_TableName_RecordKey` insert across their whole range. They are the first to drop if write volume ever matters more than the Trace and record-history filters.
+- **The request and security audit write their own rows, outside the business transaction** (ADR 0011). That cost was there before this round, apart from the new `SecurityEvents` rows, which are written only on sign-in, sign-out and refusals.
+- **Growth.** Nothing removes history rows. Retention or partitioning by `OccurredAtUtc` is a deployment decision (ADR 0024).
+
 ## Storage cost
 
 Used pages per index, measured straight after index creation ([`storage-baseline.txt`](docs/performance/storage-baseline.txt), [`storage-final.txt`](docs/performance/storage-final.txt); 1 page = 8 KB):

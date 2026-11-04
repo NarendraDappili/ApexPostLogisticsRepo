@@ -57,6 +57,9 @@ var integrationPermitLimit = builder.Configuration.GetValue<int?>("ApexPost:Rate
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // Rate limiting runs before authentication, so a rejected request is anonymous; the policy name is the reason.
+    options.OnRejected = (context, _) => new ValueTask(SecurityEventRecorder.RecordAsync(context.HttpContext, ApexPost.Application.Auditing.SecurityEventType.RateLimited, StatusCodes.Status429TooManyRequests,
+        $"Rate limit '{context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "unknown"}' exceeded"));
     options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(1, loginPermitLimit), Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
     options.AddPolicy("partner-integration", context => RateLimitPartition.GetFixedWindowLimiter(
@@ -99,11 +102,15 @@ var connectionString = builder.Configuration.GetConnectionString(ApexPostDesignT
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentStaffContext, HttpCurrentStaffContext>();
+builder.Services.AddScoped<ICorrelationContext, HttpCorrelationContext>();
+builder.Services.AddSingleton<AuditTrailLogger>();
 builder.Services.AddScoped<AuditColumnsInterceptor>();
-// One DbContext per request, shared by every repository and the unit of work of that request.
+builder.Services.AddScoped<DataChangeAuditInterceptor>();
+// One DbContext per request, shared by every repository and the unit of work of that request. The data-change
+// audit runs first and records what changed; the audit-column stamps that follow are not part of the history.
 builder.Services.AddDbContext<ApexPostDbContext>((services, options) => options
     .UseSqlServer(connectionString, sql => sql.EnableRetryOnFailure())
-    .AddInterceptors(services.GetRequiredService<AuditColumnsInterceptor>()));
+    .AddInterceptors(services.GetRequiredService<DataChangeAuditInterceptor>(), services.GetRequiredService<AuditColumnsInterceptor>()));
 // Short-lived contexts for read-only work that runs in parallel (the reports page, ADR 0021). They never write, so
 // they need no audit interceptor, and the request's scoped context above is never shared between threads.
 builder.Services.AddSingleton<IDbContextFactory<ApexPostDbContext>>(services => new PooledDbContextFactory<ApexPostDbContext>(
@@ -126,6 +133,10 @@ builder.Services.AddScoped<IShippingRateProvider, EfShippingRateProvider>();
 builder.Services.AddScoped<DemoDataSeeder>();
 // Scoped so audit rows share the request's options (and CreatedBy stamping), but each append opens its own context.
 builder.Services.AddScoped<IAuditStore, EfAuditStore>();
+builder.Services.AddScoped<ISecurityEventStore, EfSecurityEventStore>();
+builder.Services.AddScoped<IAuditLogQueries, EfAuditLogQueries>();
+builder.Services.AddScoped<AuditLogService>();
+builder.Services.AddScoped<SecurityEventRecorder>();
 builder.Services.AddScoped<AuditResourceFilter>();
 builder.Services.AddScoped<ValidationActionFilter>();
 builder.Services.AddScoped<PerformanceActionFilter>();
@@ -165,9 +176,13 @@ builder.Services.AddScoped<ITransactionQueries, EfTransactionQueries>();
 builder.Services.AddScoped<IStaffQueries, EfStaffQueries>();
 builder.Services.AddScoped<IShippingQueries, EfShippingQueries>();
 builder.Services.AddScoped<IMoneyOrderQueries, EfMoneyOrderQueries>();
-builder.Services.AddScoped<ICatalogueBulkUpdates, EfCatalogueBulkUpdates>();
+// The two writes that bypass SaveChanges keep their single statement / procedure call; the audited decorators add
+// their DataChanges history in the same transaction.
+builder.Services.AddScoped<EfCatalogueBulkUpdates>();
+builder.Services.AddScoped<ICatalogueBulkUpdates, AuditedCatalogueBulkUpdates>();
 builder.Services.AddScoped<PriceRevisionService>();
-builder.Services.AddScoped<IStockAdjustments, EfStockAdjustments>();
+builder.Services.AddScoped<EfStockAdjustments>();
+builder.Services.AddScoped<IStockAdjustments, AuditedStockAdjustments>();
 builder.Services.AddScoped<StockAdjustmentService>();
 builder.Services.AddScoped<StaffManagementService>();
 builder.Services.AddScoped<BranchManagementService>();

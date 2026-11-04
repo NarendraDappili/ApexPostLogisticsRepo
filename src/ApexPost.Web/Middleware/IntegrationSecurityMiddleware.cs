@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using ApexPost.Application.Auditing;
 using ApexPost.Web.Security;
 using Microsoft.Extensions.Options;
 
@@ -29,6 +30,9 @@ public sealed class IntegrationApiKeyMiddleware(RequestDelegate next, IOptionsMo
             if (string.IsNullOrEmpty(suppliedKey) || !FixedTimeEquals(configuredKey, suppliedKey))
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                // Only whether a key was sent is recorded, never the key itself.
+                await SecurityEventRecorder.RecordAsync(context, SecurityEventType.AccessDenied, StatusCodes.Status401Unauthorized,
+                    string.IsNullOrEmpty(suppliedKey) ? "Missing partner API key" : "Invalid partner API key").ConfigureAwait(false);
                 await context.Response.WriteAsJsonAsync(new { title = "Integration API key is invalid.", status = StatusCodes.Status401Unauthorized, correlationId = CorrelationIdMiddleware.Get(context) }, context.RequestAborted).ConfigureAwait(false);
                 return;
             }
@@ -51,6 +55,7 @@ public sealed class IpAllowlistMiddleware(RequestDelegate next, IOptionsMonitor<
             if (!allowed)
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await SecurityEventRecorder.RecordAsync(context, SecurityEventType.AccessDenied, StatusCodes.Status403Forbidden, "Client IP is not in the allow-list").ConfigureAwait(false);
                 await context.Response.WriteAsJsonAsync(new { title = "Client IP is not allowed.", status = StatusCodes.Status403Forbidden, correlationId = CorrelationIdMiddleware.Get(context) }, context.RequestAborted).ConfigureAwait(false);
                 return;
             }

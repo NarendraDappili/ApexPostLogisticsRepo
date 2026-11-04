@@ -41,6 +41,10 @@ public sealed class ApexPostDbContext(DbContextOptions<ApexPostDbContext> option
 
     public DbSet<AuditEntryEntity> AuditEntries => Set<AuditEntryEntity>();
 
+    public DbSet<DataChangeEntity> DataChanges => Set<DataChangeEntity>();
+
+    public DbSet<SecurityEventEntity> SecurityEvents => Set<SecurityEventEntity>();
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         // Codes are short ASCII identifiers: varchar keeps them half the size of nvarchar and avoids implicit conversions.

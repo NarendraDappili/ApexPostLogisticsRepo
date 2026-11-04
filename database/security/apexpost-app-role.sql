@@ -8,7 +8,8 @@
 -- What the role allows, and why:
 --   * SELECT/INSERT/UPDATE only on the tables the use cases write; SELECT only on reference data.
 --   * No DELETE anywhere: branches, staff and products are closed or deactivated, never deleted.
---   * AuditEntries: SELECT and INSERT only, so the audit trail is append-only for the application.
+--   * AuditEntries, DataChanges and SecurityEvents: SELECT and INSERT only, so the audit trail is append-only for the
+--     application. The Audit log screen reads them; nothing in the application updates or deletes them.
 --   * StockAdjustments: no table permission at all. History rows are written only by usp_AdjustStock, which reaches
 --     the table through ownership chaining (both are owned by dbo).
 --   * EXECUTE on the four procedures; no other procedures, no DDL, no schema-wide grants.
@@ -42,6 +43,8 @@ GRANT SELECT, INSERT ON dbo.Payments TO apexpost_app;
 
 -- Audit trail: append and read only
 GRANT SELECT, INSERT ON dbo.AuditEntries TO apexpost_app;
+GRANT SELECT, INSERT ON dbo.DataChanges TO apexpost_app;
+GRANT SELECT, INSERT ON dbo.SecurityEvents TO apexpost_app;
 
 -- Stored procedures
 GRANT EXECUTE ON dbo.usp_DailyBranchSales TO apexpost_app;

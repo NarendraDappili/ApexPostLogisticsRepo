@@ -1,0 +1,35 @@
+﻿Write overhead of the data-change history (PERFORMANCE.md, "Write overhead of the audit trail").
+Captured 2026-11-04 on SQL Server 2025 (local default instance), Release build, a disposable ApexPostDb_Test_<guid> database built by the migrations.
+Each run: the production checkout service sells one catalogue line; every checkout has its own context and transaction, and the
+transaction's log bytes are read from sys.dm_tran_database_transactions just before COMMIT. 'with-history' adds DataChangeAuditInterceptor.
+
+== run 1
+Mode Commands/checkout LogBytes/checkout Ms/checkout HistoryRows/checkout
+without 8.00 2586 11.01 0.00
+with-history 8.00 9999 13.42 4.00
+DataChanges leaf inserts per index during the measured and warm-up audited runs:
+PK_DataChanges 880
+IX_DataChanges_BranchCode_OccurredAtUtc 880
+IX_DataChanges_CorrelationId 880
+IX_DataChanges_OccurredAtUtc 880
+IX_DataChanges_TableName_RecordKey 880
+== run 2
+Mode Commands/checkout LogBytes/checkout Ms/checkout HistoryRows/checkout
+without 8.00 2554 12.36 0.00
+with-history 8.00 9853 15.03 4.00
+DataChanges leaf inserts per index during the measured and warm-up audited runs:
+PK_DataChanges 880
+IX_DataChanges_BranchCode_OccurredAtUtc 880
+IX_DataChanges_CorrelationId 880
+IX_DataChanges_OccurredAtUtc 880
+IX_DataChanges_TableName_RecordKey 880
+== run 3
+Mode Commands/checkout LogBytes/checkout Ms/checkout HistoryRows/checkout
+without 8.00 2613 11.61 0.00
+with-history 8.00 9857 14.81 4.00
+DataChanges leaf inserts per index during the measured and warm-up audited runs:
+PK_DataChanges 880
+IX_DataChanges_BranchCode_OccurredAtUtc 880
+IX_DataChanges_CorrelationId 880
+IX_DataChanges_OccurredAtUtc 880
+IX_DataChanges_TableName_RecordKey 880

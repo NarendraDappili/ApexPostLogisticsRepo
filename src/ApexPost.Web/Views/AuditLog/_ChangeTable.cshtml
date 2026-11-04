@@ -1,0 +1,35 @@
+@model IReadOnlyList<ApexPost.Application.Auditing.DataChangeItem>
+@using ApexPost.Web.Services
+<div class="table-responsive">
+    <table class="table table-striped table-hover align-middle audit-table">
+        <caption>Data changes, newest first. Old values are struck through, new values follow. Secrets show as (hidden).</caption>
+        <thead><tr><th scope="col">When (UTC)</th><th scope="col">Staff</th><th scope="col">Branch</th><th scope="col">Record</th><th scope="col">Operation</th><th scope="col">Changes</th><th scope="col">Trace</th></tr></thead>
+        <tbody>
+        @foreach (var row in Model)
+        {
+            <tr>
+                <th scope="row" class="audit-time">@AuditDisplay.Time(row.OccurredAt)</th>
+                <td class="text-nowrap fw-semibold">@(row.StaffId ?? "System")</td>
+                <td class="text-nowrap">@row.BranchCode</td>
+                <td><span class="d-block fw-semibold">@row.TableName</span><span class="d-block audit-route">@row.RecordKey</span></td>
+                <td><span class="badge @AuditDisplay.OperationBadge(row.Operation)">@row.Operation</span></td>
+                <td>
+                    <ul class="audit-changes">
+                    @foreach (var column in row.Columns)
+                    {
+                        <li>
+                            <span class="audit-column">@column.Column</span>:
+                            @if (column.Old is not null) { <del class="audit-old"><span class="visually-hidden">was </span>@column.Old</del> }
+                            @if (column.Old is not null && column.New is not null) { <span aria-hidden="true">&rarr;</span> }
+                            @if (column.New is not null) { <ins class="audit-new"><span class="visually-hidden">now </span>@column.New</ins> }
+                            else { <span class="audit-empty">removed</span> }
+                        </li>
+                    }
+                    </ul>
+                </td>
+                <td>@if (row.CorrelationId is not null) { <a class="audit-trace-link" asp-controller="AuditLog" asp-action="Trace" asp-route-id="@row.CorrelationId" title="Everything request @row.CorrelationId left in the audit trail">@AuditDisplay.ShortId(row.CorrelationId)</a> } else { <span class="audit-empty">none</span> }</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>

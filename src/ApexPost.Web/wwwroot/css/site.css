@@ -881,3 +881,129 @@ fieldset > legend {
 .table > tbody > tr > * {
   vertical-align: middle;
 }
+
+/* ---------- Audit log ---------- */
+/* List tabs: the current list is underlined in red, as red marks the current place in the menu; the others take a
+   soft yellow on hover. */
+.audit-tabs {
+  gap: 0.25rem;
+  border-bottom: 2px solid var(--ap-border);
+}
+
+.audit-tabs .nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: -2px;
+  padding: 0.55rem 0.95rem;
+  border-bottom: 3px solid transparent;
+  border-radius: 0.5rem 0.5rem 0 0;
+  color: var(--ap-ink);
+  font-weight: 600;
+}
+
+.audit-tabs .nav-link:hover,
+.audit-tabs .nav-link:focus-visible {
+  background: var(--ap-yellow-soft);
+  color: var(--ap-black);
+}
+
+.audit-tabs .nav-link[aria-current="page"] {
+  border-bottom-color: var(--ap-red);
+  background: var(--ap-panel-bg);
+  color: var(--ap-red-strong);
+}
+
+/* The filter sits in a card with the yellow edge of the dashboard figures. */
+.audit-filter {
+  border-top: 4px solid var(--ap-yellow);
+}
+
+.audit-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.audit-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Secondary detail under a value: route values, a record's business key, a request path. */
+.audit-route {
+  color: var(--ap-muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+/* Column changes: the old value struck through on the red tint, the new value on the green tint of a success badge. */
+.audit-changes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85rem;
+}
+
+.audit-changes li + li {
+  margin-top: 0.2rem;
+}
+
+.audit-column {
+  color: var(--ap-list-ink);
+  font-weight: 600;
+}
+
+.audit-old,
+.audit-new {
+  padding: 0 0.3rem;
+  border-radius: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.audit-old {
+  background: var(--ap-red-soft);
+  color: var(--ap-red-strong);
+}
+
+.audit-new {
+  background: rgba(25, 135, 84, 0.1);
+  color: #0f5132;
+  text-decoration: none;
+}
+
+.audit-empty {
+  color: var(--ap-muted);
+  font-style: italic;
+}
+
+.audit-trace-link,
+.audit-correlation {
+  font-family: var(--bs-font-monospace);
+  font-size: 0.8rem;
+}
+
+.audit-correlation {
+  color: var(--ap-ink);
+  overflow-wrap: anywhere;
+}
+
+/* Paging in the brand colours: the current page in red, hover in soft yellow. */
+.pagination {
+  --bs-pagination-color: var(--ap-red-strong);
+  --bs-pagination-bg: #fff;
+  --bs-pagination-border-color: var(--ap-border);
+  --bs-pagination-hover-color: var(--ap-black);
+  --bs-pagination-hover-bg: var(--ap-yellow-soft);
+  --bs-pagination-hover-border-color: rgba(var(--ap-yellow-rgb), 0.6);
+  --bs-pagination-focus-color: var(--ap-black);
+  --bs-pagination-focus-bg: var(--ap-yellow-soft);
+  --bs-pagination-focus-box-shadow: 0 0 0 0.25rem var(--bs-focus-ring-color);
+  --bs-pagination-active-color: #fff;
+  --bs-pagination-active-bg: var(--ap-red);
+  --bs-pagination-active-border-color: var(--ap-red);
+  --bs-pagination-disabled-color: var(--ap-muted);
+  --bs-pagination-disabled-bg: rgba(255, 255, 255, 0.6);
+}
