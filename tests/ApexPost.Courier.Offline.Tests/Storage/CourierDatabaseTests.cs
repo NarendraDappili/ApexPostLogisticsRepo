@@ -78,6 +78,41 @@ public class CourierDatabaseTests
         Assert.Equal(0UL, next.Scans.Count);
     }
 
+    [Fact]
+    public void A_second_owner_cannot_open_a_database_that_is_already_open()
+    {
+        using var temporary = new TemporaryCourierDatabase();
+
+        var exception = Assert.Throws<CourierDatabaseInUseException>(() => new CourierDatabase(new CourierDatabaseOptions { Directory = temporary.Directory }));
+
+        Assert.Equal(temporary.Directory, exception.Directory);
+        Assert.Equal(0UL, temporary.Database.Scans.Count);
+    }
+
+    [Fact]
+    public void Closing_the_database_releases_the_process_lock()
+    {
+        using var temporary = new TemporaryCourierDatabase();
+        var lockFile = Path.Combine(temporary.Directory, CourierDatabase.DatabaseName + ".lock");
+        Assert.True(File.Exists(lockFile));
+
+        temporary.Database.Dispose();
+
+        Assert.False(File.Exists(lockFile));
+    }
+
+    [Fact]
+    public void A_lock_file_left_by_a_crashed_process_does_not_block_opening()
+    {
+        using var temporary = new TemporaryCourierDatabase();
+        temporary.Database.Dispose();
+        File.WriteAllText(Path.Combine(temporary.Directory, CourierDatabase.DatabaseName + ".lock"), "left behind");
+
+        using var reopened = new CourierDatabase(new CourierDatabaseOptions { Directory = temporary.Directory });
+
+        Assert.Equal(0UL, reopened.Scans.Count);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("   ")]

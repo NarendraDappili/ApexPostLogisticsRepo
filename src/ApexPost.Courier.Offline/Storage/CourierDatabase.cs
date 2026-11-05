@@ -21,6 +21,7 @@ public sealed class CourierDatabase : IDisposable
     private readonly Collection _scans;
     private readonly ILogger<CourierDatabase> _logger;
     private readonly List<ListenerRegistration> _listeners = [];
+    private readonly FileStream _processLock;
     private bool _disposed;
 
     public CourierDatabase(CourierDatabaseOptions options, ILogger<CourierDatabase>? logger = null)
@@ -30,7 +31,17 @@ public sealed class CourierDatabase : IDisposable
         _logger = logger ?? NullLogger<CourierDatabase>.Instance;
 
         System.IO.Directory.CreateDirectory(options.Directory);
-        _database = new Database(DatabaseName, new DatabaseConfiguration { Directory = options.Directory });
+        _processLock = AcquireProcessLock(options.Directory);
+        try
+        {
+            _database = new Database(DatabaseName, new DatabaseConfiguration { Directory = options.Directory });
+        }
+        catch
+        {
+            _processLock.Dispose();
+            throw;
+        }
+
         try
         {
             _scans = _database.GetDefaultCollection();
@@ -45,11 +56,37 @@ public sealed class CourierDatabase : IDisposable
         catch
         {
             _database.Dispose();
+            _processLock.Dispose();
             throw;
         }
 
         _logger.LogInformation("Opened courier database {DatabaseName} at {Path}", DatabaseName, _database.Path);
     }
+
+    /// <summary>
+    /// Takes an exclusive lock file next to the database. Couchbase Lite is an embedded database for one process:
+    /// a second process writing the same files would not see the first one's change notifications or caches, so it
+    /// is refused here instead (OFFLINE-DESIGN.md). The lock goes away with the process, even after a crash.
+    /// </summary>
+    private static FileStream AcquireProcessLock(string directory)
+    {
+        var lockPath = System.IO.Path.Combine(directory, DatabaseName + ".lock");
+        try
+        {
+            return new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, bufferSize: 1, FileOptions.DeleteOnClose);
+        }
+        catch (IOException exception)
+        {
+            throw new CourierDatabaseInUseException(directory, exception);
+        }
+    }
+
+    /// <summary>
+    /// Couchbase Lite writes its own startup and warning lines to the console. A console app that shows its own
+    /// log calls this once, before opening the database, so only engine errors still appear.
+    /// </summary>
+    public static void LimitEngineConsoleLogToErrors() =>
+        Couchbase.Lite.Logging.LogSinks.Console = new Couchbase.Lite.Logging.ConsoleLogSink(Couchbase.Lite.Logging.LogLevel.Error);
 
     /// <summary>The full path of the database folder on disk.</summary>
     public string Path => Database.Path ?? string.Empty;
@@ -106,6 +143,7 @@ public sealed class CourierDatabase : IDisposable
         _disposed = true;
         _scans.Dispose();
         _database.Dispose();
+        _processLock.Dispose();
         _logger.LogInformation("Closed courier database {DatabaseName}", DatabaseName);
     }
 
