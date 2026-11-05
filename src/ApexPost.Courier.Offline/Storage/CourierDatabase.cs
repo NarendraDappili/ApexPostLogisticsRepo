@@ -66,14 +66,15 @@ public sealed class CourierDatabase : IDisposable
     /// <summary>
     /// Takes an exclusive lock file next to the database. Couchbase Lite is an embedded database for one process:
     /// a second process writing the same files would not see the first one's change notifications or caches, so it
-    /// is refused here instead (OFFLINE-DESIGN.md). The lock goes away with the process, even after a crash.
+    /// is refused here instead (OFFLINE-DESIGN.md). The operating system drops the lock when the file is closed or the
+    /// process ends, even after a crash; the empty lock file itself stays and never blocks anyone.
     /// </summary>
     private static FileStream AcquireProcessLock(string directory)
     {
         var lockPath = System.IO.Path.Combine(directory, DatabaseName + ".lock");
         try
         {
-            return new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, bufferSize: 1, FileOptions.DeleteOnClose);
+            return new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, bufferSize: 1);
         }
         catch (IOException exception)
         {

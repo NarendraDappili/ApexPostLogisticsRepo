@@ -9,6 +9,8 @@ ApexPost is a .NET 10 ASP.NET Core MVC application for post-office counters:
 
 Data lives in **Microsoft SQL Server** (`ApexPostDb`), accessed through **EF Core 10** with code-first migrations.
 
+Week 4 adds the courier side. **Part A** is an offline store for the courier device: shipment scans saved as JSON documents in an embedded **Couchbase Lite** database, with an outbox that uploads them later ([details below](#courier-offline-store-week-4-part-a), [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)).
+
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
@@ -150,6 +152,59 @@ Seeded values you can use: products `PRD-001` … `PRD-030` (`PRD-001`–`PRD-00
    - Select a correlation ID to see everything that one request recorded.
    - The console log shows the same records under the `ApexPost.Audit` category, without the values.
 
+## Courier offline store (Week 4, Part A)
+
+Couriers record pickups and deliveries without a network. Each scan is saved first on the device, in an embedded **Couchbase Lite 4.1** database, and uploaded later. Why it works this way, how conflicts are handled and why the database belongs to one process are explained in **[OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)**. The Week 3 SQL Server code is not involved and was not changed.
+
+| Project | Contents |
+|---|---|
+| [`ApexPost.Courier.Offline`](src/ApexPost.Courier.Offline) | `Domain`: `ShipmentScan`, `ScanId`, `IScanRepository`, `IShipmentUploader`, with no Couchbase types (a test enforces this). `Storage`: `CourierDatabase`, `CouchbaseScanRepository`, `ScanChangeMonitor`, the SQL++ queries. `Sync`: `OutboxService`, `FakeShipmentUploader`. |
+| [`ApexPost.Courier.Offline.Harness`](src/ApexPost.Courier.Offline.Harness) | The console test harness |
+| [`ApexPost.Courier.Offline.Tests`](tests/ApexPost.Courier.Offline.Tests) | 128 tests on real temporary databases; no SQL Server or network needed |
+
+**Run the harness** (no Couchbase Server, Sync Gateway or network needed):
+
+```powershell
+dotnet run --project src/ApexPost.Courier.Offline.Harness                          # courier CR-001, data in %LOCALAPPDATA%\ApexPost\CourierOffline
+dotnet run --project src/ApexPost.Courier.Offline.Harness -- --courier CR-007 --data .\courier-data
+```
+
+On an empty device it offers five fictional sample scans. The menu is **Add Scan**, **Find by Tracking Number**, **List Pending**, **Simulate Sync**, **Delete Scan** and **Exit**. The header above the menu shows the live pending count and the courier's scans per type. **Simulate Sync** asks whether the network is available: answer `n` and every scan stays Pending; answer `y` and they are uploaded to the fake server. That server rejects a scan time more than 5 minutes in the future and reports a re-sent scan ID as a duplicate. Starting a second harness on the same data folder is refused, because the database is single-process.
+
+**Document model.** The database is `apexpost_courier`, and scans live in its default collection. Each document's key is `scan::{Guid}` (a version 7 GUID, so newer IDs sort later):
+
+```json
+{
+  "trackingNumber": "APX-24000001",
+  "scanType": "Pickup",
+  "courierId": "CR-001",
+  "location": "Riverside Depot",
+  "scannedAtUtc": "2026-11-05T05:22:41.1234567Z",
+  "notes": "Collected from front desk",
+  "syncStatus": "Pending"
+}
+```
+
+Enums are stored by name. `scannedAtUtc` is fixed-width UTC text, so sorting the text gives time order. Reads and writes by ID are key-value operations (`GetDocument` / `Save` on the key), and a new scan's save fails instead of overwriting an existing ID.
+
+**SQL++ queries and indexes.** The queries are in [`ScanQueries.cs`](src/ApexPost.Courier.Offline/Storage/ScanQueries.cs). Their text is constant, and every value is a `$parameter`; a test fails if any query contains a quoted value. Each index starts with the filtered field. Its second key is the sort or grouping field, so `Explain()` shows an index search with no temporary sort, and a test checks that:
+
+| Query | SQL++ | Index | Plan (`Explain()`) |
+|---|---|---|---|
+| One parcel's history, oldest first | `WHERE trackingNumber = $trackingNumber ORDER BY scannedAtUtc` | `idx_scans_trackingNumber` (trackingNumber, scannedAtUtc) | `SEARCH _ USING INDEX idx_scans_trackingNumber (<expr>=?)` |
+| Pending scans | `WHERE syncStatus = $syncStatus ORDER BY scannedAtUtc` (value `Pending`) | `idx_scans_syncStatus` (syncStatus, scannedAtUtc) | `SEARCH _ USING INDEX idx_scans_syncStatus (<expr>=?)` |
+| Scans per type for one courier | `SELECT scanType, COUNT(*) AS scanCount … WHERE courierId = $courierId GROUP BY scanType` | `idx_scans_courierId_scanType` (courierId, scanType) | `SEARCH _ USING INDEX idx_scans_courierId_scanType (<expr>=?)` |
+
+With single-field indexes, the first two queries used their index but still sorted the results in a temporary B-tree, and the courier count read every document (`SCAN _`). The third index is an addition to the two the brief requires; each index costs a little on every save.
+
+**Change listener.** `ScanChangeMonitor` registers a collection change listener. Each notification logs the changed document IDs and recounts the Pending scans (`Scan documents changed: scan::…; pending scans: 3`), and the harness header shows that live count. `CourierDatabase` keeps every listener token and removes them all in `Dispose()` before it closes the database.
+
+**Outbox.** `OutboxService.SyncPendingAsync()` uploads the Pending scans, oldest first, in batches of 20 through `IShipmentUploader`. The server's answer marks each scan: accepted or duplicate becomes Synced, rejected becomes Failed with the reason. A failed upload leaves the remaining scans Pending, and runs never overlap. In Part D, the real API client replaces `FakeShipmentUploader`.
+
+**Screenshots** (taken from the harness) are in [`docs/screenshots/week4-partA`](docs/screenshots/week4-partA):
+- the query results: one parcel's history, the pending list, and the per-type counts in the header;
+- the listener log after adding, syncing and deleting scans.
+
 ## Tests
 
 ```powershell
@@ -158,6 +213,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 ```
 
 **What the tests need:**
+- The courier offline tests (`ApexPost.Courier.Offline.Tests`) need nothing installed: each test opens its own Couchbase Lite database in a temporary folder.
 - The Infrastructure and Web tests need a SQL Server. Each test run creates its own database (`ApexPostDb_Test_<guid>`) from the migrations and drops it afterwards. The development database is never used, and a guard refuses any other database name.
 - By default the tests use the local default instance with Windows authentication. Point them elsewhere with `APEXPOST_TEST_SQLSERVER`, a connection string without a database name:
 
@@ -165,7 +221,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 428 tests passing (Domain 81, Application 109, Infrastructure 128, Web integration 110) and a zero-warning build. Line coverage is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
+**Results:** the latest run had 556 tests passing (Domain 81, Application 109, Infrastructure 128, Web integration 110, Courier offline 128) and a zero-warning build. Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 
 **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors, checks that every model change has a migration, starts a throwaway SQL Server container with a random password, and runs every test on each push and pull request to `master`, then reruns the error-handling tests with full JIT optimization. Every run on GitHub Actions so far has passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
 
@@ -208,6 +264,7 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 ## Documentation
 
 - [DESIGN.md](DESIGN.md): architecture, layer diagrams, ER diagram, normalisation, data access patterns, user interface, SOLID mapping, all ADRs.
+- [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md): the courier offline store: save locally first, conflict handling, one process per database.
 - [PERFORMANCE.md](PERFORMANCE.md): execution plans, before/after measurements, index trade-offs, generated SQL.
 - [sql/README.md](sql/README.md): reporting queries, the atomic T-SQL sale, the blocking demo, deadlock avoidance.
 - [docs/security.md](docs/security.md), [docs/testing.md](docs/testing.md), [docs/business-rules.md](docs/business-rules.md), [docs/architecture/README.md](docs/architecture/README.md).
