@@ -20,4 +20,13 @@ public interface IScanRepository
 
     /// <summary>Every scan on the device, oldest first.</summary>
     IReadOnlyList<ShipmentScan> ListAll();
+
+    /// <summary>The scan history of one parcel, oldest first.</summary>
+    IReadOnlyList<ShipmentScan> FindByTrackingNumber(string trackingNumber);
+
+    /// <summary>Scans saved on the device that the outbox has not uploaded yet, oldest first.</summary>
+    IReadOnlyList<ShipmentScan> ListPending();
+
+    /// <summary>How many scans of each type one courier has recorded; every type is present, zero if unused.</summary>
+    IReadOnlyDictionary<ScanType, int> CountByScanType(string courierId);
 }

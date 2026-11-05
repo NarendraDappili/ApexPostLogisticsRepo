@@ -1,5 +1,6 @@
 using ApexPost.Courier.Offline.Domain;
 using Couchbase.Lite;
+using Couchbase.Lite.Query;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -78,5 +79,43 @@ public sealed class CouchbaseScanRepository : IScanRepository
     {
         using var query = _database.Database.CreateQuery(ScanQueries.ListAll);
         return ScanQueries.ReadScans(query);
+    }
+
+    public IReadOnlyList<ShipmentScan> FindByTrackingNumber(string trackingNumber)
+    {
+        // Stored tracking numbers are normalized, so the search value must be too; a malformed one is rejected here.
+        var normalized = ShipmentScan.NormalizeTrackingNumber(trackingNumber);
+        using var query = _database.Database.CreateQuery(ScanQueries.ByTrackingNumber);
+        query.Parameters = new Parameters().SetString(ScanQueries.TrackingNumberParameter, normalized);
+        return ScanQueries.ReadScans(query);
+    }
+
+    public IReadOnlyList<ShipmentScan> ListPending()
+    {
+        using var query = _database.Database.CreateQuery(ScanQueries.BySyncStatus);
+        query.Parameters = new Parameters().SetString(ScanQueries.SyncStatusParameter, nameof(SyncStatus.Pending));
+        return ScanQueries.ReadScans(query);
+    }
+
+    public IReadOnlyDictionary<ScanType, int> CountByScanType(string courierId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(courierId);
+        using var query = _database.Database.CreateQuery(ScanQueries.CountByScanTypeForCourier);
+        query.Parameters = new Parameters().SetString(ScanQueries.CourierIdParameter, courierId.Trim());
+
+        var counts = Enum.GetValues<ScanType>().ToDictionary(scanType => scanType, _ => 0);
+        using var results = query.Execute();
+        foreach (var row in results.AllResults())
+        {
+            // A document with an unknown scan type cannot be mapped to a ShipmentScan either; it is skipped here
+            // rather than failing the whole count.
+            var name = row.GetString("scanType");
+            if (name is not null && Enum.GetNames<ScanType>().Contains(name, StringComparer.Ordinal))
+            {
+                counts[Enum.Parse<ScanType>(name)] = row.GetInt("scanCount");
+            }
+        }
+
+        return counts;
     }
 }
