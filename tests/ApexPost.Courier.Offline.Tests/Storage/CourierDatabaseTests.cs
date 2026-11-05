@@ -25,7 +25,7 @@ public class CourierDatabaseTests
     }
 
     [Fact]
-    public void Creates_value_indexes_on_tracking_number_and_sync_status()
+    public void Creates_value_indexes_on_tracking_number_sync_status_and_courier()
     {
         using var temporary = new TemporaryCourierDatabase();
 
@@ -33,6 +33,7 @@ public class CourierDatabaseTests
 
         Assert.Contains(CourierDatabase.TrackingNumberIndexName, indexes);
         Assert.Contains(CourierDatabase.SyncStatusIndexName, indexes);
+        Assert.Contains(CourierDatabase.CourierScanTypeIndexName, indexes);
     }
 
     [Fact]
@@ -50,7 +51,7 @@ public class CourierDatabaseTests
         using var stored = reopened.Scans.GetDocument("scan::reopen-test");
         Assert.NotNull(stored);
         Assert.Equal("APX-00000001", stored.GetString(ScanFields.TrackingNumber));
-        Assert.Equal(2, reopened.Scans.GetIndexes().Count);
+        Assert.Equal(3, reopened.Scans.GetIndexes().Count);
     }
 
     [Fact]

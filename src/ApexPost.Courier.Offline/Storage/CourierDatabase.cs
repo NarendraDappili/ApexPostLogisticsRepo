@@ -15,6 +15,7 @@ public sealed class CourierDatabase : IDisposable
     public const string DatabaseName = "apexpost_courier";
     public const string TrackingNumberIndexName = "idx_scans_trackingNumber";
     public const string SyncStatusIndexName = "idx_scans_syncStatus";
+    public const string CourierScanTypeIndexName = "idx_scans_courierId_scanType";
 
     private readonly Database _database;
     private readonly Collection _scans;
@@ -33,9 +34,12 @@ public sealed class CourierDatabase : IDisposable
         {
             _scans = _database.GetDefaultCollection();
             // CreateIndex is a no-op when an index with the same name and definition already exists, so reopening
-            // the database does not rebuild them.
-            _scans.CreateIndex(TrackingNumberIndexName, new ValueIndexConfiguration(ScanFields.TrackingNumber));
-            _scans.CreateIndex(SyncStatusIndexName, new ValueIndexConfiguration(ScanFields.SyncStatus));
+            // the database does not rebuild them; a changed definition replaces the old index.
+            // Each index leads with the filtered field. The second key is the sort or grouping field, so the rows
+            // come out of the index already in order and SQLite needs no temporary B-tree (Explain(), A4 tests).
+            _scans.CreateIndex(TrackingNumberIndexName, new ValueIndexConfiguration(ScanFields.TrackingNumber, ScanFields.ScannedAtUtc));
+            _scans.CreateIndex(SyncStatusIndexName, new ValueIndexConfiguration(ScanFields.SyncStatus, ScanFields.ScannedAtUtc));
+            _scans.CreateIndex(CourierScanTypeIndexName, new ValueIndexConfiguration(ScanFields.CourierId, ScanFields.ScanType));
         }
         catch
         {
