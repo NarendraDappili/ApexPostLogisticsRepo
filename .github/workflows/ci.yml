@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [ master ]
+  # Week 4 step PRs merge into a part branch first (week4-partA, ...), so they are checked on Linux before the part
+  # reaches master.
   pull_request:
-    branches: [ master ]
+    branches: [ master, 'week4-part*' ]
 
 permissions:
   contents: read

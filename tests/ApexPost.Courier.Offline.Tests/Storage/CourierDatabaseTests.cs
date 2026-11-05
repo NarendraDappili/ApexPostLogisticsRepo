@@ -94,11 +94,12 @@ public class CourierDatabaseTests
     {
         using var temporary = new TemporaryCourierDatabase();
         var lockFile = Path.Combine(temporary.Directory, CourierDatabase.DatabaseName + ".lock");
-        Assert.True(File.Exists(lockFile));
+        Assert.Throws<IOException>(() => new FileStream(lockFile, FileMode.Open, FileAccess.ReadWrite, FileShare.None).Dispose());
 
         temporary.Database.Dispose();
 
-        Assert.False(File.Exists(lockFile));
+        using var nowFree = new FileStream(lockFile, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        Assert.True(nowFree.CanWrite);
     }
 
     [Fact]
