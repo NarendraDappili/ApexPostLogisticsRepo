@@ -20,6 +20,7 @@ public sealed class CourierDatabase : IDisposable
     private readonly Database _database;
     private readonly Collection _scans;
     private readonly ILogger<CourierDatabase> _logger;
+    private readonly List<ListenerRegistration> _listeners = [];
     private bool _disposed;
 
     public CourierDatabase(CourierDatabaseOptions options, ILogger<CourierDatabase>? logger = null)
@@ -72,13 +73,51 @@ public sealed class CourierDatabase : IDisposable
         }
     }
 
+    /// <summary>Listener registrations that are still active; <see cref="Dispose"/> removes them.</summary>
+    internal int ActiveListenerCount
+    {
+        get
+        {
+            lock (_listeners) return _listeners.Count;
+        }
+    }
+
+    /// <summary>
+    /// Registers a change listener on the scans collection. The database keeps the listener token, so disposing the
+    /// database removes it even if the caller never disposes the returned registration.
+    /// </summary>
+    internal IDisposable AddScanChangeListener(EventHandler<CollectionChangedEventArgs> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        var registration = new ListenerRegistration(this, Scans.AddChangeListener(handler));
+        lock (_listeners) _listeners.Add(registration);
+        return registration;
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
-        _disposed = true;
 
+        List<ListenerRegistration> remaining;
+        lock (_listeners) remaining = [.. _listeners];
+        foreach (var registration in remaining) registration.Dispose();
+        if (remaining.Count > 0) _logger.LogDebug("Removed {Count} change listener(s) before closing", remaining.Count);
+
+        _disposed = true;
         _scans.Dispose();
         _database.Dispose();
         _logger.LogInformation("Closed courier database {DatabaseName}", DatabaseName);
+    }
+
+    private sealed class ListenerRegistration(CourierDatabase owner, ListenerToken token) : IDisposable
+    {
+        private int _removed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _removed, 1) == 1) return;
+            token.Remove();
+            lock (owner._listeners) owner._listeners.Remove(this);
+        }
     }
 }

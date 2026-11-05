@@ -28,6 +28,8 @@ internal static class ScanQueries
 
     public const string BySyncStatus = ScanColumns + " WHERE syncStatus = $" + SyncStatusParameter + OldestFirst;
 
+    public const string CountBySyncStatus = "SELECT COUNT(*) AS scanCount FROM _ WHERE syncStatus = $" + SyncStatusParameter;
+
     public const string CountByScanTypeForCourier =
         "SELECT scanType, COUNT(*) AS scanCount FROM _ WHERE courierId = $" + CourierIdParameter + " GROUP BY scanType";
 

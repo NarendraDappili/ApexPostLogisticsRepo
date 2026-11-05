@@ -151,6 +151,7 @@ public sealed class ScanQueryTests : IDisposable
     [Theory]
     [InlineData(ScanQueries.ByTrackingNumber, CourierDatabase.TrackingNumberIndexName)]
     [InlineData(ScanQueries.BySyncStatus, CourierDatabase.SyncStatusIndexName)]
+    [InlineData(ScanQueries.CountBySyncStatus, CourierDatabase.SyncStatusIndexName)]
     [InlineData(ScanQueries.CountByScanTypeForCourier, CourierDatabase.CourierScanTypeIndexName)]
     public void Each_filtered_query_searches_its_index_and_needs_no_temporary_sort(string queryText, string indexName)
     {
