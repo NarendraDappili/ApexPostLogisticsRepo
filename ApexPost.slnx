@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/ApexPost.Application/ApexPost.Application.csproj" />
+    <Project Path="src/ApexPost.Courier.Offline.Harness/ApexPost.Courier.Offline.Harness.csproj" />
     <Project Path="src/ApexPost.Courier.Offline/ApexPost.Courier.Offline.csproj" />
     <Project Path="src/ApexPost.Domain/ApexPost.Domain.csproj" />
     <Project Path="src/ApexPost.Infrastructure/ApexPost.Infrastructure.csproj" />
