@@ -110,6 +110,25 @@ public sealed class ScanChangeMonitorTests : IDisposable
     }
 
     [Fact]
+    public void Closing_the_database_waits_for_a_notification_in_progress()
+    {
+        using var entered = new ManualResetEventSlim();
+        var finished = false;
+        using var listener = _temporary.Database.AddScanChangeListener((_, _) =>
+        {
+            entered.Set();
+            Thread.Sleep(300);
+            Volatile.Write(ref finished, true);
+        });
+
+        Save("APX-10000001");
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        _temporary.Database.Dispose();
+
+        Assert.True(Volatile.Read(ref finished));
+    }
+
+    [Fact]
     public async Task A_failing_subscriber_does_not_stop_later_notifications()
     {
         using var monitor = Monitor();

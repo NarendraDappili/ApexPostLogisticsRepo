@@ -77,6 +77,7 @@ stateDiagram-v2
 - **PATCH** moves only to the next status. Anything else is a 409 that names the allowed next status, for example *"A shipment cannot move from Created to Delivered. The next status can only be PickedUp."*
 - **PUT** works until the shipment is Delivered or Failed.
 - **DELETE** works only while the shipment is Created; after that, couriers' scans refer to it.
+- **Scans** follow the same chain. There is no OutForDelivery scan type, so a client moves the shipment there with PATCH (the courier app's **Out for Delivery** action) before a Delivered or Failed scan is accepted.
 
 All three rules are in the domain (`TrackedShipment`, `TrackingStatusRules`) and the service, never in a controller.
 

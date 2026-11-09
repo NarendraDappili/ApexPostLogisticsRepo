@@ -34,6 +34,15 @@ public sealed class ContractCompatibilityTests
     }
 
     [Fact]
+    public void The_status_change_is_sent_as_the_api_takes_it()
+    {
+        var sent = JsonNode.Parse(JsonSerializer.Serialize(new UpdateStatusRequest("OutForDelivery"), CourierJsonContext.Default.UpdateStatusRequest))!.AsObject();
+
+        Assert.Equal(Names(Schemas["UpdateStatusRequest"]!["properties"]!.AsObject()), Names(sent));
+        Assert.Contains("OutForDelivery", Schemas["TrackingStatus"]!["enum"]!.AsArray().Select(value => value!.ToString()));
+    }
+
+    [Fact]
     public void The_app_reads_every_field_of_the_upload_result_it_relies_on()
     {
         var api = Names(Schemas["ScanUploadResponse"]!["properties"]!.AsObject());

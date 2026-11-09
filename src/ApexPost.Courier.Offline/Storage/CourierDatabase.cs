@@ -22,6 +22,8 @@ public sealed class CourierDatabase : IDisposable
     private readonly ILogger<CourierDatabase> _logger;
     private readonly List<ListenerRegistration> _listeners = [];
     private readonly FileStream _processLock;
+    private readonly Lock _notificationGate = new();
+    private bool _closing;
     private bool _disposed;
 
     public CourierDatabase(CourierDatabaseOptions options, ILogger<CourierDatabase>? logger = null)
@@ -127,7 +129,13 @@ public sealed class CourierDatabase : IDisposable
     internal IDisposable AddScanChangeListener(EventHandler<CollectionChangedEventArgs> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        var registration = new ListenerRegistration(this, Scans.AddChangeListener(handler));
+        var registration = new ListenerRegistration(this, Scans.AddChangeListener((sender, change) =>
+        {
+            lock (_notificationGate)
+            {
+                if (!_closing) handler(sender, change);
+            }
+        }));
         lock (_listeners) _listeners.Add(registration);
         return registration;
     }
@@ -135,6 +143,10 @@ public sealed class CourierDatabase : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+
+        // Notifications arrive on the engine's own thread and query the database. Closing it under a running query
+        // aborts the whole process inside the native engine, so wait for one in progress and drop any that follow.
+        lock (_notificationGate) _closing = true;
 
         List<ListenerRegistration> remaining;
         lock (_listeners) remaining = [.. _listeners];

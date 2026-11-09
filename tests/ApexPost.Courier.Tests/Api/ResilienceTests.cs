@@ -170,7 +170,8 @@ public sealed class ResilienceTests : IDisposable
     public async Task Repeated_failures_open_the_circuit_the_app_shows_the_banner_and_calls_fail_at_once()
     {
         _server.Respond = _ => Status(HttpStatusCode.ServiceUnavailable);
-        using var host = HostWithInput("CR-001\n\n4\n6");
+        // A long break: under load a short one could end before the app's next call, which would then reach the server.
+        using var host = HostWithInput("CR-001\n\n4\n7", "--ApexPostApi:Resilience:BreakDuration=00:00:30");
         var server = host.Services.GetRequiredService<ServerAvailability>();
 
         await Assert.ThrowsAsync<ApexApiException>(() => Upload(host));
@@ -182,7 +183,7 @@ public sealed class ResilienceTests : IDisposable
         Assert.Equal((UnavailableReason.CircuitOpen, typeof(BrokenCircuitException)), (refused.Reason, refused.InnerException!.GetType()));
         Assert.Equal(4, sentBeforeOpen);
         Assert.Equal(sentBeforeOpen, _server.Requests.Count);
-        Assert.Contains("Circuit opened for 0.5 s after 503 ServiceUnavailable: working offline", Log, StringComparison.Ordinal);
+        Assert.Contains("Circuit opened for 30 s after 503 ServiceUnavailable: working offline", Log, StringComparison.Ordinal);
         Assert.Contains("*** Server unavailable – working offline ***", Log, StringComparison.Ordinal);
         Assert.Contains("Connection (circuit): open since", Log, StringComparison.Ordinal);
     }
@@ -191,7 +192,7 @@ public sealed class ResilienceTests : IDisposable
     public async Task The_circuit_closes_and_the_banner_goes_when_the_server_answers_again()
     {
         _server.Respond = _ => Status(HttpStatusCode.ServiceUnavailable);
-        using var host = HostWithInput("CR-001\n\n6");
+        using var host = HostWithInput("CR-001\n\n7");
         var server = host.Services.GetRequiredService<ServerAvailability>();
         await Assert.ThrowsAsync<ApexApiException>(() => Upload(host));
         Assert.Equal(ConnectionState.Open, server.State);

@@ -13,12 +13,15 @@ namespace ApexPost.Courier.Tests.Api;
 /// <item>a courier uploads only under their own courierId (403);</item>
 /// <item>a scan more than 5 minutes in the future is a 400 naming scans[i].scannedAtUtc;</item>
 /// <item>an unknown tracking number is a 404;</item>
-/// <item>a scan ID is stored once: sent again, it counts as a duplicate.</item>
+/// <item>a scan ID is stored once: sent again, it counts as a duplicate;</item>
+/// <item>PATCH status moves a shipment from InTransit to OutForDelivery (409 from anywhere else), and, with
+/// <see cref="EnforceStatusChain"/>, each scan must be the shipment's next step (rejected with the API's reason).</item>
 /// </list>
 /// </summary>
 internal sealed partial class FakeApi
 {
     private readonly ConcurrentDictionary<string, string> _stored = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string> _statuses = new(StringComparer.Ordinal);
     private int _issued;
 
     public FakeApi()
@@ -36,6 +39,12 @@ internal sealed partial class FakeApi
 
     /// <summary>Tracking numbers the API does not know (404).</summary>
     public HashSet<string> UnknownShipments { get; } = [];
+
+    /// <summary>Shipments start Created and each scan must be the next step, as on the real API. Off, any scan is taken.</summary>
+    public bool EnforceStatusChain { get; set; }
+
+    /// <summary>The status of a shipment; one nothing has touched is InTransit unless the chain is enforced.</summary>
+    public string StatusOf(string trackingNumber) => _statuses.GetValueOrDefault(trackingNumber, EnforceStatusChain ? "Created" : "InTransit");
 
     /// <summary>A server-side rule: a reason to reject the scan (its JSON), or null.</summary>
     public Func<JsonNode, string?>? RejectWhen { get; set; }
@@ -56,7 +65,8 @@ internal sealed partial class FakeApi
         }
 
         var upload = UploadPath().Match(path);
-        if (!upload.Success) return Problem(HttpStatusCode.NotFound, "Not Found", null);
+        var statusChange = StatusPath().Match(path);
+        if (!upload.Success && !statusChange.Success) return Problem(HttpStatusCode.NotFound, "Not Found", null);
 
         var auth = request.Headers.Authorization?.Parameter;
         if (auth is null || !auth.StartsWith("fake-token-", StringComparison.Ordinal) || RevokedTokens.Contains(auth))
@@ -66,6 +76,8 @@ internal sealed partial class FakeApi
 
         // fake-token-CR-001#2: the courier ID, then the number of the token.
         var courier = auth["fake-token-".Length..].Split('#')[0];
+        if (statusChange.Success) return ChangeStatus(statusChange.Groups["tn"].Value);
+
         var trackingNumber = upload.Groups["tn"].Value;
         var scans = body!["scans"]!.AsArray().Select(scan => scan!).ToList();
         var others = scans.Select(scan => scan["courierId"]!.GetValue<string>()).Where(id => id != courier).Distinct().ToList();
@@ -95,7 +107,7 @@ internal sealed partial class FakeApi
         foreach (var scan in scans)
         {
             var id = scan["scanId"]!.GetValue<string>();
-            if (RejectWhen?.Invoke(scan) is { } reason) rejections.Add(new JsonObject { ["scanId"] = id, ["reason"] = reason });
+            if ((RejectWhen?.Invoke(scan) ?? ChainRefusal(trackingNumber, scan)) is { } reason) rejections.Add(new JsonObject { ["scanId"] = id, ["reason"] = reason });
             else if (_stored.TryAdd(id, trackingNumber)) accepted++;
             else duplicates++;
         }
@@ -110,9 +122,51 @@ internal sealed partial class FakeApi
         }.ToJsonString());
     }
 
+    private HttpResponseMessage ChangeStatus(string trackingNumber)
+    {
+        if (UnknownShipments.Contains(trackingNumber)) return Problem(HttpStatusCode.NotFound, "The requested record was not found.", $"No shipment has the tracking number {trackingNumber}.");
+
+        var current = StatusOf(trackingNumber);
+        if (current != "InTransit")
+        {
+            return Problem(HttpStatusCode.Conflict, "The request conflicts with the current data.", $"A shipment cannot move from {current} to OutForDelivery. The next status can only be {NextAfter(current)}.");
+        }
+
+        _statuses[trackingNumber] = "OutForDelivery";
+        return StubServer.Json(HttpStatusCode.OK, "{}");
+    }
+
+    private string? ChainRefusal(string trackingNumber, JsonNode scan)
+    {
+        if (!EnforceStatusChain) return null;
+
+        var type = scan["scanType"]!.GetValue<string>();
+        var target = type == "Pickup" ? "PickedUp" : type;
+        var current = StatusOf(trackingNumber);
+        if (NextAfter(current).Split(" or ").Contains(target))
+        {
+            _statuses[trackingNumber] = target;
+            return null;
+        }
+
+        return $"A {type} scan cannot be recorded: a shipment cannot move from {current} to {target}; the next status can only be {NextAfter(current)}.";
+    }
+
+    private static string NextAfter(string status) => status switch
+    {
+        "Created" => "PickedUp",
+        "PickedUp" => "InTransit",
+        "InTransit" => "OutForDelivery",
+        "OutForDelivery" => "Delivered or Failed",
+        _ => "nothing",
+    };
+
     private static HttpResponseMessage Problem(HttpStatusCode status, string title, string? detail) =>
         StubServer.Json(status, new JsonObject { ["title"] = title, ["status"] = (int)status, ["detail"] = detail, ["traceId"] = "00-fake-trace-00" }.ToJsonString(), "application/problem+json");
 
     [GeneratedRegex(@"/api/v2/shipments/(?<tn>APX-\d{8})/scans$")]
     private static partial Regex UploadPath();
+
+    [GeneratedRegex(@"/api/v2/shipments/(?<tn>APX-\d{8})/status$")]
+    private static partial Regex StatusPath();
 }

@@ -28,7 +28,7 @@ The order is deliberate:
 
 | Setting | Value | Why |
 |---|---|---|
-| Retries | **3**, so at most 4 tries | Most network blips and server restarts last a few seconds. A fourth failure in a row means the problem is not a blip, and the circuit breaker should decide instead. |
+| Retries | **3 after the first try**, so at most 4 tries (`MaxRetryAttempts` counts retries) | Most network blips and server restarts last a few seconds. A fourth failure in a row means the problem is not a blip, and the circuit breaker should decide instead. |
 | Backoff | **Exponential from 1 s, with jitter**: about 1, 2 and 4 s | Each wait doubles, so a struggling server gets more room each time. Jitter randomises each wait, so a hundred couriers whose phones reconnect at the same moment do not retry in lockstep and knock the server over again. |
 | Attempt timeout | **10 s** | An upload of 20 scans is a few kilobytes and normally takes well under a second. Ten seconds allows for a very slow mobile link, but abandons a connection that has stalled. |
 | Total timeout | **30 s** | How long the courier may wait for one sync. Four 10-second attempts plus the waits could take about 47 s, so on the very worst network the last attempt is cut short. That is fine: the scans stay Pending for the next sync. |
@@ -51,7 +51,7 @@ A call is retried only if **both** hold:
 | **5xx** (500, 502, 503, 504, …) | Yes | The server, or a proxy in front of it, failed. A restart or a busy moment usually passes. |
 | **Any other 4xx**: 400, 401, 403, 404, 409, 429, … | **Never** | The server understood and refused. The same request gets the same answer, and retrying only wastes the courier's data. A 401 needs a new sign-in, not a retry. A 409 on an upload ("another upload was saved at the same moment") and a 429 are left to the outbox's next sync, not hammered within seconds. |
 
-**2. The request is safe to send twice.** GET, HEAD, PUT and DELETE are idempotent by definition: doing them twice has the same effect as once. A POST is retried only when it is marked safe (`ApiResilience.SafeToRetry`), which only the scan upload is. `POST dev/token` is not retried; the courier can simply sign in again.
+**2. The request is safe to send twice.** GET, HEAD, PUT and DELETE are idempotent by definition: doing them twice has the same effect as once. A POST is retried only when it is marked safe (`ApiResilience.SafeToRetry`), which only the scan upload is. `POST dev/token` is not retried; the courier can simply sign in again. Nor is the `PATCH` of **Out for Delivery**: PATCH is not idempotent, and the courier sees the failure and can try again.
 
 ### Why the scan upload is safe to retry
 

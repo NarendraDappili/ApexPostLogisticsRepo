@@ -1,6 +1,6 @@
 # ADR 0029: The courier app is a console program, with stand-ins for the phone's services
 
-Status: Accepted (Week 4, Part D).
+Status: Accepted (Week 4, Part D). The console app replaces the brief's MAUI app for now, by the project owner's decision.
 
 ## Context
 
@@ -13,7 +13,7 @@ The brief asks for `ApexPost.Courier` as a .NET MAUI app for Android and Windows
   - `AuthHeaderHandler`;
   - the resilience pipeline ([ADR 0031](0031-courier-sync-through-one-resilient-client.md));
   - source-generated JSON;
-  - the four screens: Login, New Scan, Pending Scans and Sync Status.
+  - the four screens: Login, New Scan, Pending Scans and Sync Status, with the Sync Now and Out for Delivery actions.
 
   The screens read and write through a `TextReader` and `TextWriter`, so tests drive whole sessions.
 - **It reuses the Part A store** (`ApexPost.Courier.Offline`) unchanged. Its own database folder is not the harness's, because an embedded database belongs to one process.
@@ -29,7 +29,7 @@ The brief asks for `ApexPost.Courier` as a .NET MAUI app for Android and Windows
 
 ## Consequences
 
-- **The whole Part D client is in CI:** typed client, resilience, JSON, sync and token handling (116 tests).
+- **The whole Part D client is in CI:** typed client, resilience, JSON, sync and token handling (128 tests).
 - **The demo video shows a console window, not a phone.** Airplane mode works on a laptop, because the app watches the operating system's network. The circuit breaker is shown by stopping the API.
 - **A MAUI head is still a small addition.** It would register `SecureStorage` and `Connectivity` behind the same two interfaces, and put pages over the same services. The app's logic would then move into a class library that both heads reference.
 - **The token store is weaker than a phone's only in one way:** it does not persist. That is the safe side; a token on disk would need the OS's protection (DPAPI, Keychain), which MAUI's `SecureStorage` provides.

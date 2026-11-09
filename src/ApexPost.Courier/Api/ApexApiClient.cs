@@ -37,6 +37,20 @@ internal sealed class ApexApiClient(HttpClient http)
     }
 
     /// <summary>
+    /// Tells the server the courier has set off with this shipment (PATCH status). Scans have no OutForDelivery type,
+    /// and the server accepts a Delivered or Failed scan only from that status. Not retried: PATCH is not idempotent,
+    /// and the courier sees the failure and can simply try again.
+    /// </summary>
+    public async Task MarkOutForDeliveryAsync(string trackingNumber, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v2/shipments/{Uri.EscapeDataString(trackingNumber)}/status")
+        {
+            Content = JsonContent.Create(new UpdateStatusRequest("OutForDelivery"), CourierJsonContext.Default.UpdateStatusRequest),
+        };
+        using var response = await SendAsync(request, cancellationToken);
+    }
+
+    /// <summary>
     /// Asks a Development API for a one-hour Courier token for this courier (POST dev/token). Not retried: it is a
     /// POST the server does not de-duplicate, and the courier can simply sign in again.
     /// </summary>

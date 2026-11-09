@@ -20,7 +20,8 @@ internal sealed class CourierApp(
     LoginScreen login,
     NewScanScreen newScan,
     PendingScansScreen pendingScans,
-    SyncStatusScreen syncStatus)
+    SyncStatusScreen syncStatus,
+    OutForDeliveryScreen outForDelivery)
 {
     public async Task<int> RunAsync()
     {
@@ -43,10 +44,11 @@ internal sealed class CourierApp(
             screen.WriteLine("  2  Pending Scans");
             screen.WriteLine("  3  Sync Now");
             screen.WriteLine("  4  Sync Status");
-            screen.WriteLine("  5  Sign Out");
-            screen.WriteLine("  6  Exit");
-            var choice = screen.Ask("Choose 1-6")?.Trim();
-            if (choice is null or "6") return Goodbye();
+            screen.WriteLine("  5  Out for Delivery");
+            screen.WriteLine("  6  Sign Out");
+            screen.WriteLine("  7  Exit");
+            var choice = screen.Ask("Choose 1-7")?.Trim();
+            if (choice is null or "7") return Goodbye();
 
             screen.WriteLine();
             switch (choice)
@@ -55,8 +57,9 @@ internal sealed class CourierApp(
                 case "2": pendingScans.Run(); break;
                 case "3": await SyncNowAsync(); break;
                 case "4": syncStatus.Run(); break;
-                case "5": await SignOutAsync(); break;
-                default: screen.WriteLine("Please choose a number from 1 to 6."); break;
+                case "5": await outForDelivery.RunAsync(); break;
+                case "6": await SignOutAsync(); break;
+                default: screen.WriteLine("Please choose a number from 1 to 7."); break;
             }
         }
     }
