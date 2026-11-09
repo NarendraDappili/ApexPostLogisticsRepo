@@ -1258,3 +1258,90 @@ END;
 COMMIT;
 GO
 
+BEGIN TRANSACTION;
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109074459_AddShipmentTracking'
+)
+BEGIN
+    CREATE TABLE [TrackedShipments] (
+        [TrackedShipmentId] bigint NOT NULL IDENTITY,
+        [TrackingNumber] varchar(12) NOT NULL,
+        [RecipientName] nvarchar(100) NOT NULL,
+        [RecipientPhone] varchar(20) NOT NULL,
+        [RecipientAddress] nvarchar(200) NOT NULL,
+        [City] nvarchar(80) NOT NULL,
+        [WeightKg] decimal(6,3) NOT NULL,
+        [Status] varchar(16) NOT NULL,
+        [CreatedAtUtc] datetime2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
+        [CreatedBy] varchar(48) NOT NULL DEFAULT 'system',
+        [ModifiedAtUtc] datetime2(3) NULL,
+        [RowVersion] rowversion NOT NULL,
+        CONSTRAINT [PK_TrackedShipments] PRIMARY KEY ([TrackedShipmentId]),
+        CONSTRAINT [AK_TrackedShipments_TrackingNumber] UNIQUE ([TrackingNumber]),
+        CONSTRAINT [CK_TrackedShipments_Status] CHECK ([Status] IN ('Created', 'PickedUp', 'InTransit', 'OutForDelivery', 'Delivered', 'Failed')),
+        CONSTRAINT [CK_TrackedShipments_WeightKg] CHECK ([WeightKg] >= 0.1 AND [WeightKg] <= 70)
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109074459_AddShipmentTracking'
+)
+BEGIN
+    CREATE TABLE [TrackingScans] (
+        [TrackingScanId] bigint NOT NULL IDENTITY,
+        [ScanId] varchar(42) NOT NULL,
+        [TrackingNumber] varchar(12) NOT NULL,
+        [ScanType] varchar(12) NOT NULL,
+        [Location] nvarchar(100) NOT NULL,
+        [CourierId] nvarchar(32) NOT NULL,
+        [ScannedAtUtc] datetime2(3) NOT NULL,
+        [Notes] nvarchar(500) NULL,
+        [ReceivedAtUtc] datetime2(3) NOT NULL,
+        [CreatedAtUtc] datetime2(3) NOT NULL DEFAULT (SYSUTCDATETIME()),
+        [CreatedBy] varchar(48) NOT NULL DEFAULT 'system',
+        [ModifiedAtUtc] datetime2(3) NULL,
+        CONSTRAINT [PK_TrackingScans] PRIMARY KEY ([TrackingScanId]),
+        CONSTRAINT [AK_TrackingScans_ScanId] UNIQUE ([ScanId]),
+        CONSTRAINT [CK_TrackingScans_ScanType] CHECK ([ScanType] IN ('Pickup', 'InTransit', 'Delivered', 'Failed')),
+        CONSTRAINT [FK_TrackingScans_TrackedShipments_TrackingNumber] FOREIGN KEY ([TrackingNumber]) REFERENCES [TrackedShipments] ([TrackingNumber]) ON DELETE NO ACTION
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109074459_AddShipmentTracking'
+)
+BEGIN
+    CREATE INDEX [IX_TrackedShipments_City] ON [TrackedShipments] ([City]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109074459_AddShipmentTracking'
+)
+BEGIN
+    CREATE INDEX [IX_TrackedShipments_Status_TrackingNumber] ON [TrackedShipments] ([Status], [TrackingNumber]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109074459_AddShipmentTracking'
+)
+BEGIN
+    CREATE INDEX [IX_TrackingScans_TrackingNumber_ScannedAtUtc] ON [TrackingScans] ([TrackingNumber], [ScannedAtUtc], [ReceivedAtUtc]) INCLUDE ([ScanId], [ScanType], [Location], [CourierId], [Notes]);
+END;
+
+IF NOT EXISTS (
+    SELECT * FROM [__EFMigrationsHistory]
+    WHERE [MigrationId] = N'20261109074459_AddShipmentTracking'
+)
+BEGIN
+    INSERT INTO [__EFMigrationsHistory] ([MigrationId], [ProductVersion])
+    VALUES (N'20261109074459_AddShipmentTracking', N'10.0.13');
+END;
+
+COMMIT;
+GO
+
