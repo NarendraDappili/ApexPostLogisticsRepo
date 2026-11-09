@@ -111,8 +111,10 @@ public sealed class TrackedShipment
             : $"a shipment cannot move from {Status} to {status}; the next status can only be {string.Join(" or ", allowed)}.";
     }
 
+    public static bool IsValidWeight(decimal weightKg) => weightKg is >= MinimumWeightKg and <= MaximumWeightKg;
+
     private static decimal CheckWeight(decimal weightKg) =>
-        weightKg is >= MinimumWeightKg and <= MaximumWeightKg
+        IsValidWeight(weightKg)
             ? weightKg
             : throw new ArgumentOutOfRangeException(nameof(weightKg), weightKg, $"The weight must be between {MinimumWeightKg} and {MaximumWeightKg} kg.");
 }
