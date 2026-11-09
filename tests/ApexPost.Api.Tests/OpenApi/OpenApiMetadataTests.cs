@@ -24,14 +24,14 @@ public sealed class OpenApiMetadataTests
     // are a published contract: a generated client's method names come from them, so a change here breaks clients.
     private static readonly (string Route, string OperationId, string Tag, int[] StatusCodes)[] OperationTable =
     [
-        ("GET /shipments", "ListShipments", "Shipments", [200, 400, 500]),
-        ("GET /shipments/{trackingNumber}", "GetShipment", "Shipments", [200, 404, 500]),
-        ("POST /shipments", "CreateShipment", "Shipments", [201, 400, 409, 415, 500]),
-        ("PUT /shipments/{trackingNumber}", "UpdateShipment", "Shipments", [200, 400, 404, 409, 415, 500]),
-        ("PATCH /shipments/{trackingNumber}/status", "UpdateShipmentStatus", "Shipments", [200, 400, 404, 409, 415, 500]),
-        ("DELETE /shipments/{trackingNumber}", "DeleteShipment", "Shipments", [204, 404, 409, 500]),
-        ("GET /shipments/{trackingNumber}/scans", "GetScanHistory", "Scans", [200, 404, 500]),
-        ("POST /shipments/{trackingNumber}/scans", "UploadScans", "Scans", [200, 400, 404, 409, 415, 500]),
+        ("GET /shipments", "ListShipments", "Shipments", [200, 401, 400, 500]),
+        ("GET /shipments/{trackingNumber}", "GetShipment", "Shipments", [200, 401, 404, 500]),
+        ("POST /shipments", "CreateShipment", "Shipments", [201, 401, 403, 400, 409, 415, 500]),
+        ("PUT /shipments/{trackingNumber}", "UpdateShipment", "Shipments", [200, 401, 403, 400, 404, 409, 415, 500]),
+        ("PATCH /shipments/{trackingNumber}/status", "UpdateShipmentStatus", "Shipments", [200, 401, 403, 400, 404, 409, 415, 500]),
+        ("DELETE /shipments/{trackingNumber}", "DeleteShipment", "Shipments", [204, 401, 403, 404, 409, 500]),
+        ("GET /shipments/{trackingNumber}/scans", "GetScanHistory", "Scans", [200, 401, 404, 500]),
+        ("POST /shipments/{trackingNumber}/scans", "UploadScans", "Scans", [200, 401, 403, 400, 404, 409, 415, 500]),
     ];
 
     public static TheoryData<string, string, string, string, int[]> Operations
@@ -46,6 +46,8 @@ public sealed class OpenApiMetadataTests
                     data.Add(version, route.Replace(" /", $" /api/{version}/", StringComparison.Ordinal), operationId, tag, statusCodes);
                 }
             }
+            // The partner route (D3) is in v2 only; it takes an API key, so it has no 403.
+            data.Add("v2", "GET /api/v2/partner/shipments/{trackingNumber}", "GetPartnerShipment", "Partner", [200, 401, 404, 500]);
             return data;
         }
     }
@@ -69,7 +71,7 @@ public sealed class OpenApiMetadataTests
     {
         var ids = AllOperations(await DocumentAsync(version)).Select(operation => operation.Value.GetProperty("operationId").GetString()).ToList();
 
-        Assert.Equal(8, ids.Count);
+        Assert.Equal(version == "v1" ? 8 : 9, ids.Count);
         Assert.Equal(ids.Count, ids.Distinct(StringComparer.Ordinal).Count());
     }
 

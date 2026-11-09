@@ -196,7 +196,7 @@ public sealed class ScanUploadEndpointTests(SqlApiFactory factory)
         ["scanId"] = "scan::" + Guid.CreateVersion7(),
         ["scanType"] = scanType,
         ["location"] = "Depot 4",
-        ["courierId"] = "CR-001",
+        ["courierId"] = TestTokens.CourierId,
         ["scannedAtUtc"] = scannedAt,
         ["notes"] = null,
     };

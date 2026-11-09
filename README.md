@@ -9,7 +9,7 @@ ApexPost is a .NET 10 ASP.NET Core MVC application for post-office counters:
 
 Data lives in **Microsoft SQL Server** (`ApexPostDb`), accessed through **EF Core 10** with code-first migrations.
 
-Week 4 adds the courier side. **Part A** is an offline store for the courier device: shipment scans saved as JSON documents in an embedded **Couchbase Lite** database, with an outbox that uploads them later ([details below](#courier-offline-store-week-4-part-a), [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)). **Part B** is **ApexPost.Api**, a REST API for tracked shipments and the idempotent upload of those scans, on the same SQL Server database ([details below](#tracking-api-week-4-part-b), [API-NOTES.md](API-NOTES.md)). **Part C** documents that API with OpenAPI and Swagger UI and versions it: v1 keeps the Part B contract and is deprecated, and v2 is current. It also adds **ApexPost.Client**, a typed C# client generated from the committed contract ([details below](#api-documentation-openapi-and-swagger-ui-week-4-part-c), [VERSIONING.md](VERSIONING.md)).
+Week 4 adds the courier side. **Part A** is an offline store for the courier device: shipment scans saved as JSON documents in an embedded **Couchbase Lite** database, with an outbox that uploads them later ([details below](#courier-offline-store-week-4-part-a), [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)). **Part B** is **ApexPost.Api**, a REST API for tracked shipments and the idempotent upload of those scans, on the same SQL Server database ([details below](#tracking-api-week-4-part-b), [API-NOTES.md](API-NOTES.md)). **Part C** documents that API with OpenAPI and Swagger UI and versions it: v1 keeps the Part B contract and is deprecated, and v2 is current. It also adds **ApexPost.Client**, a typed C# client generated from the committed contract ([details below](#api-documentation-openapi-and-swagger-ui-week-4-part-c), [VERSIONING.md](VERSIONING.md)). **Part D** secures the API, with JWT bearer tokens and Courier/Admin roles, a check that couriers upload only their own scans, API keys for one read-only partner route, and HTTPS with HSTS ([SECURITY.md](SECURITY.md)). It also adds **ApexPost.Courier**, the courier's app. It is a console program on top of the offline store that signs in, uploads Pending scans through a typed client with retries and a circuit breaker, and syncs by itself when the network comes back ([details below](#courier-app-week-4-part-d), [RESILIENCE.md](RESILIENCE.md)).
 
 ## Prerequisites
 
@@ -213,16 +213,21 @@ With single-field indexes, the first two queries used their index but still sort
 |---|---|
 | [`ApexPost.Api`](src/ApexPost.Api) | `Program.cs`. `Controllers/V1` and `Controllers/V2`: `ShipmentsController`, `ScansController`. `Contracts`: request DTOs and v1's response DTOs; `Contracts/V2`: v2's response DTOs. `Validation`: the custom rules. `Errors/ApiExceptionHandler`. `Routing`: the `{trackingNumber:trackingNumber}` constraint. `OpenApi` and `Versioning` (Part C). [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) |
 | Week 3 projects (additions only) | Domain: `TrackedShipment`, `TrackingScan`, `TrackingStatusRules`, `TrackingNumber`, `TrackingScanId`, `Recipient`. Application: `ShipmentTrackingService`, `ITrackedShipmentRepository`, `ITrackingQueries`. Infrastructure: their EF Core configuration, repository and queries, plus the migration `AddShipmentTracking` |
-| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 237 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer |
+| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 327 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles, the courierId rule, partner API keys, HTTPS redirection and HSTS |
 
 **Run it:**
 
 ```powershell
 dotnet ef database update --project src/ApexPost.Infrastructure      # once: adds TrackedShipments and TrackingScans
+dotnet user-jwts create --project src/ApexPost.Api --role Admin      # once: creates the token signing key (and a token)
 dotnet run --project src/ApexPost.Api --launch-profile http          # http://localhost:5245
+# or, over HTTPS (trust the development certificate once: dotnet dev-certs https --trust)
+dotnet run --project src/ApexPost.Api --launch-profile https         # https://localhost:7245, and http://localhost:5245 redirects there
 ```
 
-It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web application, so there is nothing else to set up. Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) from Visual Studio or VS Code (REST Client), top to bottom. Each endpoint has one success and at least one failure, for both versions. All 50 requests were run against a fresh database and returned the codes in their titles.
+It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web application. **Every API request needs a bearer token** ([SECURITY.md](SECURITY.md)): use the one `dotnet user-jwts` prints, or get one from the Development-only `POST /dev/token`.
+
+Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) from Visual Studio or VS Code (REST Client), top to bottom. The first request gets a token for the rest. Each endpoint has one success and at least one failure, for both versions, plus the 401, 403 and partner API key cases. All 64 requests were run against a fresh database and returned the codes in their titles. The partner requests need a partner key, set once in user-secrets and in the environment variable `APEXPOST_PARTNER_API_KEY` ([SECURITY.md](SECURITY.md#partner-api-keys)); without it, the valid-key requests answer 401.
 
 **Endpoints** (`{version}` is `2`, or `1` for the deprecated Part B contract; see [Versions](#api-documentation-openapi-and-swagger-ui-week-4-part-c)):
 
@@ -236,6 +241,7 @@ It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web applicat
 | DELETE | `/api/v{version}/shipments/{trackingNumber}` | 204, only while Created |
 | POST | `/api/v{version}/shipments/{trackingNumber}/scans` | 200 with `accepted`, `duplicatesSkipped` and `rejected` (with reasons) |
 | GET | `/api/v{version}/shipments/{trackingNumber}/scans` | 200, oldest first |
+| GET | `/api/v2/partner/shipments/{trackingNumber}` | 200; v2 only, for partners, with an `X-Api-Key` header instead of a token |
 
 **Errors and validation:**
 - **Every error is ProblemDetails:** 400, 404, 405, 409, 415 and 500.
@@ -328,6 +334,63 @@ Start the API, then run `dotnet run --project src/ApexPost.Client.Consumer` (the
 
 **Development only.** Outside Development, both URLs return 404. This decides what we publish; it is not security. Hiding the description protects no endpoint, and every endpoint answers the same either way (authentication comes in Part D). `/health` is left out of the document because it is a probe for the hosting platform, not part of the client contract.
 
+## Courier app (Week 4, Part D)
+
+[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. Pending scans are uploaded to the tracking API, by the courier (**Sync Now**) or by themselves when the network comes back.
+
+Start the API first (see [Tracking API](#tracking-api-week-4-part-b)), then the app:
+
+```powershell
+dotnet run --project src/ApexPost.Courier                                           # API at https://localhost:7245, data in %LOCALAPPDATA%\ApexPost\Courier
+dotnet run --project src/ApexPost.Courier -- --ApexPostApi:BaseAddress=http://localhost:5245/ --Courier:DataDirectory=.\courier-app-data
+```
+
+**Sign-in.** Login asks for the courier ID, then for a token:
+- **Enter** gets a one-hour Courier token for that courier from the Development API's `POST /dev/token`, the stand-in for a real sign-in.
+- **Pasting** uses a token you already have, for example from `dotnet user-jwts create --project src/ApexPost.Api --role Courier --claim courierId=CR-001`. The app checks it is for this courier, has the Courier role and has not expired, and shows only `*` while you paste.
+
+The header then says `Uploads: on until 18:35 UTC`. The token lives in memory only. If the server answers 401, or the token expires, the token is cleared and the courier is taken back to Login, where Enter keeps the same courier ID; scans stay Pending until then ([SECURITY.md](SECURITY.md#the-courier-apps-token)). Without a server, the courier is signed in offline (`Uploads: off`): scans are recorded and saved as usual, and uploads start after signing in again with a network.
+
+**Sync** ([`Sync/`](src/ApexPost.Courier/Sync)):
+- **The real uploader:** `ApiShipmentUploader` replaces Part A's stand-in server. The outbox still sends the Pending scans in batches of 20. The uploader sends each batch to the API, one request per shipment, and marks every scan Synced or Failed from the API's answer:
+  - a scan the API stored, now or earlier, is Synced;
+  - a scan the API rejected is Failed, with the API's reason;
+  - an unknown shipment (404), or a scan named in a 400, is Failed with the API's message, so it does not block the outbox for ever;
+  - a 403 or 409 leaves the scans Pending for a later sync;
+  - no answer, 401, or a 5xx stops the batch with every scan still Pending.
+- **Only the signed-in courier's scans** are sent; another courier's scans wait for that courier.
+- **Automatic sync:** `AutoSyncService` uploads Pending scans when the network comes back. `SystemNetworkStatus` watches `NetworkChange`, the console's counterpart of MAUI's `Connectivity.ConnectivityChanged`. It also syncs at start-up, and every minute while online, so the app finds the API again after an outage without the courier pressing anything. It does nothing without a network, a token, or anything Pending. Configure it with `Courier:AutoSync` (`Enabled`, `SettleDelay`, `Interval`).
+- **Live count:** the Part A change listener keeps the pending count in the header current as scans are marked.
+
+The app keeps its database in its own folder, not the harness's, because an embedded database belongs to one process at a time. Log lines appear between the menu lines as they happen; set their level with `--Logging:LogLevel:Default=Warning`.
+
+**Talking to the API.** The app calls the v2 API through `ApexApiClient`, a typed client registered with `AddHttpClient<ApexApiClient>()`. `IHttpClientFactory` makes and recycles its `HttpClient`, and the app never creates one itself; a test checks the source for that. `AuthHeaderHandler`, a `DelegatingHandler` in the client's pipeline, adds the courier's token from the token store to every request. The token store keeps it in memory only, never in a file or a log ([SECURITY.md](SECURITY.md#clients)). The request and response bodies are the app's own records, serialised by a source-generated `JsonSerializerContext`, and a test compares them with `contracts/v2.json`.
+
+The API's address is `ApexPostApi:BaseAddress`:
+
+| Where | Address |
+|---|---|
+| `appsettings.json` (the default) | `https://localhost:7245/`: the API's `https` launch profile on this machine |
+| Launch profile "API over HTTP" | `http://localhost:5245/`: the API's `http` profile |
+| Anything else | `--ApexPostApi:BaseAddress=<url>`, or the environment variable `ApexPostApi__BaseAddress` |
+
+These play the part of the per-platform addresses a phone app would have. The app refuses to start with a plain `http://` address for any machine but this one, because every request carries the courier's token.
+
+**Weak networks.** Every API call goes through a resilience pipeline:
+- **Retries:** up to 3, with exponential backoff and jitter, on network errors, timeouts, 408 and 5xx only, and only for requests that are safe to send twice.
+- **Circuit breaker:** after repeated failures it opens, the header shows `Server unavailable – working offline`, and scans keep being saved on the device.
+- **Timeouts:** one per attempt and one for the whole call.
+
+Every retry and circuit change is logged. **[RESILIENCE.md](RESILIENCE.md)** gives the values and the reasons for them, including why the scan upload is safe to retry.
+
+**JSON and errors.** All JSON goes through one source-generated `JsonSerializerContext` (`CourierJsonContext`), with the v2 API's conventions: camelCase, names read in any case, enums by name.
+- **Robust reading:** unknown fields are skipped, and missing or null ones become empty values, so a newer API does not break the app. A body that cannot be read at all (malformed JSON, a Wi-Fi login page, `null`) becomes an "answer could not be read" error, never a crash.
+- **Errors in plain words:** an error response's ProblemDetails or ValidationProblemDetails becomes a message the courier can act on. Validation errors name each refused field (the first three); 401, 403, 404 and 409 show the API's own explanation.
+- **No server internals:** a 5xx shows only the reference (`traceId`) to quote, never the server's details.
+- **Two error types:** every failure is one of two exceptions with that message: `ApexApiException` (the server answered with an error) or `ApiUnavailableException` (no network, timeout, or open circuit).
+
+**Demo video and screenshots:** [docs/screenshots/week4-partD/README.md](docs/screenshots/week4-partD/README.md) is a step-by-step script for the 3–5 minute video: login, scans in airplane mode, automatic sync, 401 and 403, and the circuit breaker opening and recovering.
+
 ## Tests
 
 ```powershell
@@ -336,7 +399,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 ```
 
 **What the tests need:**
-- The courier offline tests (`ApexPost.Courier.Offline.Tests`) need nothing installed: each test opens its own Couchbase Lite database in a temporary folder.
+- The courier tests (`ApexPost.Courier.Offline.Tests` and `ApexPost.Courier.Tests`) need nothing installed: each test opens its own Couchbase Lite database in a temporary folder.
 - The Infrastructure, Web and API tests need a SQL Server. Each test run creates its own database (`ApexPostDb_Test_<guid>`, or `ApexPostDb_ApiTest_<guid>` for the API) from the migrations and drops it afterwards. The development database is never used, and a guard refuses any other database name.
 - By default the tests use the local default instance with Windows authentication. Point them elsewhere with `APEXPOST_TEST_SQLSERVER`, a connection string without a database name:
 
@@ -344,7 +407,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 925 tests passing and a zero-warning build:
+**Results:** the latest run had 1131 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -353,7 +416,8 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Infrastructure | 145 |
 | Web integration | 110 |
 | Courier offline | 128 |
-| API (with the OpenAPI, versioning, contract and generated-client tests) | 237 |
+| Courier app (Part D) | 116 |
+| API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 327 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 
@@ -400,6 +464,8 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - [DESIGN.md](DESIGN.md): architecture, layer diagrams, ER diagram, normalisation, data access patterns, user interface, SOLID mapping, all ADRs.
 - [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md): the courier offline store: save locally first, conflict handling, one process per database.
 - [API-NOTES.md](API-NOTES.md): the tracking API: endpoints and status codes, validation, errors, the idempotent scan upload.
+- [SECURITY.md](SECURITY.md): the tracking API's security: JWT bearer authentication and roles, partner API keys, HTTPS and HSTS, OAuth2 flows (Authorization Code with PKCE, Client Credentials), and moving to a real identity provider.
+- [RESILIENCE.md](RESILIENCE.md): the courier app's retry, circuit breaker and timeout values and the reasons for them; why the scan upload is safe to retry.
 - [VERSIONING.md](VERSIONING.md): the tracking API's versions: every change from v1 to v2, breaking or not and why, v1's deprecation and sunset plan, how to change the contract. The contracts are in [contracts/](contracts).
 - [PERFORMANCE.md](PERFORMANCE.md): execution plans, before/after measurements, index trade-offs, generated SQL.
 - [sql/README.md](sql/README.md): reporting queries, the atomic T-SQL sale, the blocking demo, deadlock avoidance.
@@ -412,6 +478,8 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - **Request and security audit are best-effort.** Such an audit write failure is logged and never undoes a committed sale (ADR 0011). Data-change history is written in the same transaction as the change, so it is never lost for a committed change (ADR 0024).
 - **Audit history is never pruned.** Nothing deletes audit rows; retention is a deployment decision.
 - **IP allowlist and proxies.** The allowlist uses the direct connection address. Behind a reverse proxy, configure trusted forwarded headers first.
-- **The tracking API has no authentication yet.** Anyone who can reach it can call every endpoint. Part D adds JWT bearer tokens with roles, and API keys for partners; until then, run it only locally.
+- **The tracking API's tokens are development tokens.** Every request needs a valid JWT bearer token with the right role, but the tokens come from `dotnet user-jwts` or `/dev/token`, not from a real identity provider ([SECURITY.md](SECURITY.md#using-a-real-identity-provider)). Run it only locally.
+- **The partner route uses API keys.** They are hashed, compared in constant time and never logged, but they are long-lived shared secrets; OAuth2 Client Credentials would replace them ([SECURITY.md](SECURITY.md#why-api-keys-are-weaker-than-oauth2-tokens)).
+- **The courier app is a console program, not a MAUI app.** Its token lives in memory only, so the courier signs in again after restarting it. Network changes come from the operating system rather than MAUI's `Connectivity` ([ADR 0029](docs/adr/0029-courier-app-as-console-program.md)).
 - **v1 of the tracking API is deprecated.** It answers until 31 May 2027, and so do the unversioned Part B URLs (`/api/shipments…`), which are an alias of v1. New clients should use `/api/v2`.
 - **Counter and tracked shipments are not linked.** A parcel accepted at the counter does not get a tracking number automatically ([ADR 0025](docs/adr/0025-tracked-shipments-beside-counter-shipments.md)).

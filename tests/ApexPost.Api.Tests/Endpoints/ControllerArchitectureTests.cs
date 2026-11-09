@@ -20,7 +20,7 @@ public sealed class ControllerArchitectureTests
     [Fact]
     public void Every_controller_is_an_api_controller_with_an_attribute_route()
     {
-        Assert.Equal(4, Controllers.Length);
+        Assert.Equal(5, Controllers.Length);
         Assert.All(Controllers, controller =>
         {
             Assert.NotNull(controller.GetCustomAttribute<ApiControllerAttribute>());
@@ -57,7 +57,7 @@ public sealed class ControllerArchitectureTests
             var version = Assert.Single(controller.GetCustomAttributes<ApiVersionAttribute>());
             var expected = controller.Namespace!.EndsWith(".V1", StringComparison.Ordinal) ? (1, true) : (2, false);
             Assert.Equal(expected, (version.Versions.Single().MajorVersion!.Value, version.Deprecated));
-            Assert.StartsWith("api/v{version:apiVersion}/shipments", controller.GetCustomAttribute<RouteAttribute>()!.Template, StringComparison.Ordinal);
+            Assert.StartsWith(controller == typeof(Controllers.V2.PartnerShipmentsController) ? "api/v{version:apiVersion}/partner/shipments" : "api/v{version:apiVersion}/shipments", controller.GetCustomAttribute<RouteAttribute>()!.Template, StringComparison.Ordinal);
         });
     }
 
@@ -102,8 +102,20 @@ public sealed class ControllerArchitectureTests
         Assert.DoesNotContain(v2Types, v1Responses.Contains);
     }
 
+    [Fact]
+    public void The_partner_route_is_read_only_and_in_v2_only()
+    {
+        var partner = typeof(Controllers.V2.PartnerShipmentsController);
+        var action = Assert.Single(partner.GetMethods(), method => method.GetCustomAttributes<HttpMethodAttribute>().Any());
+
+        Assert.Equal(["GET"], action.GetCustomAttribute<HttpMethodAttribute>()!.HttpMethods);
+        Assert.Equal(2, partner.GetCustomAttribute<ApiVersionAttribute>()!.Versions.Single().MajorVersion);
+        Assert.DoesNotContain(Controllers, controller => controller.Namespace!.EndsWith(".V1", StringComparison.Ordinal) && controller.Name.StartsWith("Partner", StringComparison.Ordinal));
+    }
+
+    // The shipment and scan controllers, which both versions have. The partner route (D3) is an addition to v2 only.
     private static IEnumerable<MethodInfo> Actions(string versionNamespace) =>
-        Controllers.Where(controller => controller.Namespace!.EndsWith(versionNamespace, StringComparison.Ordinal))
+        Controllers.Where(controller => controller.Namespace!.EndsWith(versionNamespace, StringComparison.Ordinal) && controller != typeof(Controllers.V2.PartnerShipmentsController))
             .SelectMany(controller => controller.GetMethods().Where(method => method.GetCustomAttributes<HttpMethodAttribute>().Any()));
 
     private static List<string> Routes(string versionNamespace) =>

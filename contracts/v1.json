@@ -32,6 +32,16 @@
           }
         ],
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -104,6 +114,16 @@
           "required": true
         },
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -130,6 +150,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token does not have the Courier role, or a scan is under another courierId than the token's courierId claim. Nothing was stored.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -219,6 +249,16 @@
           }
         ],
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -276,6 +316,16 @@
           "required": true
         },
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -312,6 +362,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token does not have the Admin role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -360,6 +420,16 @@
           }
         ],
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -429,6 +499,16 @@
           "required": true
         },
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -455,6 +535,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token does not have the Admin role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -512,6 +602,16 @@
           }
         ],
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -524,6 +624,16 @@
           },
           "204": {
             "description": "Deleted."
+          },
+          "403": {
+            "description": "The access token does not have the Admin role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "404": {
             "description": "No shipment has this tracking number, or it is not in the APX-######## form.",
@@ -586,6 +696,16 @@
           "required": true
         },
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -612,6 +732,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token does not have the Courier role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -1188,8 +1318,21 @@
           }
         }
       }
+    },
+    "securitySchemes": {
+      "Bearer": {
+        "type": "http",
+        "description": "A JWT access token with the Courier or Admin role, sent as Authorization: Bearer <token>. In Development, get one from dotnet user-jwts or POST /dev/token (SECURITY.md).",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
     }
   },
+  "security": [
+    {
+      "Bearer": [ ]
+    }
+  ],
   "tags": [
     {
       "name": "Scans"
