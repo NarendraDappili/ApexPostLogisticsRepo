@@ -1,3 +1,4 @@
+using ApexPost.Courier.Api;
 using ApexPost.Courier.Offline.Storage;
 using ApexPost.Courier.Sync;
 
@@ -13,6 +14,7 @@ internal sealed class CourierApp(
     ScanChangeMonitor monitor,
     SyncService sync,
     SyncHistory history,
+    ServerAvailability server,
     LoginScreen login,
     NewScanScreen newScan,
     PendingScansScreen pendingScans,
@@ -55,6 +57,8 @@ internal sealed class CourierApp(
         screen.WriteLine(new string('-', 78));
         screen.WriteLine($" ApexPost Courier                                   signed in as {session.CourierId}");
         screen.WriteLine($" Pending scans (live): {monitor.PendingCount,-4}  Last sync: {(last is null ? "never" : $"{ConsoleScreen.Time(last.FinishedAtUtc)} UTC")}");
+        // The circuit breaker is open or testing the server again: scans are still saved, and wait on the device.
+        if (server.IsWorkingOffline) screen.WriteLine($" *** {ServerAvailability.Banner} ***");
         screen.WriteLine(new string('-', 78));
     }
 

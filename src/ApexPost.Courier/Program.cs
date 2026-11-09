@@ -8,6 +8,9 @@ using Microsoft.Extensions.Options;
 // The ApexPost courier app, as a console program: scans are saved on the device first and uploaded later.
 // Usage: dotnet run --project src/ApexPost.Courier [--Courier:DataDirectory=<folder>] [--ApexPostApi:BaseAddress=<url>]
 CourierDatabase.LimitEngineConsoleLogToErrors();
+// The screens use characters such as the dash in "Server unavailable – working offline"; the console's legacy code
+// page would print them as question marks.
+Console.OutputEncoding = System.Text.Encoding.UTF8;
 IHost host;
 try
 {

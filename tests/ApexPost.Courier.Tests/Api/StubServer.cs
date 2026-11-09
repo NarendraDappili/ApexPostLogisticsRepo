@@ -15,6 +15,16 @@ internal sealed class StubServer : HttpMessageHandler
 
     public Func<HttpRequestMessage, HttpResponseMessage> Respond { get; set; } = _ => Json(HttpStatusCode.OK, "{}");
 
+    /// <summary>When set, answers instead of <see cref="Respond"/>, for example after a delay that a timeout cuts short.</summary>
+    public Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? RespondAsync { get; set; }
+
+    /// <summary>Answers with these, in order, one per request; the last one repeats.</summary>
+    public void RespondInTurn(params Func<HttpResponseMessage>[] answers)
+    {
+        var next = 0;
+        Respond = _ => answers[Math.Min(Interlocked.Increment(ref next) - 1, answers.Length - 1)]();
+    }
+
     public IReadOnlyList<Recorded> Requests => [.. _requests];
 
     /// <summary>Makes every HttpClient the app's factory creates send through this stub.</summary>
@@ -27,7 +37,7 @@ internal sealed class StubServer : HttpMessageHandler
     {
         var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
         _requests.Enqueue(new Recorded(request.Method, request.RequestUri!, request.Headers.Authorization?.ToString(), body));
-        return Respond(request);
+        return RespondAsync is { } respondAsync ? await respondAsync(request, cancellationToken) : Respond(request);
     }
 
     // The factory disposes handlers it recycles; the stub outlives them for the test's assertions.

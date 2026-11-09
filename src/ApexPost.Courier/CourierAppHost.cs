@@ -56,7 +56,12 @@ internal static class CourierAppHost
         builder.Services.AddSingleton<IValidateOptions<ApexApiOptions>, ApexApiOptionsValidator>();
         builder.Services.AddSingleton<ITokenStore, InMemoryTokenStore>();
         builder.Services.AddTransient<AuthHeaderHandler>();
+        // Retry, circuit breaker and timeouts (RESILIENCE.md). The resilience handler comes first, so every retry goes
+        // through AuthHeaderHandler again and picks up the current token.
+        builder.Services.Configure<ApiResilienceOptions>(builder.Configuration.GetSection(ApiResilienceOptions.Section));
+        builder.Services.AddSingleton<ServerAvailability>();
         builder.Services.AddHttpClient<ApexApiClient>((services, client) => client.BaseAddress = services.GetRequiredService<IOptions<ApexApiOptions>>().Value.Root)
+            .AddApexApiResilience()
             .AddHttpMessageHandler<AuthHeaderHandler>();
 
         builder.Services.AddSingleton<CourierSession>();

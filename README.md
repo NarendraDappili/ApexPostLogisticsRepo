@@ -355,7 +355,14 @@ The API's address is `ApexPostApi:BaseAddress`:
 | Launch profile "API over HTTP" | `http://localhost:5245/`: the API's `http` profile |
 | Anything else | `--ApexPostApi:BaseAddress=<url>`, or the environment variable `ApexPostApi__BaseAddress` |
 
-These play the part of the per-platform addresses a phone app would have. The app refuses to start with a plain `http://` address for any machine but this one, because every request carries the courier's token. The upload itself still goes to the stand-in server until the sync step connects them.
+These play the part of the per-platform addresses a phone app would have.
+
+**Weak networks.** Every API call goes through a resilience pipeline:
+- **Retries:** up to 3, with exponential backoff and jitter, on network errors, timeouts, 408 and 5xx only, and only for requests that are safe to send twice.
+- **Circuit breaker:** after repeated failures it opens, the header shows `Server unavailable – working offline`, and scans keep being saved on the device.
+- **Timeouts:** one per attempt and one for the whole call.
+
+Every retry and circuit change is logged. **[RESILIENCE.md](RESILIENCE.md)** gives the values and the reasons for them, including why the scan upload is safe to retry. The app refuses to start with a plain `http://` address for any machine but this one, because every request carries the courier's token. The upload itself still goes to the stand-in server until the sync step connects them.
 
 ## Tests
 
@@ -373,7 +380,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1047 tests passing and a zero-warning build:
+**Results:** the latest run had 1070 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -382,7 +389,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Infrastructure | 145 |
 | Web integration | 110 |
 | Courier offline | 128 |
-| Courier app (Part D) | 32 |
+| Courier app (Part D) | 55 |
 | API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 327 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
@@ -431,6 +438,7 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md): the courier offline store: save locally first, conflict handling, one process per database.
 - [API-NOTES.md](API-NOTES.md): the tracking API: endpoints and status codes, validation, errors, the idempotent scan upload.
 - [SECURITY.md](SECURITY.md): the tracking API's security: JWT bearer authentication and roles, partner API keys, HTTPS and HSTS, OAuth2 flows (Authorization Code with PKCE, Client Credentials), and moving to a real identity provider.
+- [RESILIENCE.md](RESILIENCE.md): the courier app's retry, circuit breaker and timeout values and the reasons for them; why the scan upload is safe to retry.
 - [VERSIONING.md](VERSIONING.md): the tracking API's versions: every change from v1 to v2, breaking or not and why, v1's deprecation and sunset plan, how to change the contract. The contracts are in [contracts/](contracts).
 - [PERFORMANCE.md](PERFORMANCE.md): execution plans, before/after measurements, index trade-offs, generated SQL.
 - [sql/README.md](sql/README.md): reporting queries, the atomic T-SQL sale, the blocking demo, deadlock avoidance.
