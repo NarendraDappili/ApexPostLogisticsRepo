@@ -7,7 +7,7 @@ dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build
 ```
 
-The latest run had **428 tests passing, 0 failing, 0 skipped**, with a zero-warning build. The error-handling tests also pass with `DOTNET_TieredCompilation=0` (55 tests).
+The latest run had **556 tests passing, 0 failing, 0 skipped**, with a zero-warning build: 428 for the Week 3 projects and 128 for the Week 4 courier offline store. The error-handling tests also pass with `DOTNET_TieredCompilation=0` (55 tests).
 
 ### Line coverage
 
@@ -29,9 +29,11 @@ Line coverage on 4 November 2026, excluding migrations, Razor views and `Program
 
 Most of the remaining lines are the `catch (OperationCanceledException) … StatusCode(499)` branches for a client disconnect, and the demo seeder's seeding path.
 
+The Week 4 courier offline projects, measured on 5 November 2026 with the same command: `ApexPost.Courier.Offline` **93%**, and `ApexPost.Courier.Offline.Harness` **84%**. The harness figure includes `Program.cs`, which only the manual runs exercise.
+
 ## CI on GitHub Actions
 
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull request to `master`:
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull request to `master`, and on pull requests into the Week 4 part branches (`week4-part*`), so each step is checked on Linux before its part reaches `master`:
 1. builds with `-warnaserror`;
 2. fails if the EF Core model has changed without a migration (`dotnet ef migrations has-pending-model-changes`);
 3. starts a throwaway SQL Server 2022 container with a random password;
@@ -66,6 +68,7 @@ The other five runs are the pushes to `master` that merged #22–#26.
 | `ApexPost.Application.Tests` | 109 | No |
 | `ApexPost.Infrastructure.Tests` | 128 | SQL Server (except the model, migration, simulation, design-time factory and password-hasher tests) |
 | `ApexPost.Web.IntegrationTests` | 110 | SQL Server (except the CSV, display and demo-seed guard tests) |
+| `ApexPost.Courier.Offline.Tests` | 128 | No: each test opens its own Couchbase Lite database in a temporary folder |
 
 The final-review round added 136 tests:
 - 117 in new test files;
@@ -86,7 +89,7 @@ The SQL Server tests never touch the development database:
 - **A guard.** It refuses any database whose name lacks the `ApexPostDb_Test_` prefix, so a misconfigured connection string cannot point the tests at real data.
 - **Choosing the server.** It comes from `APEXPOST_TEST_SQLSERVER`, a connection string without a database name. The default is the local default instance with Windows authentication. CI starts a throwaway SQL Server container with a random password and sets this variable.
 
-No test uses a real credential, external service or arbitrary delay. All data is fictional.
+No test uses a real credential, external service or arbitrary delay; the one exception is described under the courier offline tests. All data is fictional.
 
 ## What is covered
 
@@ -212,8 +215,40 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
 
 `ProblemDetailsMappingTests` cover each row of the exception mapping, including framework exceptions of the same types staying 500 without detail. Two more tests pin the classification rule: the guard helpers count as business code, but the same exception types thrown inside `List`, `Dictionary`, `string`, `Nullable` or an enumerator called by business code do not. Three more make the rule independent of JIT inlining: a probe controller calls the same business rule fully optimized (inlined) and unoptimized, and both must be 400; exception types the Application declares are 400 without a stack trace; and every controller is scanned for `throw` or `ThrowIf…`, which the rule relies on. CI reruns the error-handling tests with `DOTNET_TieredCompilation=0`.
 
+### Courier offline tests (128)
+
+These cover Week 4 Part A. Every test runs on a real Couchbase Lite database in its own temporary folder, which is deleted afterwards; there are no mocks of the database.
+
+- **Database lifecycle:**
+  - `apexpost_courier` opens in the default collection, with its indexes, and data is still there after a reopen;
+  - `Dispose` can be called twice, and use after dispose fails;
+  - a second open of the same folder is refused while the first is open, but not after a crash.
+- **Domain:**
+  - the `scan::{Guid}` format and its parsing;
+  - `ShipmentScan` validation: tracking number, lengths, UTC time, enums;
+  - the correction rules;
+  - no Couchbase type in the domain. This is checked by reflection and by a source scan, and a control test proves the check does find Couchbase types in the storage layer.
+- **Repository:** key-value create, get, update and delete. A duplicate ID is refused without overwriting, only Pending scans can be created, and list-all is ordered.
+- **SQL++:**
+  - the three queries;
+  - input built to look like an injection attempt, which only ever matches as a value;
+  - a check that no query text holds a literal value;
+  - `Explain()` showing each query's index with no temporary sort;
+  - an older index definition being replaced when the database reopens.
+- **Outbox:**
+  - success, rejection and offline-then-online runs;
+  - batches of 20 and a failure part way through;
+  - duplicates after a lost "mark Synced";
+  - unanswered scans, and deletes or corrections made during an upload;
+  - overlapping runs and cancellation.
+- **Change listener:** changed IDs are logged, and the live count goes up on save and down on sync or delete. A disposed monitor hears nothing more, disposing the database removes every listener token, and a failing subscriber does not stop later notifications.
+- **Harness:** scripted console sessions drive every menu item end to end, and the listener's log line must appear under the action that caused it.
+
+**The one deliberate delay:** Couchbase Lite raises change notifications on its own thread. Tests wait for an expected notification with a 10-second ceiling, and finish as soon as it arrives. One test proves that something does *not* happen (no notification after dispose), and it waits a fixed 500 ms. The offline tests passed repeated runs in a row on Windows, and CI runs them on Linux.
+
 ## Not covered
 
 - **No browser automation in the suite.** There is no real-browser, screen-reader, keyboard-only or automated accessibility test. The UI round was checked by hand in headless Edge, as each role at desktop and phone widths, with no console or CSP errors. That check is not part of CI.
 - **No load or penetration test.** `PERFORMANCE.md` measures query cost with a reproducible data set; it is not a load test.
+- **Two real processes on one courier database.** The single-process lock was checked by hand, by starting two harnesses on the same folder (the second exits with code 2). The automated tests check the same lock within one process.
 - **No proxy or multi-host deployment test.** The concurrency tests use several contexts and connections against one SQL Server. That reproduces the conditions of several web servers, but not an actual farm.

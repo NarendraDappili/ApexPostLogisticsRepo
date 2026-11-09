@@ -25,6 +25,10 @@ flowchart LR
 | `ApexPost.Application` | Use cases, policies, repository / unit-of-work / query / audit interfaces, read models | EF Core, SQL or MVC types |
 | `ApexPost.Infrastructure` | `ApexPostDbContext`, configurations, migrations, repositories, unit of work, query services, procedure scripts, audit store, seeding | Business decisions |
 | `ApexPost.Web` | Controllers, views, view models, filters, middleware, authentication, `Program.cs` | Business rules |
+| `ApexPost.Courier.Offline` (Week 4) | The courier device's offline store. `Domain`: scans and contracts. `Storage`: Couchbase Lite database, repository, SQL++ queries, change listener. `Sync`: the outbox | Couchbase types in `Domain`; any reference to the Week 3 projects |
+| `ApexPost.Courier.Offline.Harness` (Week 4) | Console menu over the offline store, with a fake server | Business rules |
+
+The courier projects are a separate deployable for the courier's device. They share no code or database with the counter application; Part B connects them through the ApexPost API. See [OFFLINE-DESIGN.md](../../OFFLINE-DESIGN.md).
 
 ## Main runtime rules
 
