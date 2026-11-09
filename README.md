@@ -9,7 +9,7 @@ ApexPost is a .NET 10 ASP.NET Core MVC application for post-office counters:
 
 Data lives in **Microsoft SQL Server** (`ApexPostDb`), accessed through **EF Core 10** with code-first migrations.
 
-Week 4 adds the courier side. **Part A** is an offline store for the courier device: shipment scans saved as JSON documents in an embedded **Couchbase Lite** database, with an outbox that uploads them later ([details below](#courier-offline-store-week-4-part-a), [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)). **Part B** is **ApexPost.Api**, a REST API for tracked shipments and the idempotent upload of those scans, on the same SQL Server database ([details below](#tracking-api-week-4-part-b), [API-NOTES.md](API-NOTES.md)). **Part C** documents that API with OpenAPI and Swagger UI and versions it: v1 keeps the Part B contract and is deprecated, and v2 is current. It also adds **ApexPost.Client**, a typed C# client generated from the committed contract ([details below](#api-documentation-openapi-and-swagger-ui-week-4-part-c), [VERSIONING.md](VERSIONING.md)).
+Week 4 adds the courier side. **Part A** is an offline store for the courier device: shipment scans saved as JSON documents in an embedded **Couchbase Lite** database, with an outbox that uploads them later ([details below](#courier-offline-store-week-4-part-a), [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)). **Part B** is **ApexPost.Api**, a REST API for tracked shipments and the idempotent upload of those scans, on the same SQL Server database ([details below](#tracking-api-week-4-part-b), [API-NOTES.md](API-NOTES.md)). **Part C** documents that API with OpenAPI and Swagger UI and versions it: v1 keeps the Part B contract and is deprecated, and v2 is current. It also adds **ApexPost.Client**, a typed C# client generated from the committed contract ([details below](#api-documentation-openapi-and-swagger-ui-week-4-part-c), [VERSIONING.md](VERSIONING.md)). **Part D** adds **ApexPost.Courier**, the courier's console app on top of the offline store ([details below](#courier-app-week-4-part-d)).
 
 ## Prerequisites
 
@@ -328,6 +328,17 @@ Start the API, then run `dotnet run --project src/ApexPost.Client.Consumer` (the
 
 **Development only.** Outside Development, both URLs return 404. This decides what we publish; it is not security. Hiding the description protects no endpoint, and every endpoint answers the same either way (authentication comes in Part D). `/health` is left out of the document because it is a probe for the hosting platform, not part of the client contract.
 
+## Courier app (Week 4, Part D)
+
+[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. For now, uploads still go to the Part A stand-in server, so the app needs no network. Part D then secures the API and connects the app to it.
+
+```powershell
+dotnet run --project src/ApexPost.Courier                                           # data in %LOCALAPPDATA%\ApexPost\Courier
+dotnet run --project src/ApexPost.Courier -- --Courier:DataDirectory=.\courier-app-data
+```
+
+The app keeps its database in its own folder, not the harness's, because an embedded database belongs to one process at a time. Log lines appear between the menu lines as they happen; set their level with `--Logging:LogLevel:Default=Warning`.
+
 ## Tests
 
 ```powershell
@@ -336,7 +347,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 ```
 
 **What the tests need:**
-- The courier offline tests (`ApexPost.Courier.Offline.Tests`) need nothing installed: each test opens its own Couchbase Lite database in a temporary folder.
+- The courier tests (`ApexPost.Courier.Offline.Tests` and `ApexPost.Courier.Tests`) need nothing installed: each test opens its own Couchbase Lite database in a temporary folder.
 - The Infrastructure, Web and API tests need a SQL Server. Each test run creates its own database (`ApexPostDb_Test_<guid>`, or `ApexPostDb_ApiTest_<guid>` for the API) from the migrations and drops it afterwards. The development database is never used, and a guard refuses any other database name.
 - By default the tests use the local default instance with Windows authentication. Point them elsewhere with `APEXPOST_TEST_SQLSERVER`, a connection string without a database name:
 
@@ -344,7 +355,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 925 tests passing and a zero-warning build:
+**Results:** the latest run had 941 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -353,6 +364,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Infrastructure | 145 |
 | Web integration | 110 |
 | Courier offline | 128 |
+| Courier app (Part D) | 16 |
 | API (with the OpenAPI, versioning, contract and generated-client tests) | 237 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
