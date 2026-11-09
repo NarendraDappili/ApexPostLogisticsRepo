@@ -219,10 +219,13 @@ With single-field indexes, the first two queries used their index but still sort
 
 ```powershell
 dotnet ef database update --project src/ApexPost.Infrastructure      # once: adds TrackedShipments and TrackingScans
+dotnet user-jwts create --project src/ApexPost.Api --role Admin      # once: creates the token signing key (and a token)
 dotnet run --project src/ApexPost.Api --launch-profile http          # http://localhost:5245
 ```
 
-It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web application, so there is nothing else to set up. Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) from Visual Studio or VS Code (REST Client), top to bottom. Each endpoint has one success and at least one failure, for both versions. All 50 requests were run against a fresh database and returned the codes in their titles.
+It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web application. **Every API request needs a bearer token** ([SECURITY.md](SECURITY.md)): use the one `dotnet user-jwts` prints, or get one from the Development-only `POST /dev/token`.
+
+Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) from Visual Studio or VS Code (REST Client), top to bottom. The first request gets a token for the rest. Each endpoint has one success and at least one failure, for both versions, plus the 401 cases. All 54 requests were run against a fresh database and returned the codes in their titles.
 
 **Endpoints** (`{version}` is `2`, or `1` for the deprecated Part B contract; see [Versions](#api-documentation-openapi-and-swagger-ui-week-4-part-c)):
 
@@ -355,7 +358,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 941 tests passing and a zero-warning build:
+**Results:** the latest run had 976 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -365,7 +368,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Web integration | 110 |
 | Courier offline | 128 |
 | Courier app (Part D) | 16 |
-| API (with the OpenAPI, versioning, contract and generated-client tests) | 237 |
+| API (with the OpenAPI, versioning, contract, generated-client and authentication tests) | 272 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 
@@ -412,6 +415,7 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - [DESIGN.md](DESIGN.md): architecture, layer diagrams, ER diagram, normalisation, data access patterns, user interface, SOLID mapping, all ADRs.
 - [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md): the courier offline store: save locally first, conflict handling, one process per database.
 - [API-NOTES.md](API-NOTES.md): the tracking API: endpoints and status codes, validation, errors, the idempotent scan upload.
+- [SECURITY.md](SECURITY.md): the tracking API's security: JWT bearer authentication, development tokens, moving to a real identity provider.
 - [VERSIONING.md](VERSIONING.md): the tracking API's versions: every change from v1 to v2, breaking or not and why, v1's deprecation and sunset plan, how to change the contract. The contracts are in [contracts/](contracts).
 - [PERFORMANCE.md](PERFORMANCE.md): execution plans, before/after measurements, index trade-offs, generated SQL.
 - [sql/README.md](sql/README.md): reporting queries, the atomic T-SQL sale, the blocking demo, deadlock avoidance.
@@ -424,6 +428,6 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - **Request and security audit are best-effort.** Such an audit write failure is logged and never undoes a committed sale (ADR 0011). Data-change history is written in the same transaction as the change, so it is never lost for a committed change (ADR 0024).
 - **Audit history is never pruned.** Nothing deletes audit rows; retention is a deployment decision.
 - **IP allowlist and proxies.** The allowlist uses the direct connection address. Behind a reverse proxy, configure trusted forwarded headers first.
-- **The tracking API has no authentication yet.** Anyone who can reach it can call every endpoint. Part D adds JWT bearer tokens with roles, and API keys for partners; until then, run it only locally.
+- **The tracking API checks who is calling, but not yet what they may do.** Every request needs a valid JWT bearer token, but until roles are enforced (next step of Part D) any valid token may call every endpoint. Run it only locally until then.
 - **v1 of the tracking API is deprecated.** It answers until 31 May 2027, and so do the unversioned Part B URLs (`/api/shipments…`), which are an alias of v1. New clients should use `/api/v2`.
 - **Counter and tracked shipments are not linked.** A parcel accepted at the counter does not get a tracking number automatically ([ADR 0025](docs/adr/0025-tracked-shipments-beside-counter-shipments.md)).

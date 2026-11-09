@@ -32,6 +32,16 @@
           }
         ],
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -104,6 +114,16 @@
           "required": true
         },
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -219,6 +239,16 @@
           }
         ],
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -276,6 +306,16 @@
           "required": true
         },
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -360,6 +400,16 @@
           }
         ],
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -429,6 +479,16 @@
           "required": true
         },
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -512,6 +572,16 @@
           }
         ],
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -586,6 +656,16 @@
           "required": true
         },
         "responses": {
+          "401": {
+            "description": "No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "500": {
             "description": "An unexpected server error. Quote the traceId when reporting it.",
             "content": {
@@ -1188,8 +1268,21 @@
           }
         }
       }
+    },
+    "securitySchemes": {
+      "Bearer": {
+        "type": "http",
+        "description": "A JWT access token with the Courier or Admin role, sent as Authorization: Bearer <token>. In Development, get one from dotnet user-jwts or POST /dev/token (SECURITY.md).",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
     }
   },
+  "security": [
+    {
+      "Bearer": [ ]
+    }
+  ],
   "tags": [
     {
       "name": "Scans"

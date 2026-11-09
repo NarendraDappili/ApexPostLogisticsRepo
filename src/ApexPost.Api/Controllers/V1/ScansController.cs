@@ -15,6 +15,7 @@ namespace ApexPost.Api.Controllers.V1;
 [ApiVersion(ApiVersions.V1, Deprecated = true)]
 [Route("api/v{version:apiVersion}/shipments/{trackingNumber:trackingNumber}/scans")]
 [Tags("Scans")]
+[ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, MediaTypeNames.Application.ProblemJson)]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, MediaTypeNames.Application.ProblemJson)]
 public sealed class ScansController(ShipmentTrackingService tracking) : ControllerBase
 {

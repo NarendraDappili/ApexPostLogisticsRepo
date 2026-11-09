@@ -15,6 +15,14 @@ public sealed class OfflineApiFactory : WebApplicationFactory<Program>
     {
         // Program.cs reads the connection string before Build(), which only UseSetting reaches.
         builder.UseSetting("ConnectionStrings:ApexPostDb", UnusedConnectionString);
+        TestTokens.Configure(builder);
         builder.UseEnvironment("Development");
+    }
+
+    /// <summary>Every client sends a valid Courier and Admin token; the authentication tests remove or replace it.</summary>
+    protected override void ConfigureClient(HttpClient client)
+    {
+        base.ConfigureClient(client);
+        client.DefaultRequestHeaders.Authorization = TestTokens.DefaultHeader();
     }
 }

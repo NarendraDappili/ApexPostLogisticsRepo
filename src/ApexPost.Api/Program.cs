@@ -2,6 +2,7 @@ using ApexPost.Api.Composition;
 using ApexPost.Api.Errors;
 using ApexPost.Api.OpenApi;
 using ApexPost.Api.Routing;
+using ApexPost.Api.Security;
 using ApexPost.Api.Validation;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using Microsoft.AspNetCore.Rewrite;
@@ -43,6 +44,9 @@ builder.Services.AddApexPostPersistence(connectionString);
 builder.Services.AddApexPostApiVersioning();
 // The built-in generator describes each version in its own document: /openapi/v1.json and /openapi/v2.json.
 builder.Services.AddApexPostOpenApi();
+// JWT bearer tokens (issuer, audience, lifetime, signature) from Authentication:Schemes:Bearer; every endpoint needs
+// an authenticated caller unless it allows anonymous ones (SECURITY.md).
+builder.Services.AddApexPostAuthentication(builder.Configuration);
 
 var app = builder.Build();
 // First, so an exception anywhere later in the pipeline becomes ProblemDetails through ApiExceptionHandler.
@@ -55,16 +59,20 @@ app.UseHttpsRedirection();
 // must come after it, so the rewritten path is the one matched.
 app.UseRewriter(new RewriteOptions().AddRewrite("^api/shipments(/.*)?$", "api/v1/shipments$1", skipRemainingRules: true));
 app.UseRouting();
+// Mapping an endpoint adds no middleware, so the endpoints below still run after authentication and authorization,
+// which come last before them.
 // A probe for the hosting platform, not part of the client contract, so it stays out of the OpenAPI document (and
-// out of the generated client). It still answers everyone.
-app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).ExcludeFromDescription();
+// out of the generated client). It answers everyone, without a token.
+app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).ExcludeFromDescription().AllowAnonymous();
 // Mapped before the Swagger UI below asks which API versions the controllers describe.
 app.MapControllers();
 // The documents and the Swagger UI page are served in Development only. Not publishing them elsewhere is a choice
 // about what to publish, not a security control: every endpoint answers the same with or without them.
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
+    // A stand-in for an identity provider; never mapped outside Development (SECURITY.md).
+    app.MapDevelopmentTokens();
     // Swagger UI is only a viewer: it renders the built-in documents above and generates nothing itself. Its
     // document dropdown lists every API version, newest (and so the default) first: "v2", "v1 (deprecated)".
     app.UseSwaggerUI(options =>
@@ -79,6 +87,11 @@ if (app.Environment.IsDevelopment())
         options.DisplayOperationId();
     });
 }
+// After routing, so each endpoint's [Authorize] and [AllowAnonymous] are known, and after Swagger UI: the fallback
+// policy (an authenticated caller) also applies to requests that match no endpoint, and the page that lets a
+// developer enter a token cannot itself require one.
+app.UseAuthentication();
+app.UseAuthorization();
 app.Run();
 
 /// <summary>The API host. Public so the integration tests can start it with WebApplicationFactory.</summary>
