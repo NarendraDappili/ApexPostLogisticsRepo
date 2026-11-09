@@ -33,19 +33,26 @@ public sealed class PartnerApiKeyTests
         Assert.True(problem.TryGetProperty("traceId", out _));
     }
 
-    public static TheoryData<string, string[]> InvalidKeys => new()
-    {
-        { "an unknown key", [TestPartnerKeys.NewKey()] },
-        { "a known key in another case", [TestPartnerKeys.NorthwindKey.ToLowerInvariant()] },
-        { "a known key with a character more", [TestPartnerKeys.NorthwindKey + "A"] },
-        { "a known key cut short", [TestPartnerKeys.NorthwindKey[..^1]] },
-        { "two keys at once", [TestPartnerKeys.NorthwindKey, TestPartnerKeys.ContosoKey] },
-    };
-
+    // The cases are named, not given as keys: the keys are random per test process, and a test runner such as Visual
+    // Studio's enumerates theory data in one process and runs it in another, where the keys are different.
     [Theory]
-    [MemberData(nameof(InvalidKeys))]
-    public async Task An_invalid_key_is_a_401(string why, string[] keys)
+    [InlineData("an unknown key")]
+    [InlineData("a known key in another case")]
+    [InlineData("a known key with a character more")]
+    [InlineData("a known key cut short")]
+    [InlineData("two keys at once")]
+    public async Task An_invalid_key_is_a_401(string why)
     {
+        string[] keys = why switch
+        {
+            "an unknown key" => [TestPartnerKeys.NewKey()],
+            "a known key in another case" => [TestPartnerKeys.NorthwindKey.ToLowerInvariant()],
+            "a known key with a character more" => [TestPartnerKeys.NorthwindKey + "A"],
+            "a known key cut short" => [TestPartnerKeys.NorthwindKey[..^1]],
+            "two keys at once" => [TestPartnerKeys.NorthwindKey, TestPartnerKeys.ContosoKey],
+            _ => throw new ArgumentOutOfRangeException(nameof(why), why, null),
+        };
+
         using var response = await SendAsync(keys);
         var problem = await response.JsonAsync();
 
@@ -99,17 +106,14 @@ public sealed class PartnerApiKeyTests
             || entry.Message.Contains(TestPartnerKeys.ContosoKey, StringComparison.Ordinal));
     }
 
-    public static TheoryData<string, string, string> BadConfiguration => new()
-    {
-        { "PartnerApi:Keys:0:Key", "too-short-a-key", "PartnerApi:Keys:0:Key is shorter than 32 characters" },
-        { "PartnerApi:Keys:0:Partner", "", "PartnerApi:Keys:0:Partner is missing" },
-        { "PartnerApi:Keys:1:Key", TestPartnerKeys.NorthwindKey, "two entries have the same key" },
-    };
-
+    // NorthwindKey stands for this process's Northwind key, read when the test runs (see An_invalid_key_is_a_401).
     [Theory]
-    [MemberData(nameof(BadConfiguration))]
+    [InlineData("PartnerApi:Keys:0:Key", "too-short-a-key", "PartnerApi:Keys:0:Key is shorter than 32 characters")]
+    [InlineData("PartnerApi:Keys:0:Partner", "", "PartnerApi:Keys:0:Partner is missing")]
+    [InlineData("PartnerApi:Keys:1:Key", "NorthwindKey", "two entries have the same key")]
     public async Task The_api_refuses_to_start_with_a_malformed_key_and_does_not_say_the_key(string setting, string value, string message)
     {
+        if (value == "NorthwindKey") value = TestPartnerKeys.NorthwindKey;
         await using var factory = new OfflineApiFactory().WithWebHostBuilder(builder => builder.UseSetting(setting, value));
 
         var exception = Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
