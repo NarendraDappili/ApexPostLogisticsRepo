@@ -7,7 +7,6 @@ namespace ApexPost.Api.Controllers;
 /// <summary>A shipment's scans: the history here, and the courier upload (step B6).</summary>
 [ApiController]
 [Route("api/shipments/{trackingNumber:trackingNumber}/scans")]
-[Produces("application/json")]
 public sealed class ScansController(ShipmentTrackingService tracking) : ControllerBase
 {
     [HttpGet]

@@ -1,6 +1,8 @@
 using ApexPost.Api.Composition;
 using ApexPost.Api.Errors;
 using ApexPost.Api.Routing;
+using ApexPost.Api.Validation;
+using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
 using ApexPost.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,7 +16,13 @@ if (string.IsNullOrWhiteSpace(connectionString))
     throw new InvalidOperationException("ConnectionStrings:ApexPostDb is not configured. In Development set it with dotnet user-secrets; see README.md.");
 }
 
-builder.Services.AddControllers();
+// Validation errors are keyed and worded by the JSON names a client sends (recipientPhone, scans[0].scannedAtUtc),
+// the same names the service uses for the errors it finds.
+builder.Services.AddControllers(options =>
+{
+    options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider());
+    options.ModelMetadataDetailsProviders.Add(new JsonDisplayNameProvider());
+});
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 // {trackingNumber:trackingNumber} in a route template: anything that is not APX-######## never reaches an action.

@@ -11,7 +11,6 @@ namespace ApexPost.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/shipments")]
-[Produces("application/json")]
 public sealed class ShipmentsController(ShipmentTrackingService tracking) : ControllerBase
 {
     [HttpGet]
@@ -41,7 +40,7 @@ public sealed class ShipmentsController(ShipmentTrackingService tracking) : Cont
     [HttpPatch("{trackingNumber:trackingNumber}/status")]
     [Consumes("application/json")]
     public async Task<ActionResult<ShipmentResponse>> UpdateShipmentStatus(string trackingNumber, UpdateStatusRequest request, CancellationToken cancellationToken) =>
-        Ok(ShipmentResponse.From(await tracking.ChangeStatusAsync(trackingNumber, request.Status, cancellationToken)));
+        Ok(ShipmentResponse.From(await tracking.ChangeStatusAsync(trackingNumber, request.Status!.Value, cancellationToken)));
 
     [HttpDelete("{trackingNumber:trackingNumber}")]
     public async Task<IActionResult> DeleteShipment(string trackingNumber, CancellationToken cancellationToken)
