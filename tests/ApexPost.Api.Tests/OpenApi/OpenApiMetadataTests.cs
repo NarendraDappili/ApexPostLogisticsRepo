@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using ApexPost.Api.Tests.Endpoints;
 using ApexPost.Api.Tests.Hosting;
@@ -6,34 +7,54 @@ using Microsoft.AspNetCore.WebUtilities;
 namespace ApexPost.Api.Tests.OpenApi;
 
 /// <summary>
-/// C3: the document carries what a client developer and a client generator need. Every operation has a stable
-/// operationId (the action's route name), a tag, a summary and every status code it can return, each described; every
-/// field and parameter is described from the XML comments; and the schemas say what the API really accepts and
-/// returns (named enums, numbers as numbers, required request fields never null, the 201's Location header).
+/// C3, for both versions' documents: they carry what a client developer and a client generator need. Every operation
+/// has a stable operationId (the action's route name), a tag, a summary and every status code it can return, each
+/// described; every field and parameter is described from the XML comments; and the schemas say what the API really
+/// accepts and returns (named enums, numbers as numbers, required request fields never null, the 201's Location
+/// header). Only the enums differ by version: v1 responses write numbers, v2 responses names.
 /// </summary>
 public sealed class OpenApiMetadataTests
 {
     private const string ProblemJson = "application/problem+json";
+    private static readonly ConcurrentDictionary<string, Task<JsonElement>> Documents = new(StringComparer.Ordinal);
 
-    // operationId, tag and every status code each operation declares. The operationIds are a published contract:
-    // a generated client's method names come from them, so a change here breaks clients.
-    public static TheoryData<string, string, string, int[]> Operations => new()
+    public static TheoryData<string> Versions => ["v1", "v2"];
+
+    // operationId, tag and every status code each operation declares, the same in both versions. The operationIds
+    // are a published contract: a generated client's method names come from them, so a change here breaks clients.
+    private static readonly (string Route, string OperationId, string Tag, int[] StatusCodes)[] OperationTable =
+    [
+        ("GET /shipments", "ListShipments", "Shipments", [200, 400, 500]),
+        ("GET /shipments/{trackingNumber}", "GetShipment", "Shipments", [200, 404, 500]),
+        ("POST /shipments", "CreateShipment", "Shipments", [201, 400, 409, 415, 500]),
+        ("PUT /shipments/{trackingNumber}", "UpdateShipment", "Shipments", [200, 400, 404, 409, 415, 500]),
+        ("PATCH /shipments/{trackingNumber}/status", "UpdateShipmentStatus", "Shipments", [200, 400, 404, 409, 415, 500]),
+        ("DELETE /shipments/{trackingNumber}", "DeleteShipment", "Shipments", [204, 404, 409, 500]),
+        ("GET /shipments/{trackingNumber}/scans", "GetScanHistory", "Scans", [200, 404, 500]),
+        ("POST /shipments/{trackingNumber}/scans", "UploadScans", "Scans", [200, 400, 404, 409, 415, 500]),
+    ];
+
+    public static TheoryData<string, string, string, string, int[]> Operations
     {
-        { "GET /api/v1/shipments", "ListShipments", "Shipments", [200, 400, 500] },
-        { "GET /api/v1/shipments/{trackingNumber}", "GetShipment", "Shipments", [200, 404, 500] },
-        { "POST /api/v1/shipments", "CreateShipment", "Shipments", [201, 400, 409, 415, 500] },
-        { "PUT /api/v1/shipments/{trackingNumber}", "UpdateShipment", "Shipments", [200, 400, 404, 409, 415, 500] },
-        { "PATCH /api/v1/shipments/{trackingNumber}/status", "UpdateShipmentStatus", "Shipments", [200, 400, 404, 409, 415, 500] },
-        { "DELETE /api/v1/shipments/{trackingNumber}", "DeleteShipment", "Shipments", [204, 404, 409, 500] },
-        { "GET /api/v1/shipments/{trackingNumber}/scans", "GetScanHistory", "Scans", [200, 404, 500] },
-        { "POST /api/v1/shipments/{trackingNumber}/scans", "UploadScans", "Scans", [200, 400, 404, 409, 415, 500] },
-    };
+        get
+        {
+            var data = new TheoryData<string, string, string, string, int[]>();
+            foreach (var version in new[] { "v1", "v2" })
+            {
+                foreach (var (route, operationId, tag, statusCodes) in OperationTable)
+                {
+                    data.Add(version, route.Replace(" /", $" /api/{version}/", StringComparison.Ordinal), operationId, tag, statusCodes);
+                }
+            }
+            return data;
+        }
+    }
 
     [Theory]
     [MemberData(nameof(Operations))]
-    public async Task Each_operation_has_its_operation_id_tag_summary_and_status_codes(string route, string operationId, string tag, int[] statusCodes)
+    public async Task Each_operation_has_its_operation_id_tag_summary_and_status_codes(string version, string route, string operationId, string tag, int[] statusCodes)
     {
-        var operation = Operation(await DocumentAsync(), route);
+        var operation = Operation(await DocumentAsync(version), route);
 
         Assert.Equal(operationId, operation.GetProperty("operationId").GetString());
         Assert.Equal([tag], operation.GetProperty("tags").EnumerateArray().Select(item => item.GetString()));
@@ -42,19 +63,21 @@ public sealed class OpenApiMetadataTests
             operation.GetProperty("responses").EnumerateObject().Select(response => response.Name).Order());
     }
 
-    [Fact]
-    public async Task Operation_ids_are_unique()
+    [Theory]
+    [MemberData(nameof(Versions))]
+    public async Task Operation_ids_are_unique(string version)
     {
-        var ids = AllOperations(await DocumentAsync()).Select(operation => operation.Value.GetProperty("operationId").GetString()).ToList();
+        var ids = AllOperations(await DocumentAsync(version)).Select(operation => operation.Value.GetProperty("operationId").GetString()).ToList();
 
         Assert.Equal(8, ids.Count);
         Assert.Equal(ids.Count, ids.Distinct(StringComparer.Ordinal).Count());
     }
 
-    [Fact]
-    public async Task Every_response_is_described_and_every_error_is_problem_details()
+    [Theory]
+    [MemberData(nameof(Versions))]
+    public async Task Every_response_is_described_and_every_error_is_problem_details(string version)
     {
-        foreach (var (route, operation) in AllOperations(await DocumentAsync()))
+        foreach (var (route, operation) in AllOperations(await DocumentAsync(version)))
         {
             foreach (var response in operation.GetProperty("responses").EnumerateObject())
             {
@@ -81,20 +104,22 @@ public sealed class OpenApiMetadataTests
         }
     }
 
-    [Fact]
-    public async Task A_201_documents_its_location_header()
+    [Theory]
+    [MemberData(nameof(Versions))]
+    public async Task A_201_documents_its_location_header(string version)
     {
-        var created = Operation(await DocumentAsync(), "POST /api/v1/shipments").GetProperty("responses").GetProperty("201");
+        var created = Operation(await DocumentAsync(version), $"POST /api/{version}/shipments").GetProperty("responses").GetProperty("201");
         var location = created.GetProperty("headers").GetProperty("Location");
 
         Assert.True(location.GetProperty("required").GetBoolean());
         Assert.Equal(("string", "uri"), (location.GetProperty("schema").GetProperty("type").GetString(), location.GetProperty("schema").GetProperty("format").GetString()));
     }
 
-    [Fact]
-    public async Task Every_parameter_and_every_field_of_our_schemas_is_described()
+    [Theory]
+    [MemberData(nameof(Versions))]
+    public async Task Every_parameter_and_every_field_of_our_schemas_is_described(string version)
     {
-        var document = await DocumentAsync();
+        var document = await DocumentAsync(version);
 
         foreach (var (route, operation) in AllOperations(document))
         {
@@ -116,48 +141,86 @@ public sealed class OpenApiMetadataTests
             Assert.False(string.IsNullOrWhiteSpace(schema.Value.GetProperty("description").GetString()), schema.Name);
             foreach (var property in schema.Value.GetProperty("properties").EnumerateObject())
             {
-                Assert.True(property.Value.TryGetProperty("description", out var description) && !string.IsNullOrWhiteSpace(description.GetString()),
-                    $"{schema.Name}.{property.Name}");
+                Assert.True(Description(property.Value) is { Length: > 0 }, $"{schema.Name}.{property.Name}");
             }
         }
     }
 
     [Theory]
-    [InlineData("CreateShipmentRequest")]
-    [InlineData("UpdateShipmentRequest")]
-    [InlineData("UpdateStatusRequest")]
-    [InlineData("ScanUploadItem")]
-    public async Task Every_request_field_has_an_example_for_try_it_out(string schemaName)
+    [InlineData("v1", "CreateShipmentRequest")]
+    [InlineData("v1", "UpdateShipmentRequest")]
+    [InlineData("v1", "UpdateStatusRequest")]
+    [InlineData("v1", "ScanUploadItem")]
+    [InlineData("v2", "CreateShipmentRequest")]
+    [InlineData("v2", "UpdateShipmentRequest")]
+    [InlineData("v2", "UpdateStatusRequest")]
+    [InlineData("v2", "ScanUploadItem")]
+    public async Task Every_request_field_has_an_example_for_try_it_out(string version, string schemaName)
     {
-        var properties = Schema(await DocumentAsync(), schemaName).GetProperty("properties");
+        var properties = Schema(await DocumentAsync(version), schemaName).GetProperty("properties");
 
         Assert.All(properties.EnumerateObject(), property => Assert.True(property.Value.TryGetProperty("examples", out _), $"{schemaName}.{property.Name}"));
     }
 
-    [Fact]
-    public async Task Enums_are_named_where_names_travel_and_numbered_where_numbers_do()
+    [Theory]
+    [MemberData(nameof(Versions))]
+    public async Task Requests_take_enums_by_name_in_both_versions(string version)
     {
-        var document = await DocumentAsync();
+        var document = await DocumentAsync(version);
 
-        // Request fields and the status filter take names: one shared schema per enum.
+        // One shared schema per enum, listing the names.
         Assert.Equal(["Created", "PickedUp", "InTransit", "OutForDelivery", "Delivered", "Failed"], EnumValues(Schema(document, "TrackingStatus"), "string"));
         Assert.Equal(["Pickup", "InTransit", "Delivered", "Failed"], EnumValues(Schema(document, "TrackingScanType"), "string"));
-        Assert.Equal("#/components/schemas/TrackingStatus", Schema(document, "UpdateStatusRequest").GetProperty("properties").GetProperty("status").GetProperty("$ref").GetString());
-        Assert.Equal("#/components/schemas/TrackingScanType", Schema(document, "ScanUploadItem").GetProperty("properties").GetProperty("scanType").GetProperty("$ref").GetString());
-        var statusFilter = Operation(document, "GET /api/v1/shipments").GetProperty("parameters").EnumerateArray().Single(parameter => parameter.GetProperty("name").GetString() == "status");
-        Assert.Equal("#/components/schemas/TrackingStatus", statusFilter.GetProperty("schema").GetProperty("$ref").GetString());
-
-        // v1 responses write numbers, and say which number is which.
-        var status = Schema(document, "ShipmentResponse").GetProperty("properties").GetProperty("status");
-        Assert.Equal(["0", "1", "2", "3", "4", "5"], EnumValues(status, "integer"));
-        Assert.Contains("1 PickedUp", status.GetProperty("description").GetString());
-        Assert.Equal(["0", "1", "2", "3"], EnumValues(Schema(document, "ScanResponse").GetProperty("properties").GetProperty("scanType"), "integer"));
+        Assert.Equal("#/components/schemas/TrackingStatus", Reference(Property(document, "UpdateStatusRequest", "status")));
+        Assert.Equal("#/components/schemas/TrackingScanType", Reference(Property(document, "ScanUploadItem", "scanType")));
+        var statusFilter = Operation(document, $"GET /api/{version}/shipments").GetProperty("parameters").EnumerateArray().Single(parameter => parameter.GetProperty("name").GetString() == "status");
+        Assert.Equal("#/components/schemas/TrackingStatus", Reference(statusFilter.GetProperty("schema")));
     }
 
     [Fact]
-    public async Task Required_request_fields_are_never_null_but_a_nullable_response_field_is()
+    public async Task V1_responses_write_enums_as_numbers_and_say_which_number_is_which()
     {
-        var document = await DocumentAsync();
+        var document = await DocumentAsync("v1");
+
+        var status = Property(document, "ShipmentResponse", "status");
+        Assert.Equal(["0", "1", "2", "3", "4", "5"], EnumValues(status, "integer"));
+        Assert.Contains("1 PickedUp", status.GetProperty("description").GetString());
+        Assert.Equal(["0", "1", "2", "3"], EnumValues(Property(document, "ScanResponse", "scanType"), "integer"));
+        Assert.Equal(["0", "1", "2", "3", "4", "5"], EnumValues(Property(document, "ScanUploadResponse", "shipmentStatus"), "integer"));
+    }
+
+    [Fact]
+    public async Task V2_responses_write_enums_by_name()
+    {
+        var document = await DocumentAsync("v2");
+
+        Assert.Equal("#/components/schemas/TrackingStatus", Reference(Property(document, "ShipmentResponse", "status")));
+        Assert.Equal("#/components/schemas/TrackingStatus", Reference(Property(document, "ScanUploadResponse", "shipmentStatus")));
+        Assert.Equal("#/components/schemas/TrackingScanType", Reference(Property(document, "ScanResponse", "scanType")));
+        Assert.Equal("#/components/schemas/TrackingScanType", Reference(Property(document, "LatestScanResponse", "scanType")));
+    }
+
+    [Fact]
+    public async Task V2_nests_the_recipient_and_documents_latest_scan_as_nullable()
+    {
+        var document = await DocumentAsync("v2");
+        var shipment = Schema(document, "ShipmentResponse").GetProperty("properties");
+
+        Assert.Equal(["latestScan", "recipient", "status", "trackingNumber", "weightKg"], shipment.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+        Assert.Equal("#/components/schemas/RecipientResponse", Reference(shipment.GetProperty("recipient")));
+        Assert.Equal(["address", "city", "name", "phone"], Schema(document, "RecipientResponse").GetProperty("properties").EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(["location", "scanType", "scannedAtUtc"], Schema(document, "LatestScanResponse").GetProperty("properties").EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+        var latestScan = shipment.GetProperty("latestScan").GetProperty("oneOf").EnumerateArray().ToList();
+        Assert.Equal(2, latestScan.Count);
+        Assert.Contains(latestScan, option => Types(option) is ["null"]);
+        Assert.Contains(latestScan, option => Reference(option) == "#/components/schemas/LatestScanResponse");
+    }
+
+    [Theory]
+    [MemberData(nameof(Versions))]
+    public async Task Required_request_fields_are_never_null_but_a_nullable_response_field_is(string version)
+    {
+        var document = await DocumentAsync(version);
 
         foreach (var name in new[] { "CreateShipmentRequest", "UpdateShipmentRequest", "UpdateStatusRequest", "ScanUploadRequest", "ScanUploadItem" })
         {
@@ -170,15 +233,16 @@ public sealed class OpenApiMetadataTests
             }
         }
         // Optional, and null when the courier wrote nothing.
-        Assert.Contains("null", Types(Schema(document, "ScanUploadItem").GetProperty("properties").GetProperty("notes")));
-        Assert.Contains("null", Types(Schema(document, "ScanResponse").GetProperty("properties").GetProperty("notes")));
+        Assert.Contains("null", Types(Property(document, "ScanUploadItem", "notes")));
+        Assert.Contains("null", Types(Property(document, "ScanResponse", "notes")));
     }
 
-    [Fact]
-    public async Task Numbers_are_documented_as_numbers_never_as_strings()
+    [Theory]
+    [MemberData(nameof(Versions))]
+    public async Task Numbers_are_documented_as_numbers_never_as_strings(string version)
     {
         var offenders = new List<string>();
-        Walk((await DocumentAsync()), "$", offenders);
+        Walk(await DocumentAsync(version), "$", offenders);
 
         Assert.Empty(offenders);
         static void Walk(JsonElement element, string path, List<string> offenders)
@@ -197,14 +261,15 @@ public sealed class OpenApiMetadataTests
         }
     }
 
-    internal static async Task<JsonElement> DocumentAsync()
+    /// <summary>The version's document from a Development host; fetched once per test run.</summary>
+    internal static Task<JsonElement> DocumentAsync(string version) => Documents.GetOrAdd(version, async name =>
     {
         await using var factory = new OfflineApiFactory();
         using var client = factory.CreateClient();
-        using var response = await client.GetAsync("/openapi/v1.json");
+        using var response = await client.GetAsync($"/openapi/{name}.json");
         response.EnsureSuccessStatusCode();
         return await response.JsonAsync();
-    }
+    });
 
     internal static JsonElement Operation(JsonElement document, string route)
     {
@@ -217,6 +282,18 @@ public sealed class OpenApiMetadataTests
             .SelectMany(path => path.Value.EnumerateObject().Select(operation => ($"{operation.Name.ToUpperInvariant()} {path.Name}", operation.Value)));
 
     internal static JsonElement Schema(JsonElement document, string name) => document.GetProperty("components").GetProperty("schemas").GetProperty(name);
+
+    internal static List<string> SchemaNames(JsonElement document) => [.. document.GetProperty("components").GetProperty("schemas").EnumerateObject().Select(schema => schema.Name)];
+
+    private static JsonElement Property(JsonElement document, string schema, string property) => Schema(document, schema).GetProperty("properties").GetProperty(property);
+
+    private static string? Reference(JsonElement schema) => schema.TryGetProperty("$ref", out var reference) ? reference.GetString() : null;
+
+    // A property pointing to a shared schema carries its description next to the $ref, or inside a nullable oneOf.
+    private static string? Description(JsonElement property) =>
+        property.TryGetProperty("description", out var description) ? description.GetString()
+        : property.TryGetProperty("oneOf", out var oneOf) ? oneOf.EnumerateArray().Select(Description).FirstOrDefault(text => text is not null)
+        : null;
 
     private static List<string> EnumValues(JsonElement schema, string type)
     {

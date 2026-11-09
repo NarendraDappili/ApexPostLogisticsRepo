@@ -41,19 +41,33 @@ public sealed partial class SwaggerUiTests
     }
 
     [Fact]
-    public async Task The_ui_reads_the_built_in_document_and_no_other()
+    public async Task The_dropdown_lists_v2_first_then_v1_labelled_deprecated()
     {
         await using var factory = new OfflineApiFactory();
         using var client = factory.CreateClient();
 
         var script = await client.GetStringAsync("/swagger/index.js");
         var urls = JsonDocument.Parse(ConfigObject().Match(script).Groups["json"].Value).RootElement.GetProperty("urls");
-        var url = Assert.Single(urls.EnumerateArray()).GetProperty("url").GetString()!;
-        using var document = await client.GetAsync(url);
 
-        Assert.Equal("/openapi/v1.json", url);
+        // The first entry is the one Swagger UI opens.
+        Assert.Equal(
+            [("v2", "/openapi/v2.json"), ("v1 (deprecated)", "/openapi/v1.json")],
+            urls.EnumerateArray().Select(entry => (entry.GetProperty("name").GetString(), entry.GetProperty("url").GetString())));
+    }
+
+    [Theory]
+    [InlineData("/openapi/v1.json", "1.0")]
+    [InlineData("/openapi/v2.json", "2.0")]
+    public async Task Each_dropdown_entry_loads_the_built_in_document_of_its_version(string url, string version)
+    {
+        await using var factory = new OfflineApiFactory();
+        using var client = factory.CreateClient();
+
+        using var document = await client.GetAsync(url);
+        var info = (await document.JsonAsync()).GetProperty("info");
+
         Assert.Equal(HttpStatusCode.OK, document.StatusCode);
-        Assert.Equal("ApexPost Logistics API", (await document.JsonAsync()).GetProperty("info").GetProperty("title").GetString());
+        Assert.Equal(("ApexPost Logistics API", version), (info.GetProperty("title").GetString(), info.GetProperty("version").GetString()));
     }
 
     [Theory]
