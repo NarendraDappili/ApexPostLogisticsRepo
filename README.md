@@ -294,6 +294,31 @@ In short: the specification is the format, the generator writes our API's docume
 
 The unversioned Part B URLs (`/api/shipments…`) still answer as v1 until v1's sunset, so Part B clients keep working. A `Location` header always gives the versioned URL.
 
+**Generated C# client.** [`ApexPost.Client`](src/ApexPost.Client) is a typed client for v2. NSwag generates it from the committed contract [`contracts/v2.json`](contracts/v2.json).
+
+| File | Role |
+|---|---|
+| [`contracts/export-contracts.ps1`](contracts/export-contracts.ps1) | Writes `contracts/v1.json` and `contracts/v2.json` from the running API. Works in Windows PowerShell and `pwsh` |
+| [`src/ApexPost.Client/nswag.json`](src/ApexPost.Client/nswag.json) | The exact NSwag settings. The NSwag version is pinned in [`dotnet-tools.json`](dotnet-tools.json) |
+| `src/ApexPost.Client/Generated/ApexPostClient.g.cs` | The generated client, committed and never edited by hand |
+| `ApexPostClient.Partial.cs` | Hand-written additions in partial classes: `TryGetShipmentAsync`, `IsNotFound`, `IsConflict` |
+| `ClientRegistration.cs` | A wrapper: `AddApexPostClient(baseAddress)` registers the client with `AddHttpClient` |
+
+```powershell
+./contracts/export-contracts.ps1                  # after an API change: refresh the contracts, review their diff
+dotnet tool restore
+dotnet nswag run src/ApexPost.Client/nswag.json   # regenerate the client from contracts/v2.json
+```
+
+The console consumer [`ApexPost.Client.Consumer`](src/ApexPost.Client.Consumer) registers the client with `AddHttpClient` and then:
+1. creates a shipment;
+2. fetches it;
+3. uploads two scans;
+4. fetches it again to see its new status and latest scan;
+5. asks for a shipment that does not exist, catching the 404 as the generated `ApexPostApiException<ProblemDetails>`.
+
+Start the API, then run `dotnet run --project src/ApexPost.Client.Consumer` (the address is `ApexPostApi:BaseAddress` in its `appsettings.json`).
+
 **Development only.** Outside Development, both URLs return 404. This decides what we publish; it is not security. Hiding the description protects no endpoint, and every endpoint answers the same either way (authentication comes in Part D). `/health` is left out of the document because it is a probe for the hosting platform, not part of the client contract.
 
 ## Tests
