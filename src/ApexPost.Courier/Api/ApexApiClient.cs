@@ -1,13 +1,20 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using ApexPost.Courier.Offline.Domain;
+using Polly.CircuitBreaker;
+using Polly.Timeout;
 
 namespace ApexPost.Courier.Api;
 
 /// <summary>
 /// The app's typed client for the v2 API, registered with AddHttpClient&lt;ApexApiClient&gt;(): the HttpClient is
-/// made and recycled by IHttpClientFactory, with the base address from configuration and <see cref="AuthHeaderHandler"/>
-/// in its pipeline. The app never creates an HttpClient itself.
+/// made and recycled by IHttpClientFactory, with the base address from configuration and the resilience pipeline and
+/// <see cref="AuthHeaderHandler"/> in its handlers. The app never creates an HttpClient itself.
+/// Every call either returns the answer or throws one of two exceptions, both with a message for the courier:
+/// <see cref="ApexApiException"/> when the server answered with an error or something unreadable (its
+/// ProblemDetails are kept), <see cref="ApiUnavailableException"/> when it could not be reached at all.
 /// </summary>
 internal sealed class ApexApiClient(HttpClient http)
 {
@@ -23,10 +30,10 @@ internal sealed class ApexApiClient(HttpClient http)
             Content = JsonContent.Create(body, CourierJsonContext.Default.ScanUploadRequest),
         };
         request.Options.Set(ApiResilience.SafeToRetry, true);
-        using var response = await http.SendAsync(request, cancellationToken);
-        EnsureSuccess(response);
-        return await response.Content.ReadFromJsonAsync(CourierJsonContext.Default.ScanUploadResult, cancellationToken)
-            ?? throw new ApexApiException(response.StatusCode, "The server sent an empty answer to the scan upload.");
+        using var response = await SendAsync(request, cancellationToken);
+        var result = await ReadAsync(response, CourierJsonContext.Default.ScanUploadResult, cancellationToken);
+        // A missing or null list is an empty one; a null entry in it says nothing about any scan.
+        return result with { Rejections = [.. (result.Rejections ?? []).Where(rejection => rejection is not null)] };
     }
 
     /// <summary>
@@ -35,24 +42,74 @@ internal sealed class ApexApiClient(HttpClient http)
     /// </summary>
     public async Task<DevelopmentToken> GetDevelopmentTokenAsync(string courierId, CancellationToken cancellationToken = default)
     {
-        var body = new DevelopmentTokenRequest(courierId, ["Courier"], courierId);
-        using var response = await http.PostAsJsonAsync("dev/token", body, CourierJsonContext.Default.DevelopmentTokenRequest, cancellationToken);
-        EnsureSuccess(response);
-        return await response.Content.ReadFromJsonAsync(CourierJsonContext.Default.DevelopmentToken, cancellationToken)
-            ?? throw new ApexApiException(response.StatusCode, "The server sent an empty answer to the sign-in.");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "dev/token")
+        {
+            Content = JsonContent.Create(new DevelopmentTokenRequest(courierId, ["Courier"], courierId), CourierJsonContext.Default.DevelopmentTokenRequest),
+        };
+        using var response = await SendAsync(request, cancellationToken);
+        var token = await ReadAsync(response, CourierJsonContext.Default.DevelopmentToken, cancellationToken);
+        return string.IsNullOrWhiteSpace(token.AccessToken) ? throw ApexApiException.Unreadable(response.StatusCode) : token;
     }
 
-    private static void EnsureSuccess(HttpResponseMessage response)
+    /// <summary>Sends the request and returns a success response; anything else becomes one of the two exceptions.</summary>
+    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        if (!response.IsSuccessStatusCode)
+        HttpResponseMessage response;
+        try
         {
-            throw new ApexApiException(response.StatusCode, $"The server answered {(int)response.StatusCode} {response.ReasonPhrase}.");
+            response = await http.SendAsync(request, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller cancelled (the app is closing); that is not a server problem.
+            throw;
+        }
+        catch (BrokenCircuitException exception)
+        {
+            throw new ApiUnavailableException(UnavailableReason.CircuitOpen, exception);
+        }
+        catch (Exception exception) when (exception is TimeoutRejectedException or OperationCanceledException)
+        {
+            throw new ApiUnavailableException(UnavailableReason.TimedOut, exception);
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new ApiUnavailableException(UnavailableReason.NoConnection, exception);
+        }
+
+        if (response.IsSuccessStatusCode) return response;
+
+        using (response)
+        {
+            throw new ApexApiException(response.StatusCode, await ReadProblemAsync(response, cancellationToken));
         }
     }
-}
 
-/// <summary>The API answered, but not with success. <see cref="StatusCode"/> says how.</summary>
-internal sealed class ApexApiException(HttpStatusCode statusCode, string message) : Exception(message)
-{
-    public HttpStatusCode StatusCode { get; } = statusCode;
+    /// <summary>The ProblemDetails of an error response, or null when the body is empty or is not one (a proxy's HTML page).</summary>
+    private static async Task<ApiProblem?> ReadProblemAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var text = await response.Content.ReadAsStringAsync(cancellationToken);
+            return string.IsNullOrWhiteSpace(text) ? null : JsonSerializer.Deserialize(text, CourierJsonContext.Default.ApiProblem);
+        }
+        catch (Exception exception) when (exception is JsonException or HttpRequestException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Reads a success body; a missing, non-JSON or wrongly shaped one is an unreadable answer, never a crash.</summary>
+    private static async Task<T> ReadAsync<T>(HttpResponseMessage response, JsonTypeInfo<T> type, CancellationToken cancellationToken)
+        where T : class
+    {
+        try
+        {
+            return await response.Content.ReadFromJsonAsync(type, cancellationToken) ?? throw ApexApiException.Unreadable(response.StatusCode);
+        }
+        catch (Exception exception) when (exception is JsonException or NotSupportedException)
+        {
+            throw ApexApiException.Unreadable(response.StatusCode, exception);
+        }
+    }
 }

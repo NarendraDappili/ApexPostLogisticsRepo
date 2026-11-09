@@ -19,6 +19,12 @@ public sealed class ApexApiClientTests : IDisposable
     private readonly CourierAppRun _app = new();
     private readonly StubServer _server = new();
 
+    public ApexApiClientTests()
+    {
+        // A sign-in answer by default: these tests look at what is sent, and an answer without a token is refused (D8).
+        _server.Respond = _ => StubServer.Json(HttpStatusCode.OK, """{ "accessToken": "eyJ.x.y", "tokenType": "Bearer", "expiresAtUtc": "2026-11-09T13:00:00+00:00" }""");
+    }
+
     public void Dispose()
     {
         _app.Dispose();

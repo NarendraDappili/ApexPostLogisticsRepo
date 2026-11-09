@@ -22,6 +22,12 @@ internal sealed record ScanUploadResult(int Accepted, int DuplicatesSkipped, int
 /// <summary>A scan the server refused, and why.</summary>
 internal sealed record ScanRejection(string ScanId, string? Reason);
 
+/// <summary>
+/// The API's error body: ProblemDetails, or ValidationProblemDetails when <see cref="Errors"/> is present (RFC 9457).
+/// Every field may be missing; extensions the app does not use, such as Development's exception details, are ignored.
+/// </summary>
+internal sealed record ApiProblem(string? Type, string? Title, int? Status, string? Detail, string? Instance, string? TraceId, Dictionary<string, string[]?>? Errors);
+
 /// <summary>The body of the Development-only POST dev/token.</summary>
 internal sealed record DevelopmentTokenRequest(string Name, IReadOnlyList<string> Roles, string CourierId);
 

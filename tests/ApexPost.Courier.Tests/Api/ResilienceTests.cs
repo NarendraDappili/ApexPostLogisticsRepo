@@ -155,8 +155,10 @@ public sealed class ResilienceTests : IDisposable
         using var host = Host("--ApexPostApi:Resilience:AttemptTimeout=00:00:00.400", "--ApexPostApi:Resilience:TotalTimeout=00:00:01");
         var started = TimeProvider.System.GetTimestamp();
 
-        await Assert.ThrowsAsync<TimeoutRejectedException>(() => Upload(host));
+        var exception = await Assert.ThrowsAsync<ApiUnavailableException>(() => Upload(host));
 
+        Assert.Equal(UnavailableReason.TimedOut, exception.Reason);
+        Assert.IsType<TimeoutRejectedException>(exception.InnerException);
         Assert.InRange(TimeProvider.System.GetElapsedTime(started), TimeSpan.FromSeconds(0.9), TimeSpan.FromSeconds(2.5));
         // 400 ms tries from 0, 0.41 and 0.83 s: the third is cut short by the 1 s total, and no fourth starts.
         Assert.InRange(_server.Requests.Count, 2, 3);
@@ -173,10 +175,11 @@ public sealed class ResilienceTests : IDisposable
 
         await Assert.ThrowsAsync<ApexApiException>(() => Upload(host));
         var sentBeforeOpen = _server.Requests.Count;
-        await Assert.ThrowsAsync<BrokenCircuitException>(() => Upload(host));
+        var refused = await Assert.ThrowsAsync<ApiUnavailableException>(() => Upload(host));
         await host.Services.GetRequiredService<CourierApp>().RunAsync();
 
         Assert.Equal(ConnectionState.Open, server.State);
+        Assert.Equal((UnavailableReason.CircuitOpen, typeof(BrokenCircuitException)), (refused.Reason, refused.InnerException!.GetType()));
         Assert.Equal(4, sentBeforeOpen);
         Assert.Equal(sentBeforeOpen, _server.Requests.Count);
         Assert.Contains("Circuit opened for 0.5 s after 503 ServiceUnavailable: working offline", Log, StringComparison.Ordinal);

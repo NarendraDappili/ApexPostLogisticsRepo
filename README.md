@@ -362,7 +362,13 @@ These play the part of the per-platform addresses a phone app would have.
 - **Circuit breaker:** after repeated failures it opens, the header shows `Server unavailable – working offline`, and scans keep being saved on the device.
 - **Timeouts:** one per attempt and one for the whole call.
 
-Every retry and circuit change is logged. **[RESILIENCE.md](RESILIENCE.md)** gives the values and the reasons for them, including why the scan upload is safe to retry. The app refuses to start with a plain `http://` address for any machine but this one, because every request carries the courier's token. The upload itself still goes to the stand-in server until the sync step connects them.
+Every retry and circuit change is logged. **[RESILIENCE.md](RESILIENCE.md)** gives the values and the reasons for them, including why the scan upload is safe to retry.
+
+**JSON and errors.** All JSON goes through one source-generated `JsonSerializerContext` (`CourierJsonContext`), with the v2 API's conventions: camelCase, names read in any case, enums by name.
+- **Robust reading:** unknown fields are skipped, and missing or null ones become empty values, so a newer API does not break the app. A body that cannot be read at all (malformed JSON, a Wi-Fi login page, `null`) becomes an "answer could not be read" error, never a crash.
+- **Errors in plain words:** an error response's ProblemDetails or ValidationProblemDetails becomes a message the courier can act on. Validation errors name each refused field (the first three); 401, 403, 404 and 409 show the API's own explanation.
+- **No server internals:** a 5xx shows only the reference (`traceId`) to quote, never the server's details.
+- **Two error types:** every failure is one of two exceptions with that message: `ApexApiException` (the server answered with an error) or `ApiUnavailableException` (no network, timeout, or open circuit). The app refuses to start with a plain `http://` address for any machine but this one, because every request carries the courier's token. The upload itself still goes to the stand-in server until the sync step connects them.
 
 ## Tests
 
@@ -380,7 +386,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1070 tests passing and a zero-warning build:
+**Results:** the latest run had 1092 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -389,7 +395,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Infrastructure | 145 |
 | Web integration | 110 |
 | Courier offline | 128 |
-| Courier app (Part D) | 55 |
+| Courier app (Part D) | 77 |
 | API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 327 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
