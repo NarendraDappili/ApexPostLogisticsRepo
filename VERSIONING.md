@@ -70,6 +70,7 @@ These apply to **v1 and v2 alike**, and to the unversioned Part B URLs. Security
 | Change | Breaking? | Why |
 |---|---|---|
 | Every endpoint requires a JWT bearer token. Without a valid one the answer is **401** ProblemDetails with `WWW-Authenticate`. Both documents declare the `Bearer` scheme and a 401 on every operation ([SECURITY.md](SECURITY.md)) | **Breaking**, made without a new version | A client that sent no token now gets 401. It is not versioned because anonymous access was never meant to last: until now the README said to run the API only locally, and that authentication would follow in Part D. |
+| Roles: creating, replacing and deleting shipments need **Admin**; status changes and scan uploads need **Courier**; a courier uploads scans only under their own `courierId`. Otherwise the answer is **403** ProblemDetails, declared on those five operations | **Breaking**, made without a new version | A token without the role now gets 403 where it got 200. The same reason applies: a rule that only one version enforced would protect nothing. |
 
 ## Deprecation and sunset plan for v1
 

@@ -153,6 +153,16 @@
               }
             }
           },
+          "403": {
+            "description": "The access token does not have the Courier role, or a scan is under another courierId than the token's courierId claim. Nothing was stored.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No shipment has this tracking number, or it is not in the APX-######## form.",
             "content": {
@@ -353,6 +363,16 @@
               }
             }
           },
+          "403": {
+            "description": "The access token does not have the Admin role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "409": {
             "description": "The tracking number is already in use.",
             "content": {
@@ -514,6 +534,16 @@
               }
             }
           },
+          "403": {
+            "description": "The access token does not have the Admin role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No shipment has this tracking number, or it is not in the APX-######## form.",
             "content": {
@@ -588,6 +618,16 @@
           },
           "204": {
             "description": "Deleted."
+          },
+          "403": {
+            "description": "The access token does not have the Admin role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "404": {
             "description": "No shipment has this tracking number, or it is not in the APX-######## form.",
@@ -685,6 +725,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token does not have the Courier role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }

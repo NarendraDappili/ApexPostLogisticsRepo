@@ -26,12 +26,12 @@ public sealed class OpenApiMetadataTests
     [
         ("GET /shipments", "ListShipments", "Shipments", [200, 401, 400, 500]),
         ("GET /shipments/{trackingNumber}", "GetShipment", "Shipments", [200, 401, 404, 500]),
-        ("POST /shipments", "CreateShipment", "Shipments", [201, 401, 400, 409, 415, 500]),
-        ("PUT /shipments/{trackingNumber}", "UpdateShipment", "Shipments", [200, 401, 400, 404, 409, 415, 500]),
-        ("PATCH /shipments/{trackingNumber}/status", "UpdateShipmentStatus", "Shipments", [200, 401, 400, 404, 409, 415, 500]),
-        ("DELETE /shipments/{trackingNumber}", "DeleteShipment", "Shipments", [204, 401, 404, 409, 500]),
+        ("POST /shipments", "CreateShipment", "Shipments", [201, 401, 403, 400, 409, 415, 500]),
+        ("PUT /shipments/{trackingNumber}", "UpdateShipment", "Shipments", [200, 401, 403, 400, 404, 409, 415, 500]),
+        ("PATCH /shipments/{trackingNumber}/status", "UpdateShipmentStatus", "Shipments", [200, 401, 403, 400, 404, 409, 415, 500]),
+        ("DELETE /shipments/{trackingNumber}", "DeleteShipment", "Shipments", [204, 401, 403, 404, 409, 500]),
         ("GET /shipments/{trackingNumber}/scans", "GetScanHistory", "Scans", [200, 401, 404, 500]),
-        ("POST /shipments/{trackingNumber}/scans", "UploadScans", "Scans", [200, 401, 400, 404, 409, 415, 500]),
+        ("POST /shipments/{trackingNumber}/scans", "UploadScans", "Scans", [200, 401, 403, 400, 404, 409, 415, 500]),
     ];
 
     public static TheoryData<string, string, string, string, int[]> Operations

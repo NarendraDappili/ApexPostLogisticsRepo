@@ -213,7 +213,7 @@ With single-field indexes, the first two queries used their index but still sort
 |---|---|
 | [`ApexPost.Api`](src/ApexPost.Api) | `Program.cs`. `Controllers/V1` and `Controllers/V2`: `ShipmentsController`, `ScansController`. `Contracts`: request DTOs and v1's response DTOs; `Contracts/V2`: v2's response DTOs. `Validation`: the custom rules. `Errors/ApiExceptionHandler`. `Routing`: the `{trackingNumber:trackingNumber}` constraint. `OpenApi` and `Versioning` (Part C). [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) |
 | Week 3 projects (additions only) | Domain: `TrackedShipment`, `TrackingScan`, `TrackingStatusRules`, `TrackingNumber`, `TrackingScanId`, `Recipient`. Application: `ShipmentTrackingService`, `ITrackedShipmentRepository`, `ITrackingQueries`. Infrastructure: their EF Core configuration, repository and queries, plus the migration `AddShipmentTracking` |
-| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 237 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer |
+| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 292 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles and the courierId rule |
 
 **Run it:**
 
@@ -225,7 +225,7 @@ dotnet run --project src/ApexPost.Api --launch-profile http          # http://lo
 
 It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web application. **Every API request needs a bearer token** ([SECURITY.md](SECURITY.md)): use the one `dotnet user-jwts` prints, or get one from the Development-only `POST /dev/token`.
 
-Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) from Visual Studio or VS Code (REST Client), top to bottom. The first request gets a token for the rest. Each endpoint has one success and at least one failure, for both versions, plus the 401 cases. All 54 requests were run against a fresh database and returned the codes in their titles.
+Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) from Visual Studio or VS Code (REST Client), top to bottom. The first request gets a token for the rest. Each endpoint has one success and at least one failure, for both versions, plus the 401 and 403 cases. All 59 requests were run against a fresh database and returned the codes in their titles.
 
 **Endpoints** (`{version}` is `2`, or `1` for the deprecated Part B contract; see [Versions](#api-documentation-openapi-and-swagger-ui-week-4-part-c)):
 
@@ -358,7 +358,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 976 tests passing and a zero-warning build:
+**Results:** the latest run had 996 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -368,7 +368,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Web integration | 110 |
 | Courier offline | 128 |
 | Courier app (Part D) | 16 |
-| API (with the OpenAPI, versioning, contract, generated-client and authentication tests) | 272 |
+| API (with the OpenAPI, versioning, contract, generated-client and authentication and authorization tests) | 292 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 
@@ -428,6 +428,6 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - **Request and security audit are best-effort.** Such an audit write failure is logged and never undoes a committed sale (ADR 0011). Data-change history is written in the same transaction as the change, so it is never lost for a committed change (ADR 0024).
 - **Audit history is never pruned.** Nothing deletes audit rows; retention is a deployment decision.
 - **IP allowlist and proxies.** The allowlist uses the direct connection address. Behind a reverse proxy, configure trusted forwarded headers first.
-- **The tracking API checks who is calling, but not yet what they may do.** Every request needs a valid JWT bearer token, but until roles are enforced (next step of Part D) any valid token may call every endpoint. Run it only locally until then.
+- **The tracking API's tokens are development tokens.** Every request needs a valid JWT bearer token with the right role, but the tokens come from `dotnet user-jwts` or `/dev/token`, not from a real identity provider ([SECURITY.md](SECURITY.md#using-a-real-identity-provider)). Run it only locally.
 - **v1 of the tracking API is deprecated.** It answers until 31 May 2027, and so do the unversioned Part B URLs (`/api/shipments…`), which are an alias of v1. New clients should use `/api/v2`.
 - **Counter and tracked shipments are not linked.** A parcel accepted at the counter does not get a tracking number automatically ([ADR 0025](docs/adr/0025-tracked-shipments-beside-counter-shipments.md)).

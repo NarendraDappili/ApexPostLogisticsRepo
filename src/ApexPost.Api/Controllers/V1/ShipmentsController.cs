@@ -1,8 +1,10 @@
 using System.Net.Mime;
 using ApexPost.Api.Contracts;
+using ApexPost.Api.Security;
 using ApexPost.Api.Versioning;
 using ApexPost.Application.Tracking;
 using Asp.Versioning;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ApexPost.Api.Controllers.V1;
@@ -60,14 +62,17 @@ public sealed class ShipmentsController(ShipmentTrackingService tracking) : Cont
     /// <param name="request">The tracking number, the recipient and the weight.</param>
     /// <response code="201">Created. The Location header is the shipment's URL.</response>
     /// <response code="400">A field is missing or invalid; the errors name each one.</response>
+    /// <response code="403">The access token does not have the Admin role.</response>
     /// <response code="409">The tracking number is already in use.</response>
     /// <response code="415">The body is not application/json.</response>
     /// <response code="500">An unexpected server error. Quote the traceId when reporting it.</response>
+    [Authorize(Roles = ApiRoles.Admin)]
     [HttpPost(Name = "CreateShipment")]
     [Consumes(MediaTypeNames.Application.Json)]
     [EndpointSummary("Create a shipment")]
     [ProducesResponseType<ShipmentResponse>(StatusCodes.Status201Created, MediaTypeNames.Application.Json)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, MediaTypeNames.Application.ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status415UnsupportedMediaType, MediaTypeNames.Application.ProblemJson)]
     public async Task<ActionResult<ShipmentResponse>> CreateShipment(CreateShipmentRequest request, CancellationToken cancellationToken)
@@ -84,15 +89,18 @@ public sealed class ShipmentsController(ShipmentTrackingService tracking) : Cont
     /// <param name="request">The new recipient and weight.</param>
     /// <response code="200">The shipment with its new details.</response>
     /// <response code="400">A field is missing or invalid; the errors name each one.</response>
+    /// <response code="403">The access token does not have the Admin role.</response>
     /// <response code="404">No shipment has this tracking number, or it is not in the APX-######## form.</response>
     /// <response code="409">The shipment is Delivered or Failed and can no longer be edited.</response>
     /// <response code="415">The body is not application/json.</response>
     /// <response code="500">An unexpected server error. Quote the traceId when reporting it.</response>
+    [Authorize(Roles = ApiRoles.Admin)]
     [HttpPut("{trackingNumber:trackingNumber}", Name = "UpdateShipment")]
     [Consumes(MediaTypeNames.Application.Json)]
     [EndpointSummary("Replace a shipment's details")]
     [ProducesResponseType<ShipmentResponse>(StatusCodes.Status200OK, MediaTypeNames.Application.Json)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, MediaTypeNames.Application.ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status415UnsupportedMediaType, MediaTypeNames.Application.ProblemJson)]
@@ -107,15 +115,18 @@ public sealed class ShipmentsController(ShipmentTrackingService tracking) : Cont
     /// <param name="request">The next status.</param>
     /// <response code="200">The shipment in its new status.</response>
     /// <response code="400">The status is missing or not a known status.</response>
+    /// <response code="403">The access token does not have the Courier role.</response>
     /// <response code="404">No shipment has this tracking number, or it is not in the APX-######## form.</response>
     /// <response code="409">The shipment cannot move from its current status to this one.</response>
     /// <response code="415">The body is not application/json.</response>
     /// <response code="500">An unexpected server error. Quote the traceId when reporting it.</response>
+    [Authorize(Roles = ApiRoles.Courier)]
     [HttpPatch("{trackingNumber:trackingNumber}/status", Name = "UpdateShipmentStatus")]
     [Consumes(MediaTypeNames.Application.Json)]
     [EndpointSummary("Change a shipment's status")]
     [ProducesResponseType<ShipmentResponse>(StatusCodes.Status200OK, MediaTypeNames.Application.Json)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, MediaTypeNames.Application.ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status415UnsupportedMediaType, MediaTypeNames.Application.ProblemJson)]
@@ -125,12 +136,15 @@ public sealed class ShipmentsController(ShipmentTrackingService tracking) : Cont
     /// <remarks>Only a shipment still in Created status can be deleted; after pickup it has a history to keep.</remarks>
     /// <param name="trackingNumber" example="APX-24000002">The shipment's tracking number: APX- and eight digits.</param>
     /// <response code="204">Deleted.</response>
+    /// <response code="403">The access token does not have the Admin role.</response>
     /// <response code="404">No shipment has this tracking number, or it is not in the APX-######## form.</response>
     /// <response code="409">The shipment is no longer in Created status.</response>
     /// <response code="500">An unexpected server error. Quote the traceId when reporting it.</response>
+    [Authorize(Roles = ApiRoles.Admin)]
     [HttpDelete("{trackingNumber:trackingNumber}", Name = "DeleteShipment")]
     [EndpointSummary("Delete a shipment that is still Created")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, MediaTypeNames.Application.ProblemJson)]
     public async Task<IActionResult> DeleteShipment(string trackingNumber, CancellationToken cancellationToken)

@@ -1,4 +1,4 @@
-# ApexPost tracking API (Week 4, Parts B and C): one success and at least one failure request per endpoint, for both
+# ApexPost tracking API (Week 4, Parts B, C and D): one success and at least one failure request per endpoint, for both
 # API versions. Open in Visual Studio or VS Code (REST Client) and send the requests top to bottom; later requests use
 # the shipments the earlier ones create. Start the API first: dotnet run --project src/ApexPost.Api --launch-profile http
 # The tracking numbers below must not exist yet. On a database that already has them, change the four variables.
@@ -9,7 +9,8 @@
 #
 # Every API request needs a bearer token. The first request gets a one-hour Courier and Admin token from the
 # Development-only POST /dev/token; the requests after it send it as {{token}}. With dotnet user-jwts instead, replace
-# {{token}}'s definition with the token it prints (SECURITY.md).
+# {{token}}'s definition with the token it prints (SECURITY.md). Scan upload and status changes need the Courier role,
+# creating, replacing and deleting shipments need Admin, and a courier uploads scans only under their own courierId.
 
 @host = http://localhost:5245
 @v2Number = APX-24200001
@@ -18,6 +19,9 @@
 @v1Deletable = APX-24100002
 # The token from the login request below (# @name login).
 @token = {{login.response.body.$.accessToken}}
+# One role each, for the 403 requests.
+@courierToken = {{courierLogin.response.body.$.accessToken}}
+@adminToken = {{adminLogin.response.body.$.accessToken}}
 
 ### Health check, no token needed -> 200
 GET {{host}}/health
@@ -43,6 +47,46 @@ Authorization: Bearer not-a-valid-token
 ### A valid token -> 200
 GET {{host}}/api/v2/shipments
 Authorization: Bearer {{token}}
+
+# --------------------------------------------------------------------------------------------------------------
+# Authorization: roles and the courierId rule
+# --------------------------------------------------------------------------------------------------------------
+
+### A token with the Courier role only, courier CR-001 -> 200
+# @name courierLogin
+POST {{host}}/dev/token
+Content-Type: application/json
+
+{ "name": "Kofi Boateng", "roles": ["Courier"], "courierId": "CR-001" }
+
+### A token with the Admin role only -> 200
+# @name adminLogin
+POST {{host}}/dev/token
+Content-Type: application/json
+
+{ "name": "Back office", "roles": ["Admin"] }
+
+### A courier cannot delete a shipment: it needs the Admin role -> 403 ProblemDetails
+DELETE {{host}}/api/v2/shipments/{{v2Deletable}}
+Authorization: Bearer {{courierToken}}
+
+### An admin cannot change a status: it needs the Courier role -> 403 ProblemDetails
+PATCH {{host}}/api/v2/shipments/{{v2Number}}/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{ "status": "PickedUp" }
+
+### Courier CR-001 cannot upload a scan under CR-002 -> 403 ProblemDetails, nothing stored
+POST {{host}}/api/v2/shipments/{{v2Number}}/scans
+Authorization: Bearer {{courierToken}}
+Content-Type: application/json
+
+{
+  "scans": [
+    { "scanId": "scan::0199a002-0000-7000-8000-0000000000f1", "scanType": "Pickup", "location": "Riverside Depot", "courierId": "CR-002", "scannedAtUtc": "2026-11-01T08:00:00Z" }
+  ]
+}
 
 # --------------------------------------------------------------------------------------------------------------
 # Documents and versions
@@ -382,7 +426,7 @@ Content-Type: application/json
 
 {
   "scans": [
-    { "scanId": "scan::0199a001-0000-7000-8000-000000000011", "scanType": "InTransit", "location": "Central Sorting, Belt 2", "courierId": "CR-002", "scannedAtUtc": "2026-11-02T09:15:00Z" }
+    { "scanId": "scan::0199a001-0000-7000-8000-000000000011", "scanType": "InTransit", "location": "Central Sorting, Belt 2", "courierId": "CR-001", "scannedAtUtc": "2026-11-02T09:15:00Z" }
   ]
 }
 
@@ -393,8 +437,8 @@ Content-Type: application/json
 
 {
   "scans": [
-    { "scanId": "scan::0199a001-0000-7000-8000-000000000012", "scanType": "InTransit", "location": "Central Sorting, Belt 2", "courierId": "CR-002", "scannedAtUtc": "2026-11-02T09:15:00Z" },
-    { "scanId": "scan::0199a001-0000-7000-8000-000000000012", "scanType": "InTransit", "location": "Central Sorting, Belt 2", "courierId": "CR-002", "scannedAtUtc": "2026-11-02T09:15:00Z" }
+    { "scanId": "scan::0199a001-0000-7000-8000-000000000012", "scanType": "InTransit", "location": "Central Sorting, Belt 2", "courierId": "CR-001", "scannedAtUtc": "2026-11-02T09:15:00Z" },
+    { "scanId": "scan::0199a001-0000-7000-8000-000000000012", "scanType": "InTransit", "location": "Central Sorting, Belt 2", "courierId": "CR-001", "scannedAtUtc": "2026-11-02T09:15:00Z" }
   ]
 }
 

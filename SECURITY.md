@@ -55,6 +55,33 @@ A missing, invalid or expired token gets a **401 ProblemDetails**, with the `WWW
 
 The response says what to do, never which check failed beyond "expired". That would only help someone trying to forge a token.
 
+## Authorization: roles and the courier's own scans
+
+Authentication says who the caller is; authorization says what they may do. Each action declares its rule with `[Authorize(Roles = ...)]`, the same in v1 and v2 (and the unversioned Part B URLs, which are v1):
+
+| Endpoint | Rule |
+|---|---|
+| `GET` a shipment, the shipment list, a scan history | Any valid token |
+| `POST` (create), `PUT` (replace) and `DELETE` a shipment | `Admin` |
+| `PATCH …/status` | `Courier` |
+| `POST …/scans` (upload) | `Courier`, and every scan's `courierId` must be the token's `courierId` claim |
+
+Creating and replacing shipments are back-office work, so they need `Admin` as delete does; the brief leaves them open. A test pins this table for every action in both versions, and checks that exactly these five declare a 403 in the OpenAPI documents.
+
+**The courier's own scans.** A token with the `Courier` role for `CR-1042` can upload scans for `CR-1042` only. One scan under any other ID refuses the whole upload with 403, and nothing is stored. IDs are compared exactly, so `cr-1042` is another courier. A `Courier` token without a `courierId` claim cannot upload at all. The check needs the request body, which the authorization middleware has not read, so it is an action filter (`RequireOwnCourierIdAttribute`). It runs after a malformed body has been answered with 400, and before the shipment is looked up, so it answers 403 even for a shipment that does not exist.
+
+### 403 responses
+
+A valid token that may not do what it asks gets a **403 ProblemDetails** with the title "Access is denied." and no `WWW-Authenticate` header: signing in again would not help.
+
+| Why | `detail` |
+|---|---|
+| The token lacks the role | This action needs the Admin role, which the access token does not have. (or Courier) |
+| Scans under another courier | A courier can upload scans only under their own courierId, CR-1042. This upload has scans under CR-2001. |
+| A courier token without `courierId` | The access token has no courierId claim, so it cannot upload scans. |
+
+Naming the missing role gives nothing away: the OpenAPI documents say the same.
+
 ## Getting a token in Development
 
 There are two ways; both sign with the same key, for the same issuer and audience.
