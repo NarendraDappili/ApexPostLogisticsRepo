@@ -1,4 +1,5 @@
 using ApexPost.Api.Composition;
+using ApexPost.Api.Errors;
 using ApexPost.Api.Routing;
 using ApexPost.Infrastructure.Persistence;
 
@@ -15,11 +16,14 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 // {trackingNumber:trackingNumber} in a route template: anything that is not APX-######## never reaches an action.
 builder.Services.Configure<RouteOptions>(options => options.SetParameterPolicy<TrackingNumberRouteConstraint>(TrackingNumberRouteConstraint.Name));
 builder.Services.AddApexPostPersistence(connectionString);
 
 var app = builder.Build();
+// First, so an error anywhere later in the pipeline becomes ProblemDetails (ApiExceptionHandler, then a plain 500).
+app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }));
 app.MapControllers();

@@ -1,6 +1,7 @@
 using ApexPost.Application.Abstractions;
 using ApexPost.Application.Repositories;
 using ApexPost.Application.Tracking;
+using ApexPost.Application.Validation;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 using ApexPost.Domain.ValueObjects;
@@ -52,10 +53,40 @@ public sealed class ShipmentTrackingServiceTests
     {
         var request = NewShipment(trackingNumber) with { WeightKg = (decimal)weight, RecipientPhone = phone };
 
-        await Assert.ThrowsAnyAsync<ArgumentException>(() => Service().CreateAsync(request));
+        await Assert.ThrowsAsync<RequestValidationException>(() => Service().CreateAsync(request));
 
         Assert.Equal(0, _unitOfWork.Attempts);
         Assert.Equal(0, _store.Count);
+    }
+
+    [Theory]
+    [InlineData("APX-1", 5, "0207946000", "trackingNumber: A tracking number must be APX- followed by eight digits, for example APX-24000001.")]
+    [InlineData("APX-24000001", 80, "0207946000", "weightKg: The weight must be between 0.1 and 70 kg.")]
+    [InlineData("APX-24000001", 5, "12", "recipientPhone: A phone number must have 7 to 15 digits and may contain only +, spaces, hyphens and brackets.")]
+    public async Task Invalid_values_are_reported_by_field_without_exception_noise(string trackingNumber, double weight, string phone, string expected)
+    {
+        var request = NewShipment(trackingNumber) with { WeightKg = (decimal)weight, RecipientPhone = phone };
+
+        var exception = await Assert.ThrowsAsync<RequestValidationException>(() => Service().CreateAsync(request));
+
+        Assert.Equal([expected], exception.Errors);
+    }
+
+    [Fact]
+    public async Task Replace_details_refuses_an_invalid_weight_before_loading()
+    {
+        var exception = await Assert.ThrowsAsync<RequestValidationException>(() =>
+            Service().ReplaceDetailsAsync("APX-24000001", new TrackedShipmentDetails("Kofi Mensah", "0207946001", "3 Quay Street", "Rivermouth", 0m)));
+
+        Assert.Equal(["weightKg: The weight must be between 0.1 and 70 kg."], exception.Errors);
+    }
+
+    [Fact]
+    public async Task List_reports_every_invalid_value_at_once()
+    {
+        var exception = await Assert.ThrowsAsync<RequestValidationException>(() => Service().ListAsync(new TrackingListQuery(0, 51, (TrackingStatus)42)));
+
+        Assert.Equal(["page must be 1 or more.", "pageSize must be between 1 and 50.", "status is not a known shipment status."], exception.Errors);
     }
 
     [Fact]
@@ -92,7 +123,7 @@ public sealed class ShipmentTrackingServiceTests
     [InlineData(1, 51)]
     public async Task List_refuses_a_page_outside_the_limits(int page, int pageSize)
     {
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Service().ListAsync(new TrackingListQuery(page, pageSize)));
+        await Assert.ThrowsAsync<RequestValidationException>(() => Service().ListAsync(new TrackingListQuery(page, pageSize)));
 
         Assert.Null(_store.LastListQuery);
     }
@@ -100,7 +131,7 @@ public sealed class ShipmentTrackingServiceTests
     [Fact]
     public async Task List_refuses_an_unknown_status()
     {
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Service().ListAsync(new TrackingListQuery(Status: (TrackingStatus)42)));
+        await Assert.ThrowsAsync<RequestValidationException>(() => Service().ListAsync(new TrackingListQuery(Status: (TrackingStatus)42)));
     }
 
     [Fact]
@@ -172,7 +203,7 @@ public sealed class ShipmentTrackingServiceTests
     [Fact]
     public async Task Change_status_refuses_an_undefined_status()
     {
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => Service().ChangeStatusAsync("APX-24000001", (TrackingStatus)42));
+        await Assert.ThrowsAsync<RequestValidationException>(() => Service().ChangeStatusAsync("APX-24000001", (TrackingStatus)42));
     }
 
     [Fact]
