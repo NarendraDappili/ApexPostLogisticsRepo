@@ -18,7 +18,7 @@ internal static class TestTokens
     public const string Audience = "apexpost-api-tests";
 
     /// <summary>The courier the default test token belongs to.</summary>
-    public const string CourierId = "CR-TEST";
+    public const string CourierId = "CR-1042";
 
     private static readonly byte[] SigningKey = RandomNumberGenerator.GetBytes(32);
 
@@ -34,7 +34,7 @@ internal static class TestTokens
         builder.UseSetting("Authentication:Schemes:Bearer:SigningKeys:0:Value", Convert.ToBase64String(SigningKey));
     }
 
-    /// <summary>The header every test client sends unless a test says otherwise: both roles, courier CR-TEST.</summary>
+    /// <summary>The header every test client sends unless a test says otherwise: both roles, courier CR-1042.</summary>
     public static AuthenticationHeaderValue DefaultHeader() => new("Bearer", Create([ApiRoles.Courier, ApiRoles.Admin], CourierId));
 
     /// <summary>A token that the test host accepts, unless one of the optional values is changed to make it invalid.</summary>

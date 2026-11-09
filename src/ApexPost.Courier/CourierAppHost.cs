@@ -1,3 +1,4 @@
+using ApexPost.Courier.Api;
 using ApexPost.Courier.Offline.Domain;
 using ApexPost.Courier.Offline.Storage;
 using ApexPost.Courier.Offline.Sync;
@@ -16,7 +17,8 @@ namespace ApexPost.Courier;
 /// </summary>
 internal static class CourierAppHost
 {
-    public static IHost Create(string[] args, TextReader input, TextWriter output)
+    /// <param name="configureServices">For tests: runs after the app's own registrations, for example to replace the network.</param>
+    public static IHost Create(string[] args, TextReader input, TextWriter output, Action<IServiceCollection>? configureServices = null)
     {
         // appsettings.json sits next to the program; read it from there whatever directory the program is started from.
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { Args = args, ContentRootPath = AppContext.BaseDirectory });
@@ -38,8 +40,12 @@ internal static class CourierAppHost
         builder.Services.AddSingleton<IScanRepository>(services => new CouchbaseScanRepository(
             services.GetRequiredService<CourierDatabase>(), services.GetRequiredService<ILogger<CouchbaseScanRepository>>()));
 
-        // Uploads still go to the Part A stand-in server; nothing here uses the network yet.
-        builder.Services.AddSingleton<IShipmentUploader>(services => new FakeShipmentUploader(services.GetRequiredService<TimeProvider>()));
+        // The outbox uploads to the v2 API, in batches of 20, and marks each scan from the API's answer. AutoSync starts
+        // it when the network comes back (the console's ConnectivityChanged) and every minute while online.
+        builder.Services.AddSingleton<IShipmentUploader, ApiShipmentUploader>();
+        builder.Services.Configure<AutoSyncOptions>(builder.Configuration.GetSection(AutoSyncOptions.Section));
+        builder.Services.AddSingleton<INetworkStatus, SystemNetworkStatus>();
+        builder.Services.AddSingleton<AutoSyncService>();
         builder.Services.AddSingleton(services => new OutboxService(
             services.GetRequiredService<IScanRepository>(),
             services.GetRequiredService<IShipmentUploader>(),
@@ -48,6 +54,20 @@ internal static class CourierAppHost
         builder.Services.AddSingleton<SyncHistory>();
         builder.Services.AddSingleton<SyncService>();
 
+        // The v2 API: a typed client from IHttpClientFactory, its address from configuration, the courier's token added
+        // by AuthHeaderHandler from the token store.
+        builder.Services.AddOptions<ApexApiOptions>().Bind(builder.Configuration.GetSection(ApexApiOptions.Section));
+        builder.Services.AddSingleton<IValidateOptions<ApexApiOptions>, ApexApiOptionsValidator>();
+        builder.Services.AddSingleton<ITokenStore, InMemoryTokenStore>();
+        builder.Services.AddTransient<AuthHeaderHandler>();
+        // Retry, circuit breaker and timeouts (RESILIENCE.md). The resilience handler comes first, so every retry goes
+        // through AuthHeaderHandler again and picks up the current token.
+        builder.Services.Configure<ApiResilienceOptions>(builder.Configuration.GetSection(ApiResilienceOptions.Section));
+        builder.Services.AddSingleton<ServerAvailability>();
+        builder.Services.AddHttpClient<ApexApiClient>((services, client) => client.BaseAddress = services.GetRequiredService<IOptions<ApexApiOptions>>().Value.Root)
+            .AddApexApiResilience()
+            .AddHttpMessageHandler<AuthHeaderHandler>();
+
         builder.Services.AddSingleton<CourierSession>();
         builder.Services.AddSingleton(services => new ConsoleScreen(input, screenOutput, services.GetRequiredService<ScanChangeMonitor>()));
         builder.Services.AddSingleton<LoginScreen>();
@@ -55,7 +75,11 @@ internal static class CourierAppHost
         builder.Services.AddSingleton<PendingScansScreen>();
         builder.Services.AddSingleton<SyncStatusScreen>();
         builder.Services.AddSingleton<CourierApp>();
+        configureServices?.Invoke(builder.Services);
 
-        return builder.Build();
+        var host = builder.Build();
+        // Check the API address now, so a wrong one stops the start with its reason, not the first sync.
+        _ = host.Services.GetRequiredService<IOptions<ApexApiOptions>>().Value;
+        return host;
     }
 }

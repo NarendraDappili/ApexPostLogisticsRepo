@@ -1,8 +1,10 @@
 using System.Net.Mime;
 using ApexPost.Api.Contracts;
+using ApexPost.Api.Security;
 using ApexPost.Api.Versioning;
 using ApexPost.Application.Tracking;
 using Asp.Versioning;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ApexPost.Api.Controllers.V1;
@@ -44,15 +46,19 @@ public sealed class ScansController(ShipmentTrackingService tracking) : Controll
     /// <param name="request">One to 100 scans for this shipment.</param>
     /// <response code="200">The upload was processed; the counts say what happened to each scan.</response>
     /// <response code="400">A scan is malformed or repeated; the errors name it, for example scans[2].scannedAtUtc.</response>
+    /// <response code="403">The access token does not have the Courier role, or a scan is under another courierId than the token's courierId claim. Nothing was stored.</response>
     /// <response code="404">No shipment has this tracking number, or it is not in the APX-######## form.</response>
     /// <response code="409">Another upload for this shipment was saved at the same moment. Nothing was stored; send the upload again.</response>
     /// <response code="415">The body is not application/json.</response>
     /// <response code="500">An unexpected server error. Quote the traceId when reporting it.</response>
+    [Authorize(Roles = ApiRoles.Courier)]
+    [RequireOwnCourierId]
     [HttpPost(Name = "UploadScans")]
     [Consumes(MediaTypeNames.Application.Json)]
     [EndpointSummary("Upload a courier's offline scans")]
     [ProducesResponseType<ScanUploadResponse>(StatusCodes.Status200OK, MediaTypeNames.Application.Json)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, MediaTypeNames.Application.ProblemJson)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, MediaTypeNames.Application.ProblemJson)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status415UnsupportedMediaType, MediaTypeNames.Application.ProblemJson)]

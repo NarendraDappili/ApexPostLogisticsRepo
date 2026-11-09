@@ -36,9 +36,9 @@ public sealed class ContractTests
         {
             Assert.True(JsonNode.DeepEquals(v1["components"]!["schemas"]![request], v2["components"]!["schemas"]![request]), request);
         }
-        // The operations are the same, path for path, apart from the version segment.
+        // The operations are the same, path for path, apart from the version segment, and v2 adds the partner route.
         Assert.Equal(
-            v1["paths"]!.AsObject().Select(path => path.Key.Replace("/api/v1/", "/api/", StringComparison.Ordinal)).Order(StringComparer.Ordinal),
+            v1["paths"]!.AsObject().Select(path => path.Key.Replace("/api/v1/", "/api/", StringComparison.Ordinal)).Append("/api/partner/shipments/{trackingNumber}").Order(StringComparer.Ordinal),
             v2["paths"]!.AsObject().Select(path => path.Key.Replace("/api/v2/", "/api/", StringComparison.Ordinal)).Order(StringComparer.Ordinal));
         // The responses are where they differ (VERSIONING.md).
         Assert.False(JsonNode.DeepEquals(v1["components"]!["schemas"]!["ShipmentResponse"], v2["components"]!["schemas"]!["ShipmentResponse"]));

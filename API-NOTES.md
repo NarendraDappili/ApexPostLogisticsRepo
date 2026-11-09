@@ -9,7 +9,7 @@ dotnet run --project src/ApexPost.Api --launch-profile http          # http://lo
 
 The API reads the same `ConnectionStrings:ApexPostDb` user-secret as ApexPost.Web. In Development, the OpenAPI documents are at `/openapi/v1.json` and `/openapi/v2.json`, and Swagger UI is at `/swagger`.
 
-**Every endpoint needs a JWT bearer token** (`Authorization: Bearer <token>`). Without a valid one the answer is a 401 ProblemDetails. In Development, get a token from `dotnet user-jwts create --project src/ApexPost.Api` or from `POST /dev/token`. [SECURITY.md](SECURITY.md) has the details.
+**Every endpoint needs a JWT bearer token** (`Authorization: Bearer <token>`). Without a valid one the answer is a 401 ProblemDetails. Reading needs any valid token; creating, replacing and deleting shipments need the **Admin** role; status changes and scan uploads need the **Courier** role, and a courier uploads scans only under their own `courierId`. Otherwise the answer is a 403 ProblemDetails. In Development, get a token from `dotnet user-jwts create --project src/ApexPost.Api` or from `POST /dev/token`. [SECURITY.md](SECURITY.md) has the details.
 
 ## Versions
 
@@ -38,6 +38,7 @@ The unversioned Part B URLs (`/api/shipments…`) answer as v1 until v1's sunset
 | DELETE | `/api/v{version}/shipments/{trackingNumber}` | **204** no body | 404; **409** not in Created status | Deletes a shipment no courier has handled yet |
 | POST | `/api/v{version}/shipments/{trackingNumber}/scans` | **200** the upload result | 400 malformed scans; 404; **409** a parallel upload won (send again); 415 | Bulk upload of a courier's offline scans (Part A); idempotent |
 | GET | `/api/v{version}/shipments/{trackingNumber}/scans` | **200** the scans, oldest first | 404 unknown | Scan history |
+| GET | `/api/v2/partner/shipments/{trackingNumber}` | **200** status, city and latest scan | **401** no or invalid `X-Api-Key`; 404 unknown | For partner companies, v2 only, read-only. Takes a partner API key in `X-Api-Key` instead of a bearer token. No recipient name, phone or address, and no scan locations |
 
 Any endpoint can also return **500** for a failure that is not the caller's (see [Errors](#errors)). A route that does not exist, or a version that does not exist (`/api/v3/…`), is a 404, and a wrong method a 405.
 
@@ -49,7 +50,8 @@ Any endpoint can also return **500** for a failure that is not the caller's (see
 | 201 Created | A shipment was created; `Location` gives its URL (`CreatedAtAction`) |
 | 204 No Content | A shipment was deleted |
 | 400 Bad Request | Validation failure: `ValidationProblemDetails`, with errors keyed by the JSON field |
-| 401 Unauthorized | No bearer token, or one that is expired or not valid for this API. `WWW-Authenticate` says which |
+| 401 Unauthorized | No bearer token, or one that is expired or not valid for this API. `WWW-Authenticate` says which. On the partner route: no `X-Api-Key`, or one that is no partner's key |
+| 403 Forbidden | A valid token without the role the action needs (Admin to create, replace or delete; Courier to change a status or upload scans), or a scan upload under another courier's ID |
 | 404 Not Found | Unknown tracking number, malformed tracking number, unknown route, unknown API version |
 | 405 Method Not Allowed | A known route with a verb it does not support, for example `DELETE /api/v2/shipments` |
 | 409 Conflict | Duplicate tracking number; a status move that is not allowed; deleting a shipment that is not Created; changing a finished shipment; a concurrent change won |

@@ -11,6 +11,75 @@
     "version": "2.0"
   },
   "paths": {
+    "/api/v2/partner/shipments/{trackingNumber}": {
+      "get": {
+        "tags": [
+          "Partner"
+        ],
+        "summary": "Track a shipment (partners, with an API key)",
+        "description": "For partner companies: the shipment's status, delivery city and latest scan. The recipient's name, phone and\naddress are not included. Authenticate with the partner API key in the X-Api-Key header; a bearer token is not\naccepted here.",
+        "operationId": "GetPartnerShipment",
+        "parameters": [
+          {
+            "name": "trackingNumber",
+            "in": "path",
+            "description": "The shipment's tracking number: APX- and eight digits.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "APX-24000001"
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "No valid partner API key in the X-Api-Key header.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An unexpected server error. Quote the traceId when reporting it.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The shipment, as a partner sees it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerShipmentResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No shipment has this tracking number, or it is not in the APX-######## form.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "PartnerApiKey": [ ]
+          }
+        ]
+      }
+    },
     "/api/v2/shipments/{trackingNumber}/scans": {
       "get": {
         "tags": [
@@ -149,6 +218,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token does not have the Courier role, or a scan is under another courierId than the token's courierId claim. Nothing was stored.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -353,6 +432,16 @@
               }
             }
           },
+          "403": {
+            "description": "The access token does not have the Admin role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "409": {
             "description": "The tracking number is already in use.",
             "content": {
@@ -514,6 +603,16 @@
               }
             }
           },
+          "403": {
+            "description": "The access token does not have the Admin role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "No shipment has this tracking number, or it is not in the APX-######## form.",
             "content": {
@@ -588,6 +687,16 @@
           },
           "204": {
             "description": "Deleted."
+          },
+          "403": {
+            "description": "The access token does not have the Admin role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "404": {
             "description": "No shipment has this tracking number, or it is not in the APX-######## form.",
@@ -685,6 +794,16 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The access token does not have the Courier role.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -854,6 +973,60 @@
           }
         },
         "description": "One page of a list, with what a client needs to fetch the next one."
+      },
+      "PartnerScanResponse": {
+        "required": [
+          "scanType",
+          "scannedAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "scanType": {
+            "description": "What happened: Pickup, InTransit, Delivered or Failed.",
+            "$ref": "#/components/schemas/TrackingScanType"
+          },
+          "scannedAtUtc": {
+            "type": "string",
+            "description": "When the courier scanned the parcel, by the device clock.",
+            "format": "date-time"
+          }
+        },
+        "description": "A scan as a partner sees it: what happened and when, without where."
+      },
+      "PartnerShipmentResponse": {
+        "required": [
+          "trackingNumber",
+          "status",
+          "city",
+          "latestScan"
+        ],
+        "type": "object",
+        "properties": {
+          "trackingNumber": {
+            "type": "string",
+            "description": "APX- followed by eight digits."
+          },
+          "status": {
+            "description": "The status: Created, PickedUp, InTransit, OutForDelivery, Delivered or Failed.",
+            "$ref": "#/components/schemas/TrackingStatus"
+          },
+          "city": {
+            "type": "string",
+            "description": "The delivery city."
+          },
+          "latestScan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "What happened at the most recent scan, and when; null until the parcel is first scanned.",
+                "$ref": "#/components/schemas/PartnerScanResponse"
+              }
+            ]
+          }
+        },
+        "description": "A shipment as a partner sees it: where it is in its journey, without the recipient's personal details."
       },
       "ProblemDetails": {
         "type": "object",
@@ -1289,6 +1462,12 @@
       }
     },
     "securitySchemes": {
+      "PartnerApiKey": {
+        "type": "apiKey",
+        "description": "The API key ApexPost issued to your company, sent as X-Api-Key: <key>. Partner routes only (SECURITY.md).",
+        "name": "X-Api-Key",
+        "in": "header"
+      },
       "Bearer": {
         "type": "http",
         "description": "A JWT access token with the Courier or Admin role, sent as Authorization: Bearer <token>. In Development, get one from dotnet user-jwts or POST /dev/token (SECURITY.md).",
@@ -1303,6 +1482,9 @@
     }
   ],
   "tags": [
+    {
+      "name": "Partner"
+    },
     {
       "name": "Scans"
     },

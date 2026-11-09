@@ -56,6 +56,7 @@ public sealed class SqlApiFactory : WebApplicationFactory<Program>, IAsyncLifeti
         // Program.cs reads the connection string before Build(), which only UseSetting reaches.
         builder.UseSetting("ConnectionStrings:ApexPostDb", ConnectionString);
         TestTokens.Configure(builder);
+        TestPartnerKeys.Configure(builder);
         // Registered first so the schema exists before the host serves anything.
         builder.ConfigureServices(services => services.Insert(0, ServiceDescriptor.Singleton<IHostedService>(provider =>
             new Migrator(provider.GetRequiredService<IServiceScopeFactory>(), DatabaseName))));

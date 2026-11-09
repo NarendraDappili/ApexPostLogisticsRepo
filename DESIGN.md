@@ -602,8 +602,11 @@ A guard refuses to run tests against any database whose name is not a test datab
 | [0026](docs/adr/0026-api-errors-by-exception-type.md) | The tracking API maps errors to 400/404/409/500 by exception type only | Accepted |
 | [0027](docs/adr/0027-url-segment-api-versioning-with-sunset.md) | The tracking API is versioned by URL segment (v1 deprecated with a published sunset, v2 current); both versions share one service | Accepted |
 | [0028](docs/adr/0028-openapi-contracts-and-generated-client.md) | One built-in OpenAPI generator; the documents are committed contracts checked by a test; the C# client is generated from `contracts/v2.json` by NSwag | Accepted |
+| [0029](docs/adr/0029-courier-app-as-console-program.md) | The courier app is a console program on the Generic Host, with stand-ins for SecureStorage and ConnectivityChanged; no MAUI head yet | Accepted |
+| [0030](docs/adr/0030-api-security-tokens-roles-and-partner-keys.md) | The tracking API is secure by default: JWT bearer tokens from configuration, roles per action, a courierId filter, a partner API key endpoint filter, HTTPS and HSTS | Accepted |
+| [0031](docs/adr/0031-courier-sync-through-one-resilient-client.md) | The courier app syncs through one typed client with retry, circuit breaker and timeouts; only transient failures of safe requests are retried; a lost answer leaves scans Pending | Accepted |
 
-Week 3 added thirteen ADRs (0011–0023). The seven the brief requires are in bold. ADR 0024 answers the final review's remark that auditing was not visible anywhere. Week 4 added ADRs 0025 and 0026 for the tracking API ([API-NOTES.md](API-NOTES.md)), and 0027 and 0028 for its versions, documentation and generated client ([VERSIONING.md](VERSIONING.md)).
+Week 3 added thirteen ADRs (0011–0023). The seven the brief requires are in bold. ADR 0024 answers the final review's remark that auditing was not visible anywhere. Week 4 added ADRs 0025 and 0026 for the tracking API ([API-NOTES.md](API-NOTES.md)), 0027 and 0028 for its versions, documentation and generated client ([VERSIONING.md](VERSIONING.md)), and 0029–0031 for its security and the courier app ([SECURITY.md](SECURITY.md), [RESILIENCE.md](RESILIENCE.md)).
 
 ## Known limitations
 

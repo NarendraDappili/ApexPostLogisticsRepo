@@ -32,6 +32,20 @@ namespace ApexPost.Client
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
+        /// Track a shipment (partners, with an API key)
+        /// </summary>
+        /// <remarks>
+        /// For partner companies: the shipment's status, delivery city and latest scan. The recipient's name, phone and
+        /// <br/>address are not included. Authenticate with the partner API key in the X-Api-Key header; a bearer token is not
+        /// <br/>accepted here.
+        /// </remarks>
+        /// <param name="trackingNumber">The shipment's tracking number: APX- and eight digits.</param>
+        /// <returns>The shipment, as a partner sees it.</returns>
+        /// <exception cref="ApexPostApiException">A server side error occurred.</exception>
+        System.Threading.Tasks.Task<PartnerShipmentResponse> GetPartnerShipmentAsync(string trackingNumber, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken));
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
         /// Get a shipment's scan history
         /// </summary>
         /// <remarks>
@@ -168,6 +182,120 @@ namespace ApexPost.Client
         partial void PrepareRequest(System.Net.Http.HttpClient client, System.Net.Http.HttpRequestMessage request, string url);
         partial void PrepareRequest(System.Net.Http.HttpClient client, System.Net.Http.HttpRequestMessage request, System.Text.StringBuilder urlBuilder);
         partial void ProcessResponse(System.Net.Http.HttpClient client, System.Net.Http.HttpResponseMessage response);
+
+        /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
+        /// <summary>
+        /// Track a shipment (partners, with an API key)
+        /// </summary>
+        /// <remarks>
+        /// For partner companies: the shipment's status, delivery city and latest scan. The recipient's name, phone and
+        /// <br/>address are not included. Authenticate with the partner API key in the X-Api-Key header; a bearer token is not
+        /// <br/>accepted here.
+        /// </remarks>
+        /// <param name="trackingNumber">The shipment's tracking number: APX- and eight digits.</param>
+        /// <returns>The shipment, as a partner sees it.</returns>
+        /// <exception cref="ApexPostApiException">A server side error occurred.</exception>
+        public virtual async System.Threading.Tasks.Task<PartnerShipmentResponse> GetPartnerShipmentAsync(string trackingNumber, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken))
+        {
+            if (trackingNumber == null)
+                throw new System.ArgumentNullException("trackingNumber");
+
+            var client_ = _httpClient;
+            var disposeClient_ = false;
+            try
+            {
+                using (var request_ = new System.Net.Http.HttpRequestMessage())
+                {
+                    request_.Method = new System.Net.Http.HttpMethod("GET");
+                    request_.Headers.Accept.Add(System.Net.Http.Headers.MediaTypeWithQualityHeaderValue.Parse("application/json"));
+
+                    var urlBuilder_ = new System.Text.StringBuilder();
+                
+                    // Operation Path: "api/v2/partner/shipments/{trackingNumber}"
+                    urlBuilder_.Append("api/v2/partner/shipments/");
+                    urlBuilder_.Append(System.Uri.EscapeDataString(ConvertToString(trackingNumber, System.Globalization.CultureInfo.InvariantCulture)));
+
+                    PrepareRequest(client_, request_, urlBuilder_);
+
+                    var url_ = urlBuilder_.ToString();
+                    request_.RequestUri = new System.Uri(url_, System.UriKind.RelativeOrAbsolute);
+
+                    PrepareRequest(client_, request_, url_);
+
+                    var response_ = await client_.SendAsync(request_, System.Net.Http.HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                    var disposeResponse_ = true;
+                    try
+                    {
+                        var headers_ = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.IEnumerable<string>>();
+                        foreach (var item_ in response_.Headers)
+                            headers_[item_.Key] = item_.Value;
+                        if (response_.Content != null && response_.Content.Headers != null)
+                        {
+                            foreach (var item_ in response_.Content.Headers)
+                                headers_[item_.Key] = item_.Value;
+                        }
+
+                        ProcessResponse(client_, response_);
+
+                        var status_ = (int)response_.StatusCode;
+                        if (status_ == 200)
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<PartnerShipmentResponse>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            return objectResponse_.Object;
+                        }
+                        else
+                        if (status_ == 401)
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApexPostApiException<ProblemDetails>("No valid partner API key in the X-Api-Key header.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                        else
+                        if (status_ == 404)
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApexPostApiException<ProblemDetails>("No shipment has this tracking number, or it is not in the APX-######## form.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                        else
+                        if (status_ == 500)
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApexPostApiException<ProblemDetails>("An unexpected server error. Quote the traceId when reporting it.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                        else
+                        {
+                            var responseData_ = response_.Content == null ? null : await ReadAsStringAsync(response_.Content, cancellationToken).ConfigureAwait(false);
+                            throw new ApexPostApiException("The HTTP status code of the response was not expected (" + status_ + ").", status_, responseData_, headers_, null);
+                        }
+                    }
+                    finally
+                    {
+                        if (disposeResponse_)
+                            response_.Dispose();
+                    }
+                }
+            }
+            finally
+            {
+                if (disposeClient_)
+                    client_.Dispose();
+            }
+        }
 
         /// <param name="cancellationToken">A cancellation token that can be used by other objects or threads to receive notice of cancellation.</param>
         /// <summary>
@@ -375,6 +503,16 @@ namespace ApexPost.Client
                                 throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
                             }
                             throw new ApexPostApiException<ProblemDetails>("No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                        else
+                        if (status_ == 403)
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApexPostApiException<ProblemDetails>("The access token does not have the Courier role, or a scan is under another courierId than the token\'s courierId claim. Nothing was stored.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
                         }
                         else
                         if (status_ == 404)
@@ -652,6 +790,16 @@ namespace ApexPost.Client
                             throw new ApexPostApiException<ProblemDetails>("No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
                         }
                         else
+                        if (status_ == 403)
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApexPostApiException<ProblemDetails>("The access token does not have the Admin role.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                        else
                         if (status_ == 409)
                         {
                             var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
@@ -902,6 +1050,16 @@ namespace ApexPost.Client
                             throw new ApexPostApiException<ProblemDetails>("No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
                         }
                         else
+                        if (status_ == 403)
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApexPostApiException<ProblemDetails>("The access token does not have the Admin role.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                        else
                         if (status_ == 404)
                         {
                             var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
@@ -1026,6 +1184,16 @@ namespace ApexPost.Client
                                 throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
                             }
                             throw new ApexPostApiException<ProblemDetails>("No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                        else
+                        if (status_ == 403)
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApexPostApiException<ProblemDetails>("The access token does not have the Admin role.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
                         }
                         else
                         if (status_ == 404)
@@ -1168,6 +1336,16 @@ namespace ApexPost.Client
                                 throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
                             }
                             throw new ApexPostApiException<ProblemDetails>("No valid access token: it is missing, expired, or not issued for this API. The WWW-Authenticate header says which.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
+                        }
+                        else
+                        if (status_ == 403)
+                        {
+                            var objectResponse_ = await ReadObjectResponseAsync<ProblemDetails>(response_, headers_, cancellationToken).ConfigureAwait(false);
+                            if (objectResponse_.Object == null)
+                            {
+                                throw new ApexPostApiException("Response was null which was not expected.", status_, objectResponse_.Text, headers_, null);
+                            }
+                            throw new ApexPostApiException<ProblemDetails>("The access token does not have the Courier role.", status_, objectResponse_.Text, headers_, objectResponse_.Object, null);
                         }
                         else
                         if (status_ == 404)
@@ -1499,6 +1677,82 @@ namespace ApexPost.Client
         /// </summary>
         [System.Text.Json.Serialization.JsonPropertyName("totalPages")]
         public int TotalPages { get; set; } = default!;
+
+        private System.Collections.Generic.IDictionary<string, object>? _additionalProperties;
+
+        [System.Text.Json.Serialization.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+    }
+
+    /// <summary>
+    /// A scan as a partner sees it: what happened and when, without where.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class PartnerScanResponse
+    {
+
+        /// <summary>
+        /// What happened: Pickup, InTransit, Delivered or Failed.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonPropertyName("scanType")]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<TrackingScanType>))]
+        public TrackingScanType ScanType { get; set; } = default!;
+
+        /// <summary>
+        /// When the courier scanned the parcel, by the device clock.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonPropertyName("scannedAtUtc")]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public System.DateTimeOffset ScannedAtUtc { get; set; } = default!;
+
+        private System.Collections.Generic.IDictionary<string, object>? _additionalProperties;
+
+        [System.Text.Json.Serialization.JsonExtensionData]
+        public System.Collections.Generic.IDictionary<string, object> AdditionalProperties
+        {
+            get { return _additionalProperties ?? (_additionalProperties = new System.Collections.Generic.Dictionary<string, object>()); }
+            set { _additionalProperties = value; }
+        }
+
+    }
+
+    /// <summary>
+    /// A shipment as a partner sees it: where it is in its journey, without the recipient's personal details.
+    /// </summary>
+    [System.CodeDom.Compiler.GeneratedCode("NJsonSchema", "14.7.1.0 (NJsonSchema v11.6.1.0 (Newtonsoft.Json v13.0.0.0))")]
+    public partial class PartnerShipmentResponse
+    {
+
+        /// <summary>
+        /// APX- followed by eight digits.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonPropertyName("trackingNumber")]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string TrackingNumber { get; set; } = default!;
+
+        /// <summary>
+        /// The status: Created, PickedUp, InTransit, OutForDelivery, Delivered or Failed.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonPropertyName("status")]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<TrackingStatus>))]
+        public TrackingStatus Status { get; set; } = default!;
+
+        /// <summary>
+        /// The delivery city.
+        /// </summary>
+        [System.Text.Json.Serialization.JsonPropertyName("city")]
+        [System.ComponentModel.DataAnnotations.Required(AllowEmptyStrings = true)]
+        public string City { get; set; } = default!;
+
+        [System.Text.Json.Serialization.JsonPropertyName("latestScan")]
+        public PartnerScanResponse? LatestScan { get; set; } = default!;
 
         private System.Collections.Generic.IDictionary<string, object>? _additionalProperties;
 

@@ -16,6 +16,7 @@ public sealed class OfflineApiFactory : WebApplicationFactory<Program>
         // Program.cs reads the connection string before Build(), which only UseSetting reaches.
         builder.UseSetting("ConnectionStrings:ApexPostDb", UnusedConnectionString);
         TestTokens.Configure(builder);
+        TestPartnerKeys.Configure(builder);
         builder.UseEnvironment("Development");
     }
 

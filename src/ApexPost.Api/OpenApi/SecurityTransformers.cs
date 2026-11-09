@@ -1,3 +1,4 @@
+using ApexPost.Api.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
@@ -26,6 +27,34 @@ internal sealed class BearerSecuritySchemeTransformer : IOpenApiDocumentTransfor
                 + "In Development, get one from dotnet user-jwts or POST /dev/token (SECURITY.md).",
         };
         document.Security = [new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference(SchemeName, document)] = [] }];
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// The partner route takes an API key in X-Api-Key instead of a bearer token. This declares the key's scheme in the
+/// document that has the route (v2) and gives the route its own security requirement, which overrides the document's
+/// Bearer requirement, so Swagger UI asks for the key there and a generated client sends the header.
+/// </summary>
+internal sealed class PartnerApiKeySecurityTransformer : IOpenApiOperationTransformer
+{
+    public const string SchemeName = "PartnerApiKey";
+
+    public Task TransformAsync(OpenApiOperation operation, OpenApiOperationTransformerContext context, CancellationToken cancellationToken)
+    {
+        if (!context.Description.ActionDescriptor.EndpointMetadata.OfType<RequirePartnerApiKeyAttribute>().Any()) return Task.CompletedTask;
+
+        var document = context.Document!;
+        document.Components ??= new OpenApiComponents();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        document.Components.SecuritySchemes[SchemeName] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.ApiKey,
+            In = ParameterLocation.Header,
+            Name = PartnerApiKeyFilter.HeaderName,
+            Description = "The API key ApexPost issued to your company, sent as X-Api-Key: <key>. Partner routes only (SECURITY.md).",
+        };
+        operation.Security = [new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference(SchemeName, document)] = [] }];
         return Task.CompletedTask;
     }
 }

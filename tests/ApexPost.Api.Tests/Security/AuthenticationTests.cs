@@ -61,20 +61,29 @@ public sealed class AuthenticationTests
         Assert.Contains("expired", problem.GetProperty("detail").GetString());
     }
 
-    public static TheoryData<string, string> InvalidTokens => new()
-    {
-        { "signed with another key", TestTokens.Create([ApiRoles.Admin], signingKey: RandomNumberGenerator.GetBytes(32)) },
-        { "from another issuer", TestTokens.Create([ApiRoles.Admin], issuer: "https://login.example") },
-        { "for another audience", TestTokens.Create([ApiRoles.Admin], audience: "https://other-api.example") },
-        { "not signed at all", Unsigned() },
-        { "without an expiry", WithoutExpiry() },
-        { "not a JWT", "not-a-token" },
-    };
-
+    // The cases are named and their tokens made when the test runs: the signing key is random per test process, and a
+    // test runner such as Visual Studio's enumerates theory data in one process and runs it in another. A token made
+    // during enumeration would fail on its signature, whatever the case was meant to test.
     [Theory]
-    [MemberData(nameof(InvalidTokens))]
-    public async Task A_token_that_does_not_check_out_is_a_401(string why, string token)
+    [InlineData("signed with another key")]
+    [InlineData("from another issuer")]
+    [InlineData("for another audience")]
+    [InlineData("not signed at all")]
+    [InlineData("without an expiry")]
+    [InlineData("not a JWT")]
+    public async Task A_token_that_does_not_check_out_is_a_401(string why)
     {
+        var token = why switch
+        {
+            "signed with another key" => TestTokens.Create([ApiRoles.Admin], signingKey: RandomNumberGenerator.GetBytes(32)),
+            "from another issuer" => TestTokens.Create([ApiRoles.Admin], issuer: "https://login.example"),
+            "for another audience" => TestTokens.Create([ApiRoles.Admin], audience: "https://other-api.example"),
+            "not signed at all" => Unsigned(),
+            "without an expiry" => WithoutExpiry(),
+            "not a JWT" => "not-a-token",
+            _ => throw new ArgumentOutOfRangeException(nameof(why), why, null),
+        };
+
         using var response = await SendAsync("GET", "/api/v2/shipments", token);
         var problem = await response.JsonAsync();
 

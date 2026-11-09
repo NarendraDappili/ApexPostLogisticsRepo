@@ -1,4 +1,7 @@
 using ApexPost.Courier.Offline.Domain;
+using ApexPost.Courier.Sync;
+using ApexPost.Courier.Tests.Api;
+using ApexPost.Courier.Tests.Sync;
 using ApexPost.Courier.Screens;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -23,9 +26,27 @@ internal sealed class CourierAppRun : IDisposable
 
     public int ExitCode { get; private set; }
 
-    /// <summary>Builds a host on this run's folder; the caller disposes it.</summary>
-    public IHost CreateHost(TextReader input, TextWriter output, params string[] settings) =>
-        CourierAppHost.Create([$"--Courier:DataDirectory={DataDirectory}", .. settings], input, output);
+    /// <summary>The API the app talks to: an in-memory fake, so no test ever reaches a real server.</summary>
+    public FakeApi Api { get; } = new();
+
+    /// <summary>The network the app sees: on, until a test switches it off.</summary>
+    public FakeNetwork Network { get; } = new();
+
+    /// <summary>
+    /// Builds a host on this run's folder; the caller disposes it. The app talks to <see cref="Api"/> unless
+    /// <paramref name="configureServices"/> installs another stub, and retries wait milliseconds, not seconds.
+    /// </summary>
+    public IHost CreateHost(TextReader input, TextWriter output, string[]? settings = null, Action<IServiceCollection>? configureServices = null) =>
+        CourierAppHost.Create(
+            [$"--Courier:DataDirectory={DataDirectory}", "--ApexPostApi:Resilience:RetryBaseDelay=00:00:00.005", .. settings ?? []],
+            input,
+            output,
+            services =>
+            {
+                Api.Server.Install(services);
+                services.AddSingleton<INetworkStatus>(Network);
+                configureServices?.Invoke(services);
+            });
 
     /// <summary>Runs one session with the given answers, then gives <paramref name="inspect"/> the session's services.</summary>
     public async Task<string> RunAsync(string[] answers, Action<IServiceProvider>? inspect = null)

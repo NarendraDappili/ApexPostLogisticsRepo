@@ -12,11 +12,13 @@ namespace ApexPost.Api.Security;
 /// a real identity provider, from its metadata). Every token is checked for its issuer, audience, lifetime and
 /// signature.
 /// Every endpoint needs an authenticated caller unless it is marked [AllowAnonymous], so a new endpoint is protected
-/// without anyone remembering to protect it. A missing, invalid or expired token is a 401 ProblemDetails.
+/// without anyone remembering to protect it. A missing, invalid or expired token is a 401 ProblemDetails; a valid
+/// token without the role an action needs ([Authorize(Roles = ...)], see <see cref="ApiRoles"/>) is a 403 ProblemDetails.
 /// </summary>
 internal static class AuthenticationRegistration
 {
     public const string ConfigurationSection = "Authentication:Schemes:Bearer";
+    public const string ForbiddenTitle = "Access is denied.";
 
     public static IServiceCollection AddApexPostAuthentication(this IServiceCollection services, IConfiguration configuration)
     {
@@ -35,7 +37,7 @@ internal static class AuthenticationRegistration
                 parameters.RequireSignedTokens = true;
                 // The default allows tokens five minutes past their expiry; one minute covers ordinary clock drift.
                 parameters.ClockSkew = TimeSpan.FromMinutes(1);
-                options.Events = new JwtBearerEvents { OnChallenge = WriteUnauthorizedAsync };
+                options.Events = new JwtBearerEvents { OnChallenge = WriteUnauthorizedAsync, OnForbidden = WriteForbiddenAsync };
             });
 
         services.AddAuthorizationBuilder()
@@ -87,6 +89,32 @@ internal static class AuthenticationRegistration
             {
                 Status = StatusCodes.Status401Unauthorized,
                 Title = "Authentication is required.",
+                Detail = detail,
+            },
+        });
+    }
+
+    // A valid token without the role the endpoint's [Authorize(Roles = ...)] names. The handler has already set the
+    // 403; this adds a ProblemDetails body that names the role needed, which is no secret: the API's documentation
+    // says the same.
+    private static async Task WriteForbiddenAsync(ForbiddenContext context)
+    {
+        var roles = context.HttpContext.GetEndpoint()?.Metadata.GetOrderedMetadata<IAuthorizeData>()
+            .Select(data => data.Roles)
+            .Where(names => !string.IsNullOrWhiteSpace(names))
+            .ToList() ?? [];
+        var detail = roles.Count > 0
+            ? $"This action needs the {string.Join(" and ", roles.Select(names => string.Join(" or ", names!.Split(','))))} role, which the access token does not have."
+            : "The access token does not allow this action.";
+
+        var problems = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsService>();
+        await problems.WriteAsync(new ProblemDetailsContext
+        {
+            HttpContext = context.HttpContext,
+            ProblemDetails = new ProblemDetails
+            {
+                Status = StatusCodes.Status403Forbidden,
+                Title = ForbiddenTitle,
                 Detail = detail,
             },
         });

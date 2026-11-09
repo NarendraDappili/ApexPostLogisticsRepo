@@ -47,12 +47,31 @@ builder.Services.AddApexPostOpenApi();
 // JWT bearer tokens (issuer, audience, lifetime, signature) from Authentication:Schemes:Bearer; every endpoint needs
 // an authenticated caller unless it allows anonymous ones (SECURITY.md).
 builder.Services.AddApexPostAuthentication(builder.Configuration);
+// The partner route takes an API key instead (PartnerApi:Keys, user-secrets in Development; SECURITY.md).
+builder.Services.AddPartnerApiKeys(builder.Configuration);
+// Transport security (SECURITY.md). Outside Development a plain-HTTP request is redirected with 308, which keeps the
+// method and body and tells the client to use the https URL from now on; Development keeps the default 307. HSTS
+// tells browsers to use HTTPS only for a year. No includeSubDomains or preload: those commit every subdomain and
+// cannot be taken back quickly, which is a decision for whoever owns the domain.
+builder.Services.AddHttpsRedirection(options =>
+    options.RedirectStatusCode = builder.Environment.IsDevelopment() ? StatusCodes.Status307TemporaryRedirect : StatusCodes.Status308PermanentRedirect);
+builder.Services.AddHsts(options => options.MaxAge = TimeSpan.FromDays(365));
 
 var app = builder.Build();
+// Read the partner keys now, so a malformed key stops the start rather than the first partner request.
+_ = app.Services.GetRequiredService<PartnerApiKeys>();
 // First, so an exception anywhere later in the pipeline becomes ProblemDetails through ApiExceptionHandler.
 app.UseExceptionHandler();
+// Not in Development: a browser would remember HSTS for localhost and refuse plain HTTP to every local app for a year.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
 // Errors that end without a body (no route matches: 404; wrong method: 405) get a ProblemDetails body as well.
 app.UseStatusCodePages();
+// In every environment. It redirects only when it knows the HTTPS port (the https launch profile, or the deployment's
+// https_port setting); a redirect cannot unsend a token that already went over HTTP, so a deployment should not
+// listen on plain HTTP at all (SECURITY.md).
 app.UseHttpsRedirection();
 // Part B published /api/shipments without a version. Those URLs keep answering as v1, with v1's deprecation and
 // sunset headers, until v1 is retired. A rewrite, not a second set of endpoints: it is not in any document. Routing
@@ -64,8 +83,9 @@ app.UseRouting();
 // A probe for the hosting platform, not part of the client contract, so it stays out of the OpenAPI document (and
 // out of the generated client). It answers everyone, without a token.
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).ExcludeFromDescription().AllowAnonymous();
-// Mapped before the Swagger UI below asks which API versions the controllers describe.
-app.MapControllers();
+// Mapped before the Swagger UI below asks which API versions the controllers describe. The actions marked
+// [RequirePartnerApiKey] get the endpoint filter that checks X-Api-Key.
+app.MapControllers().RequirePartnerApiKeysWhereMarked();
 // The documents and the Swagger UI page are served in Development only. Not publishing them elsewhere is a choice
 // about what to publish, not a security control: every endpoint answers the same with or without them.
 if (app.Environment.IsDevelopment())
