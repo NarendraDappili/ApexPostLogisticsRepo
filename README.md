@@ -9,7 +9,7 @@ ApexPost is a .NET 10 ASP.NET Core MVC application for post-office counters:
 
 Data lives in **Microsoft SQL Server** (`ApexPostDb`), accessed through **EF Core 10** with code-first migrations.
 
-Week 4 adds the courier side. **Part A** is an offline store for the courier device: shipment scans saved as JSON documents in an embedded **Couchbase Lite** database, with an outbox that uploads them later ([details below](#courier-offline-store-week-4-part-a), [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)).
+Week 4 adds the courier side. **Part A** is an offline store for the courier device: shipment scans saved as JSON documents in an embedded **Couchbase Lite** database, with an outbox that uploads them later ([details below](#courier-offline-store-week-4-part-a), [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)). **Part B** is **ApexPost.Api**, a REST API for tracked shipments and the idempotent upload of those scans, on the same SQL Server database ([details below](#tracking-api-week-4-part-b), [API-NOTES.md](API-NOTES.md)).
 
 ## Prerequisites
 
@@ -205,6 +205,45 @@ With single-field indexes, the first two queries used their index but still sort
 - the query results: one parcel's history, the pending list, and the per-type counts in the header;
 - the listener log after adding, syncing and deleting scans.
 
+## Tracking API (Week 4, Part B)
+
+`ApexPost.Api` is an ASP.NET Core Web API for tracked shipments and their courier scans. It uses minimal hosting (no `Startup.cs`). Through dependency injection it reuses the Week 3 `ApexPostDbContext`, unit of work, audit interceptors and error types. **[API-NOTES.md](API-NOTES.md)** has the endpoint and status-code tables, the validation rules, the error format and how the scan upload stays idempotent.
+
+| Project | Contents |
+|---|---|
+| [`ApexPost.Api`](src/ApexPost.Api) | `Program.cs`. `Controllers`: `ShipmentsController`, `ScansController`. `Contracts`: request and response DTOs. `Validation`: the custom rules. `Errors/ApiExceptionHandler`. `Routing`: the `{trackingNumber:trackingNumber}` constraint. [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) |
+| Week 3 projects (additions only) | Domain: `TrackedShipment`, `TrackingScan`, `TrackingStatusRules`, `TrackingNumber`, `TrackingScanId`, `Recipient`. Application: `ShipmentTrackingService`, `ITrackedShipmentRepository`, `ITrackingQueries`. Infrastructure: their EF Core configuration, repository and queries, plus the migration `AddShipmentTracking` |
+| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 142 tests: every endpoint over HTTP on a disposable SQL Server database, the error handling in Production and Development, the validation rules |
+
+**Run it:**
+
+```powershell
+dotnet ef database update --project src/ApexPost.Infrastructure      # once: adds TrackedShipments and TrackingScans
+dotnet run --project src/ApexPost.Api --launch-profile http          # http://localhost:5245
+```
+
+It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web application, so there is nothing else to set up. Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) from Visual Studio or VS Code (REST Client), top to bottom. Each endpoint has one success and at least one failure; all 27 requests were run against a fresh database and returned the codes in their titles.
+
+**Endpoints:**
+
+| Verb | Route | Success |
+|---|---|---|
+| GET | `/api/shipments?page=&pageSize=&status=&city=` | 200 (page size 20 by default, at most 50) |
+| GET | `/api/shipments/{trackingNumber}` | 200 |
+| POST | `/api/shipments` | 201 with `Location` |
+| PUT | `/api/shipments/{trackingNumber}` | 200 |
+| PATCH | `/api/shipments/{trackingNumber}/status` | 200 |
+| DELETE | `/api/shipments/{trackingNumber}` | 204, only while Created |
+| POST | `/api/shipments/{trackingNumber}/scans` | 200 with `accepted`, `duplicatesSkipped` and `rejected` (with reasons) |
+| GET | `/api/shipments/{trackingNumber}/scans` | 200, oldest first |
+
+**Errors and validation:**
+- **Every error is ProblemDetails:** 400, 404, 405, 409, 415 and 500.
+- **Validation** runs before any action: `[ApiController]` checks the request DTOs and returns a 400 `ValidationProblemDetails`. There are three custom rules: a dialable phone number, a scan time not in the future, and no repeated scan ID in one upload.
+- **The global `IExceptionHandler`** maps by exception type only: 400, 404 and 409 for the application's typed errors, and 500 for anything else. A 500 shows its stack trace only in Development ([ADR 0026](docs/adr/0026-api-errors-by-exception-type.md)).
+
+**Why a new tracking model:** the Week 3 `Shipment` is a counter parcel. It has no recipient, status or scans, and a 30 kg limit. Tracked shipments are a new aggregate added by a migration that only creates tables, so the counter application is unchanged ([ADR 0025](docs/adr/0025-tracked-shipments-beside-counter-shipments.md)).
+
 ## Tests
 
 ```powershell
@@ -214,14 +253,25 @@ dotnet test ApexPost.slnx -c Release --no-build
 
 **What the tests need:**
 - The courier offline tests (`ApexPost.Courier.Offline.Tests`) need nothing installed: each test opens its own Couchbase Lite database in a temporary folder.
-- The Infrastructure and Web tests need a SQL Server. Each test run creates its own database (`ApexPostDb_Test_<guid>`) from the migrations and drops it afterwards. The development database is never used, and a guard refuses any other database name.
+- The Infrastructure, Web and API tests need a SQL Server. Each test run creates its own database (`ApexPostDb_Test_<guid>`, or `ApexPostDb_ApiTest_<guid>` for the API) from the migrations and drops it afterwards. The development database is never used, and a guard refuses any other database name.
 - By default the tests use the local default instance with Windows authentication. Point them elsewhere with `APEXPOST_TEST_SQLSERVER`, a connection string without a database name:
 
   ```powershell
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 556 tests passing (Domain 81, Application 109, Infrastructure 128, Web integration 110, Courier offline 128) and a zero-warning build. Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
+**Results:** the latest run had 830 tests passing and a zero-warning build:
+
+| Project | Tests |
+|---|---|
+| Domain | 153 |
+| Application | 152 |
+| Infrastructure | 145 |
+| Web integration | 110 |
+| Courier offline | 128 |
+| API | 142 |
+
+Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 
 **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors, checks that every model change has a migration, starts a throwaway SQL Server container with a random password, and runs every test on each push and pull request to `master`, then reruns the error-handling tests with full JIT optimization. Every run on GitHub Actions so far has passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
 
@@ -232,7 +282,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Migrations | [`src/ApexPost.Infrastructure/Persistence/Migrations`](src/ApexPost.Infrastructure/Persistence/Migrations) |
 | Idempotent schema script | [`database/ApexPostDb.idempotent.sql`](database/ApexPostDb.idempotent.sql) (`dotnet ef migrations script --idempotent`) |
 | Stored procedures (`CREATE OR ALTER`) | [`src/ApexPost.Infrastructure/Persistence/StoredProcedures`](src/ApexPost.Infrastructure/Persistence/StoredProcedures), deployed by the migrations |
-| Least-privilege role | [`database/security/apexpost-app-role.sql`](database/security/apexpost-app-role.sql) |
+| Least-privilege roles | [`database/security/apexpost-app-role.sql`](database/security/apexpost-app-role.sql) (web application); [`database/security/apexpost-api-role.sql`](database/security/apexpost-api-role.sql) (tracking API: the two tracking tables and the audit table only) |
 | Reporting queries, atomic T-SQL sale, blocking demo | [`sql/`](sql/) |
 | Seeding service | [`src/ApexPost.Infrastructure/Seed/DemoDataSeeder.cs`](src/ApexPost.Infrastructure/Seed/DemoDataSeeder.cs) |
 | Performance data set and measurement scripts | [`database/perf/`](database/perf/) |
@@ -265,6 +315,7 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 
 - [DESIGN.md](DESIGN.md): architecture, layer diagrams, ER diagram, normalisation, data access patterns, user interface, SOLID mapping, all ADRs.
 - [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md): the courier offline store: save locally first, conflict handling, one process per database.
+- [API-NOTES.md](API-NOTES.md): the tracking API: endpoints and status codes, validation, errors, the idempotent scan upload.
 - [PERFORMANCE.md](PERFORMANCE.md): execution plans, before/after measurements, index trade-offs, generated SQL.
 - [sql/README.md](sql/README.md): reporting queries, the atomic T-SQL sale, the blocking demo, deadlock avoidance.
 - [docs/security.md](docs/security.md), [docs/testing.md](docs/testing.md), [docs/business-rules.md](docs/business-rules.md), [docs/architecture/README.md](docs/architecture/README.md).
@@ -276,3 +327,6 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - **Request and security audit are best-effort.** Such an audit write failure is logged and never undoes a committed sale (ADR 0011). Data-change history is written in the same transaction as the change, so it is never lost for a committed change (ADR 0024).
 - **Audit history is never pruned.** Nothing deletes audit rows; retention is a deployment decision.
 - **IP allowlist and proxies.** The allowlist uses the direct connection address. Behind a reverse proxy, configure trusted forwarded headers first.
+- **The tracking API has no authentication yet.** Anyone who can reach it can call every endpoint. Part D adds JWT bearer tokens with roles, and API keys for partners; until then, run it only locally.
+- **The tracking API is not versioned yet.** Its routes are `/api/shipments…`. Part C moves them to `/api/v1` and adds `/api/v2`.
+- **Counter and tracked shipments are not linked.** A parcel accepted at the counter does not get a tracking number automatically ([ADR 0025](docs/adr/0025-tracked-shipments-beside-counter-shipments.md)).

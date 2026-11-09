@@ -7,7 +7,12 @@ dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build
 ```
 
-The latest run had **556 tests passing, 0 failing, 0 skipped**, with a zero-warning build: 428 for the Week 3 projects and 128 for the Week 4 courier offline store. The error-handling tests also pass with `DOTNET_TieredCompilation=0` (55 tests).
+The latest run had **830 tests passing, 0 failing, 0 skipped**, with a zero-warning build:
+- 428 for Week 3;
+- 128 for the Week 4 courier offline store (Part A);
+- 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model.
+
+The Week 3 error-handling tests also pass with `DOTNET_TieredCompilation=0` (55 tests).
 
 ### Line coverage
 
@@ -33,7 +38,7 @@ The Week 4 courier offline projects, measured on 5 November 2026 with the same c
 
 ## CI on GitHub Actions
 
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull request to `master`, and on pull requests into the Week 4 part branches (`week4-part*`), so each step is checked on Linux before its part reaches `master`:
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull request to `master`, and on pull requests into the Week 4 part branches (`week4-part*` and `week4/part*`), so each step is checked on Linux before its part reaches `master`:
 1. builds with `-warnaserror`;
 2. fails if the EF Core model has changed without a migration (`dotnet ef migrations has-pending-model-changes`);
 3. starts a throwaway SQL Server 2022 container with a random password;
@@ -64,18 +69,19 @@ The other five runs are the pushes to `master` that merged #22–#26.
 
 | Project | Tests | Needs a database |
 |---|---|---|
-| `ApexPost.Domain.Tests` | 81 | No |
-| `ApexPost.Application.Tests` | 109 | No |
-| `ApexPost.Infrastructure.Tests` | 128 | SQL Server (except the model, migration, simulation, design-time factory and password-hasher tests) |
+| `ApexPost.Domain.Tests` | 153 (81 Week 3, 72 tracking) | No |
+| `ApexPost.Application.Tests` | 152 (109 Week 3, 43 tracking) | No |
+| `ApexPost.Infrastructure.Tests` | 145 (128 Week 3, 17 tracking) | SQL Server (except the model, migration, simulation, design-time factory and password-hasher tests) |
 | `ApexPost.Web.IntegrationTests` | 110 | SQL Server (except the CSV, display and demo-seed guard tests) |
 | `ApexPost.Courier.Offline.Tests` | 128 | No: each test opens its own Couchbase Lite database in a temporary folder |
+| `ApexPost.Api.Tests` | 142 | SQL Server for the endpoint tests (one disposable database per run). The composition, routing, error-handling and custom-rule tests use a connection string that is never opened. |
 
 The final-review round added 136 tests:
 - 117 in new test files;
 - 15 audit-schema tests appended to `ApexPostModelTests`;
 - 4 branch-check tests appended to `AuthenticationTests`.
 
-No existing test was changed or removed: since `1b2a090`, `git diff --numstat -- tests` shows additions only.
+No existing test was changed or removed: since `1b2a090`, `git diff --numstat -- tests` shows additions only. The one exception is in Week 4 Part B: `DesignTimeFactoryTests` checks the name of the newest migration, which is now `AddShipmentTracking` rather than `AddAuditTrail`.
 
 Each test project references only the production project it tests. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
 
@@ -158,6 +164,7 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
 | Audit trail schema (`AuditTrailSchemaTests`, `ApexPostModelTests`) | `DataChanges` and `SecurityEvents` exist with their CHECKs (operation, event type, `ISJSON`, status range) and no foreign keys. The eleven audit indexes have the pinned key order. |
 | Data-change history (`DataChangeAuditTests`) | An insert is named by its business key, with the password hash `(hidden)`. An update records only the changed columns, old → new. A sale records its transaction, line, payment and stock in one commit, **with no extra round trip**. A failed save keeps no history, and a retry does not double it. A synchronous save is recorded too. The price revision stays one `UPDATE` and records each product's old and new price. A rolled-back revision leaves neither prices nor history. A stock adjustment records the quantity and its history row; a refused one records nothing. The audit log gets column names, never values. |
 | Audit log queries (`AuditLogQueryTests`) | Newest first, a period that includes both days whole and nothing either side, every filter, a page past the end shown as the last page, a trace across all three logs limited to the viewer's branch, and a table filter that lists the business tables but not the audit tables. |
+| Tracking tables, Week 4 (`TrackingPersistenceTests`, 17) | A shipment round-trips with its recipient and audit columns. A duplicate tracking number or scan ID is a `DuplicateKeyException`, and a scan needs a known shipment (FK). Two requests that read the same version cannot both save (`rowversion`). A recipient change is **one audited update**. History is oldest first and the view shows the latest scan. The list filters by status and city, ignoring case, and pages by tracking number. **A list page is three statements, and the latest scans are read only for that page's shipments** (measured: 160 instead of 560 logical reads on 30,000 scans). The CHECKs refuse what the domain refuses. **The `apexpost_api` role can do the tracking work and is refused a Week 3 table.** |
 | Simulations and tooling (`SimulatedExternalServiceTests`, `DesignTimeFactoryTests`, `CatalogueAndRepositoryGuardTests`) | The courier's concurrency limit, stable status and cancellable wait. The identity verifier's rules. `dotnet ef` reads its connection from the environment and finds every migration in order. Stock levels, and the money-order repository's detached-update guard. |
 
 ### Web integration tests (110)
@@ -246,9 +253,40 @@ These cover Week 4 Part A. Every test runs on a real Couchbase Lite database in 
 
 **The one deliberate delay:** Couchbase Lite raises change notifications on its own thread. Tests wait for an expected notification with a 10-second ceiling, and finish as soon as it arrives. One test proves that something does *not* happen (no notification after dispose), and it waits a fixed 500 ms. The offline tests passed repeated runs in a row on Windows, and CI runs them on Linux.
 
+### Tracking model and API tests (Week 4, Part B)
+
+**Domain (72) and Application (43), no database.**
+- **The model:**
+  - the tracking number, scan ID and recipient formats, including non-ASCII digits and a trailing line break;
+  - the 0.1–70 kg limits;
+  - every allowed and refused status move;
+  - details editable until finished;
+  - delete only while Created.
+- **Scan decisions:** the next status moves the shipment, a repeat or late scan is history only, and anything else is refused with its reason.
+- **`ShipmentTrackingService`** runs against an in-memory store and the `SpyUnitOfWork`:
+  - one commit per command, and none on a refusal;
+  - invalid input becomes `RequestValidationException` with the request field's name;
+  - a duplicate-key race becomes the same 409 as the up-front check;
+  - the upload is idempotent: oldest first, duplicates skipped, another shipment's scan ID rejected without naming it, a concurrent winner turned into a retryable 409.
+
+**API (142, `ApexPost.Api.Tests`).** `WebApplicationFactory` hosts the real `Program.cs`. The endpoint tests share one disposable database per run, migrated at start-up, with the same name guard as the Web tests.
+
+| Area | Tests show |
+|---|---|
+| Composition (`ApiCompositionTests`) | Minimal hosting starts with every registration validated. The Week 3 `DbContext` has both audit interceptors, and one context is shared per request. The host refuses to start without a connection string. |
+| Architecture (`ControllerArchitectureTests`) | Both controllers are `[ApiController]` with attribute routes, depend on the tracking service only, and constrain every `{trackingNumber}`. The 8 endpoints of the brief exist. |
+| Endpoints (`ShipmentEndpointTests`) | Each endpoint's success code: **201 with a `Location` that reads the same shipment**, 200 and 204. Then its 400, 404, 409 and 415 answers. Paging and filters; status by name or number. |
+| Validation (`RequestValidationTests`, `CustomRuleTests`) | Every DTO rule, **keyed and worded by JSON field names** in `ValidationProblemDetails`. The three custom rules: the phone, the scan time not in the future (with a fixed clock), and a scan ID only once per upload. Unreadable JSON names the path but no internal type. A refused create stores nothing. |
+| Errors (`ErrorHandlingTests`) | Production and Staging: **a 500 has no message, type or stack trace**, but the server log has the exception. Development: the 500 carries them. A library `ArgumentException` is 500, not 400. Unknown route, malformed tracking number, 405 and 415 are all ProblemDetails. |
+| Scan upload (`ScanUploadEndpointTests`) | Accepted in scan-time order; re-sent → duplicates only; accepted, skipped and rejected (with reason) in one upload; a rejected scan accepted once the shipment is ready. **Parallel identical uploads store each scan once.** A lost race is a 409 that says to send again. Future and malformed scans are 400s naming the scan. |
+
+[`ApexPost.Api.http`](../src/ApexPost.Api/ApexPost.Api.http) was also run, request by request, against the API on a freshly migrated database: all 27 requests returned the status code in their titles.
+
 ## Not covered
 
 - **No browser automation in the suite.** There is no real-browser, screen-reader, keyboard-only or automated accessibility test. The UI round was checked by hand in headless Edge, as each role at desktop and phone widths, with no console or CSP errors. That check is not part of CI.
 - **No load or penetration test.** `PERFORMANCE.md` measures query cost with a reproducible data set; it is not a load test.
 - **Two real processes on one courier database.** The single-process lock was checked by hand, by starting two harnesses on the same folder (the second exits with code 2). The automated tests check the same lock within one process.
+- **The upload race is real, so its interleaving varies.** The parallel-upload tests accept 200 or 409 for each request and always check that no scan was stored twice. In 30 measured rounds, every round produced exactly one 200 and one 409.
+- **The `.http` file is not run in CI.** It was run by hand against a fresh database; the endpoint tests cover the same requests.
 - **No proxy or multi-host deployment test.** The concurrency tests use several contexts and connections against one SQL Server. That reproduces the conditions of several web servers, but not an actual farm.
