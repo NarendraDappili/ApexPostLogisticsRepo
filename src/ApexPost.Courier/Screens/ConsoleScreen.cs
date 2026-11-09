@@ -35,7 +35,8 @@ internal sealed class ConsoleScreen
         Output.Write($"{prompt}: ");
         var line = _input.ReadLine();
         if (line is null) Output.WriteLine();
-        return line;
+        // Input piped from Windows PowerShell starts with a byte order mark, which would make the first answer invalid.
+        return line?.TrimStart('﻿');
     }
 
     public bool Confirm(string question, bool defaultYes)

@@ -40,8 +40,12 @@ internal static class CourierAppHost
         builder.Services.AddSingleton<IScanRepository>(services => new CouchbaseScanRepository(
             services.GetRequiredService<CourierDatabase>(), services.GetRequiredService<ILogger<CouchbaseScanRepository>>()));
 
-        // Uploads still go to the Part A stand-in server; nothing here uses the network yet.
-        builder.Services.AddSingleton<IShipmentUploader>(services => new FakeShipmentUploader(services.GetRequiredService<TimeProvider>()));
+        // The outbox uploads to the v2 API, in batches of 20, and marks each scan from the API's answer. AutoSync starts
+        // it when the network comes back (the console's ConnectivityChanged) and every minute while online.
+        builder.Services.AddSingleton<IShipmentUploader, ApiShipmentUploader>();
+        builder.Services.Configure<AutoSyncOptions>(builder.Configuration.GetSection(AutoSyncOptions.Section));
+        builder.Services.AddSingleton<INetworkStatus, SystemNetworkStatus>();
+        builder.Services.AddSingleton<AutoSyncService>();
         builder.Services.AddSingleton(services => new OutboxService(
             services.GetRequiredService<IScanRepository>(),
             services.GetRequiredService<IShipmentUploader>(),

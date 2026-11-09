@@ -4,7 +4,7 @@ The courier works on a phone network that drops out in lifts, basements and betw
 
 There are two layers:
 - **Within one call**, the resilience pipeline below rides out short failures: a dropped packet, a server restarting, a timeout. It works in seconds.
-- **Across calls**, the Part A outbox. Every scan is saved on the device first and stays Pending until the server has it. If a whole sync fails, nothing is lost; the next sync sends the scans again. It works in minutes, whenever the network comes back ([OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)).
+- **Across calls**, the Part A outbox. Every scan is saved on the device first and stays Pending until the server has it. If a whole sync fails, nothing is lost; the next sync sends the scans again. It works in minutes. The next sync comes by itself: `AutoSyncService` starts one when the network comes back, and every minute while online, which is also how an open circuit is tried again without the courier pressing Sync Now ([README.md](README.md#courier-app-week-4-part-d), [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)).
 
 ## The pipeline
 

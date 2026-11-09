@@ -336,12 +336,27 @@ Start the API, then run `dotnet run --project src/ApexPost.Client.Consumer` (the
 
 ## Courier app (Week 4, Part D)
 
-[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. For now, uploads still go to the Part A stand-in server, so the app needs no network. Part D then secures the API and connects the app to it.
+[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. Pending scans are uploaded to the tracking API, by the courier (**Sync Now**) or by themselves when the network comes back.
+
+Start the API first (see [Tracking API](#tracking-api-week-4-part-b)), then the app:
 
 ```powershell
-dotnet run --project src/ApexPost.Courier                                           # data in %LOCALAPPDATA%\ApexPost\Courier
-dotnet run --project src/ApexPost.Courier -- --Courier:DataDirectory=.\courier-app-data
+dotnet run --project src/ApexPost.Courier                                           # API at https://localhost:7245, data in %LOCALAPPDATA%\ApexPost\Courier
+dotnet run --project src/ApexPost.Courier -- --ApexPostApi:BaseAddress=http://localhost:5245/ --Courier:DataDirectory=.\courier-app-data
 ```
+
+**Sign-in.** Login asks for the courier ID and gets a one-hour Courier token for it from the Development API's `POST /dev/token`, the stand-in for a real sign-in ([SECURITY.md](SECURITY.md)). The header says `Uploads: on`. Without a server, the courier is signed in offline (`Uploads: off`): scans are recorded and saved as usual, and uploads start after signing in again with a network.
+
+**Sync** ([`Sync/`](src/ApexPost.Courier/Sync)):
+- **The real uploader:** `ApiShipmentUploader` replaces Part A's stand-in server. The outbox still sends the Pending scans in batches of 20. The uploader sends each batch to the API, one request per shipment, and marks every scan Synced or Failed from the API's answer:
+  - a scan the API stored, now or earlier, is Synced;
+  - a scan the API rejected is Failed, with the API's reason;
+  - an unknown shipment (404), or a scan named in a 400, is Failed with the API's message, so it does not block the outbox for ever;
+  - a 403 or 409 leaves the scans Pending for a later sync;
+  - no answer, 401, or a 5xx stops the batch with every scan still Pending.
+- **Only the signed-in courier's scans** are sent; another courier's scans wait for that courier.
+- **Automatic sync:** `AutoSyncService` uploads Pending scans when the network comes back. `SystemNetworkStatus` watches `NetworkChange`, the console's counterpart of MAUI's `Connectivity.ConnectivityChanged`. It also syncs at start-up, and every minute while online, so the app finds the API again after an outage without the courier pressing anything. It does nothing without a network, a token, or anything Pending. Configure it with `Courier:AutoSync` (`Enabled`, `SettleDelay`, `Interval`).
+- **Live count:** the Part A change listener keeps the pending count in the header current as scans are marked.
 
 The app keeps its database in its own folder, not the harness's, because an embedded database belongs to one process at a time. Log lines appear between the menu lines as they happen; set their level with `--Logging:LogLevel:Default=Warning`.
 
@@ -355,7 +370,7 @@ The API's address is `ApexPostApi:BaseAddress`:
 | Launch profile "API over HTTP" | `http://localhost:5245/`: the API's `http` profile |
 | Anything else | `--ApexPostApi:BaseAddress=<url>`, or the environment variable `ApexPostApi__BaseAddress` |
 
-These play the part of the per-platform addresses a phone app would have.
+These play the part of the per-platform addresses a phone app would have. The app refuses to start with a plain `http://` address for any machine but this one, because every request carries the courier's token.
 
 **Weak networks.** Every API call goes through a resilience pipeline:
 - **Retries:** up to 3, with exponential backoff and jitter, on network errors, timeouts, 408 and 5xx only, and only for requests that are safe to send twice.
@@ -368,7 +383,7 @@ Every retry and circuit change is logged. **[RESILIENCE.md](RESILIENCE.md)** giv
 - **Robust reading:** unknown fields are skipped, and missing or null ones become empty values, so a newer API does not break the app. A body that cannot be read at all (malformed JSON, a Wi-Fi login page, `null`) becomes an "answer could not be read" error, never a crash.
 - **Errors in plain words:** an error response's ProblemDetails or ValidationProblemDetails becomes a message the courier can act on. Validation errors name each refused field (the first three); 401, 403, 404 and 409 show the API's own explanation.
 - **No server internals:** a 5xx shows only the reference (`traceId`) to quote, never the server's details.
-- **Two error types:** every failure is one of two exceptions with that message: `ApexApiException` (the server answered with an error) or `ApiUnavailableException` (no network, timeout, or open circuit). The app refuses to start with a plain `http://` address for any machine but this one, because every request carries the courier's token. The upload itself still goes to the stand-in server until the sync step connects them.
+- **Two error types:** every failure is one of two exceptions with that message: `ApexApiException` (the server answered with an error) or `ApiUnavailableException` (no network, timeout, or open circuit).
 
 ## Tests
 
@@ -386,7 +401,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1092 tests passing and a zero-warning build:
+**Results:** the latest run had 1111 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -395,7 +410,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Infrastructure | 145 |
 | Web integration | 110 |
 | Courier offline | 128 |
-| Courier app (Part D) | 77 |
+| Courier app (Part D) | 96 |
 | API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 327 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).

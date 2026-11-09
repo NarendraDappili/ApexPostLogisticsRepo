@@ -27,7 +27,7 @@ A conflict means two copies of the same record changed independently, and someon
 
 **What ApexPost does:**
 - **Scans have almost no conflicts by design.** A scan is an append-only event with a device-generated ID; nobody else edits it. Two couriers scanning the same parcel create two scans, not one conflicting record.
-- **The shipment status is decided by the server.** The server rejects a scan that breaks the status rules, or whose time is in the future (the fake uploader already does this). The scan becomes `Failed` on the device with the reason, so the courier sees it instead of the server silently overwriting it.
+- **The shipment status is decided by the server.** The server rejects a scan that breaks the status rules, or whose time is in the future (Part A's fake uploader did this too; since Part D the courier app uploads to the real tracking API, which enforces both). The scan becomes `Failed` on the device with the reason, so the courier sees it instead of the server silently overwriting it.
 - **On the device, the courier's latest edit wins.** It is a single user on a single device, so local last-write-wins is safe there. The outbox reloads each scan before marking it, so a correction made while an upload was in flight is not overwritten. That scan stays Pending and is sent again.
 - **Known limit:** once a scan is `Synced`, the domain refuses corrections, because the server would skip the same ID as a duplicate. A courier who made a mistake records a new scan instead, which also keeps the history honest.
 

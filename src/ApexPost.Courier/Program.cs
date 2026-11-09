@@ -1,6 +1,7 @@
 using ApexPost.Courier;
 using ApexPost.Courier.Offline.Storage;
 using ApexPost.Courier.Screens;
+using ApexPost.Courier.Sync;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -24,13 +25,27 @@ catch (OptionsValidationException exception)
 
 using (host)
 {
+    CourierApp app;
     try
     {
-        return await host.Services.GetRequiredService<CourierApp>().RunAsync();
+        app = host.Services.GetRequiredService<CourierApp>();
     }
     catch (CourierDatabaseInUseException exception)
     {
         Console.Error.WriteLine(exception.Message);
         return 2;
+    }
+
+    // Automatic sync runs beside the menu. It is started on its own rather than with host.StartAsync(): the host's
+    // console lifetime would take over Ctrl+C, which then could not interrupt the menu waiting for input.
+    var autoSync = host.Services.GetRequiredService<AutoSyncService>();
+    await autoSync.StartAsync(CancellationToken.None);
+    try
+    {
+        return await app.RunAsync();
+    }
+    finally
+    {
+        await autoSync.StopAsync(CancellationToken.None);
     }
 }

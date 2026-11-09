@@ -1,3 +1,4 @@
+using ApexPost.Courier.Api;
 using System.Globalization;
 using ApexPost.Courier.Offline.Domain;
 using ApexPost.Courier.Offline.Storage;
@@ -44,7 +45,8 @@ public sealed class CourierAppTests : IDisposable
         Assert.Contains("Rejected by the server, not sent again: 1", output, StringComparison.Ordinal);
         Assert.Contains("1 synced, 1 failed, 0 still pending", output, StringComparison.Ordinal);
         Assert.Contains("Recent failures (newest first): 1", output, StringComparison.Ordinal);
-        Assert.Contains("The scan time is in the future.", output, StringComparison.Ordinal);
+        // The API refused the delivery dated tomorrow with a 400 naming scans[1].scannedAtUtc; only that scan failed.
+        Assert.Contains("scannedAtUtc: scannedAtUtc cannot be in the future", output, StringComparison.Ordinal);
         Assert.Equal(0, _app.ExitCode);
         Assert.All(scans, scan => Assert.Equal("CR-001", scan.CourierId));
         Assert.Equal(
@@ -120,6 +122,54 @@ public sealed class CourierAppTests : IDisposable
 
         Assert.Contains("Pending scans (live): 1", output, StringComparison.Ordinal);
         Assert.Contains("Pending scans waiting for upload (oldest first): 1", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Login_gets_a_token_for_the_courier_and_uploads_are_on()
+    {
+        string? token = null;
+
+        var output = await _app.RunAsync(["cr-001", "6"], services => token = services.GetRequiredService<ITokenStore>().GetAsync().AsTask().Result);
+
+        Assert.Contains("Signed in as CR-001. Scans upload to the server (sign-in valid until", output, StringComparison.Ordinal);
+        Assert.Contains("Uploads: on", output, StringComparison.Ordinal);
+        Assert.Equal("fake-token-CR-001", token);
+        Assert.Equal("""{"name":"CR-001","roles":["Courier"],"courierId":"CR-001"}""", Assert.Single(_app.Api.Server.Requests).Body);
+    }
+
+    [Fact]
+    public async Task Without_the_server_the_courier_signs_in_offline_and_scans_are_still_saved()
+    {
+        _app.Api.Down = true;
+        IReadOnlyList<ShipmentScan> scans = [];
+
+        var output = await _app.RunAsync(["CR-001", "1", "APX-30000001", "1", "Riverside Depot", "", "", "3", "6"], services => scans = CourierAppRun.Scans(services));
+
+        Assert.Contains("Signed in as CR-001, offline: The server had a problem", output, StringComparison.Ordinal);
+        Assert.Contains("Uploads: off (signed in offline)", output, StringComparison.Ordinal);
+        Assert.Contains("Nothing was sent: you are signed in offline.", output, StringComparison.Ordinal);
+        Assert.Equal(SyncStatus.Pending, Assert.Single(scans).SyncStatus);
+        // Only the sign-in was tried: Sync Now sends nothing without a token.
+        Assert.Single(_app.Api.Server.Requests);
+    }
+
+    [Fact]
+    public async Task Signing_out_forgets_the_token_and_the_next_courier_gets_their_own()
+    {
+        string? token = null;
+
+        await _app.RunAsync(["CR-001", "5", "CR-002", "6"], services => token = services.GetRequiredService<ITokenStore>().GetAsync().AsTask().Result);
+
+        Assert.Equal("fake-token-CR-002", token);
+    }
+
+    [Fact]
+    public async Task A_byte_order_mark_at_the_start_of_piped_input_is_ignored()
+    {
+        var output = await _app.RunAsync(["﻿CR-001", "6"]);
+
+        Assert.Contains("Signed in as CR-001.", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("A courier ID has letters", output, StringComparison.Ordinal);
     }
 
     [Fact]
