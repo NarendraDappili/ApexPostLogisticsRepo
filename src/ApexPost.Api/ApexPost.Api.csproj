@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\ApexPost.Application\ApexPost.Application.csproj" />
+    <ProjectReference Include="..\ApexPost.Infrastructure\ApexPost.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ApexPost.Api.Tests" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The UserSecretsId of ApexPost.Web: the API works on the same database, so both read the one
+         ConnectionStrings:ApexPostDb secret (as the design-time DbContext factory already does). -->
+    <UserSecretsId>c64b2003-9f07-4be4-801b-323af9da40c8</UserSecretsId>
+  </PropertyGroup>
+
+</Project>
