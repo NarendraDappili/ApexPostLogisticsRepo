@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.NetworkInformation;
 
 namespace ApexPost.Courier.Sync;
@@ -15,14 +16,16 @@ internal interface INetworkStatus
 }
 
 /// <summary>
-/// The operating system's view: NetworkChange.NetworkAvailabilityChanged, plus NetworkAddressChanged, which also
-/// fires when Wi-Fi reconnects with a new address or airplane mode is turned off. "Available" means some interface
-/// is up; whether the API answers is the circuit breaker's business.
+/// The operating system's view, re-read on NetworkChange.NetworkAvailabilityChanged and NetworkAddressChanged (which
+/// also fires when Wi-Fi reconnects or airplane mode is turned off). "Available" means an interface is up and has a
+/// default gateway, a way out of this machine. NetworkInterface.GetIsNetworkAvailable() alone would count virtual
+/// adapters (Hyper-V, WSL, Docker) that stay up in airplane mode. Whether the API answers is the circuit breaker's
+/// business.
 /// </summary>
 internal sealed class SystemNetworkStatus : INetworkStatus, IDisposable
 {
     private readonly Lock _gate = new();
-    private bool _available = NetworkInterface.GetIsNetworkAvailable();
+    private bool _available = HasWayOut();
 
     public SystemNetworkStatus()
     {
@@ -46,9 +49,26 @@ internal sealed class SystemNetworkStatus : INetworkStatus, IDisposable
         NetworkChange.NetworkAddressChanged -= OnAddressChanged;
     }
 
-    private void OnAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs args) => Update(args.IsAvailable);
+    /// <summary>Some interface that is up, not loopback or a tunnel, and has a default gateway.</summary>
+    internal static bool HasWayOut()
+    {
+        try
+        {
+            return NetworkInterface.GetAllNetworkInterfaces().Any(adapter =>
+                adapter.OperationalStatus == OperationalStatus.Up
+                && adapter.NetworkInterfaceType is not (NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel)
+                && adapter.GetIPProperties().GatewayAddresses.Any(gateway => !gateway.Address.Equals(IPAddress.Any) && !gateway.Address.Equals(IPAddress.IPv6Any)));
+        }
+        catch (NetworkInformationException)
+        {
+            return NetworkInterface.GetIsNetworkAvailable();
+        }
+    }
 
-    private void OnAddressChanged(object? sender, EventArgs args) => Update(NetworkInterface.GetIsNetworkAvailable());
+    // The event's own flag would count virtual adapters too, so the state is read again either way.
+    private void OnAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs args) => Update(HasWayOut());
+
+    private void OnAddressChanged(object? sender, EventArgs args) => Update(HasWayOut());
 
     private void Update(bool available)
     {

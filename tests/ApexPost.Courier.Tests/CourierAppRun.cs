@@ -1,5 +1,7 @@
 using ApexPost.Courier.Offline.Domain;
+using ApexPost.Courier.Sync;
 using ApexPost.Courier.Tests.Api;
+using ApexPost.Courier.Tests.Sync;
 using ApexPost.Courier.Screens;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -27,6 +29,9 @@ internal sealed class CourierAppRun : IDisposable
     /// <summary>The API the app talks to: an in-memory fake, so no test ever reaches a real server.</summary>
     public FakeApi Api { get; } = new();
 
+    /// <summary>The network the app sees: on, until a test switches it off.</summary>
+    public FakeNetwork Network { get; } = new();
+
     /// <summary>
     /// Builds a host on this run's folder; the caller disposes it. The app talks to <see cref="Api"/> unless
     /// <paramref name="configureServices"/> installs another stub, and retries wait milliseconds, not seconds.
@@ -39,6 +44,7 @@ internal sealed class CourierAppRun : IDisposable
             services =>
             {
                 Api.Server.Install(services);
+                services.AddSingleton<INetworkStatus>(Network);
                 configureServices?.Invoke(services);
             });
 

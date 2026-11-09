@@ -7,11 +7,12 @@ dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build
 ```
 
-The latest run had **925 tests passing, 0 failing, 0 skipped**, with a zero-warning build:
+The latest run had **1131 tests passing, 0 failing, 0 skipped**, with a zero-warning build:
 - 428 for Week 3;
 - 128 for the Week 4 courier offline store (Part A);
 - 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model;
-- 95 for Part C, all in the API project: the OpenAPI documents, Swagger UI, versioning, the committed contracts and the generated client.
+- 95 for Part C, all in the API project: the OpenAPI documents, Swagger UI, versioning, the committed contracts and the generated client;
+- 206 for Part D: 90 in the API project (authentication, roles, the courierId rule, partner API keys, HTTPS and HSTS) and 116 for the courier console app (ApexPost.Courier.Tests).
 
 The Week 3 error-handling tests also pass with `DOTNET_TieredCompilation=0` (55 tests).
 
@@ -75,7 +76,8 @@ The other five runs are the pushes to `master` that merged #22–#26.
 | `ApexPost.Infrastructure.Tests` | 145 (128 Week 3, 17 tracking) | SQL Server (except the model, migration, simulation, design-time factory and password-hasher tests) |
 | `ApexPost.Web.IntegrationTests` | 110 | SQL Server (except the CSV, display and demo-seed guard tests) |
 | `ApexPost.Courier.Offline.Tests` | 128 | No: each test opens its own Couchbase Lite database in a temporary folder |
-| `ApexPost.Api.Tests` | 237 (142 Part B, 95 Part C) | SQL Server for the endpoint, versioning, "Try it out" and generated-client tests (one disposable database per run). The composition, routing, error-handling, custom-rule, OpenAPI, Swagger UI and contract tests use a connection string that is never opened. |
+| `ApexPost.Api.Tests` | 327 (142 Part B, 95 Part C, 90 Part D) | SQL Server for the endpoint, versioning, "Try it out" and generated-client tests (one disposable database per run). The composition, routing, error-handling, custom-rule, OpenAPI, Swagger UI, contract and most security tests use a connection string that is never opened. |
+| `ApexPost.Courier.Tests` | 116 | No: each test has its own Couchbase Lite folder, an in-memory fake of the API and a fake network, so no test reaches a real server |
 
 The final-review round added 136 tests:
 - 117 in new test files;
@@ -90,7 +92,12 @@ Week 4 Part C changed the Part B API tests in two ways, without weakening any as
 
 A separate test (`VersioningTests`) keeps the old unversioned URLs working.
 
-Each test project references only the production project it tests. The exception is `ApexPost.Api.Tests`, which also references `ApexPost.Client` and its console consumer, to run them against the real API. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
+Week 4 Part D changed the existing API tests where the API itself changed, again without weakening any assertion:
+- **Tokens:** both test hosts get a signing key and partner keys made up for each run (`TestTokens`, `TestPartnerKeys`), and every test client sends a valid Courier and Admin token for courier `CR-1042`. The few upload tests that used another courier ID now use that one.
+- **Documents and contracts:** the OpenAPI tables gained the 401 on every operation and the 403 on the five role-protected ones. The v1/v2 parity tests compare the shipment and scan controllers and allow the one v2-only partner route.
+- **Theory data:** keys and tokens are built inside the test, from named cases, because Visual Studio's runner enumerates theory data in a different process than the one that runs the tests.
+
+Each test project references only the production project it tests (`ApexPost.Courier.Tests` references only `ApexPost.Courier`). The exception is `ApexPost.Api.Tests`, which also references `ApexPost.Client` and its console consumer, to run them against the real API. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
 
 ## The test database
 
@@ -303,11 +310,42 @@ These cover Week 4 Part A. Every test runs on a real Couchbase Lite database in 
 
 [`ApexPost.Api.http`](../src/ApexPost.Api/ApexPost.Api.http) was also run, request by request, against the API on a freshly migrated database. All 50 requests (both versions, the documents, an unknown version and the unversioned alias) returned the status code in their titles. The consumer was also run as a real process against a real API: exit code 0, and exit code 1 with a one-line message when the API is down.
 
+### Security and the courier app (Week 4, Part D)
+
+**API security (90 more, `ApexPost.Api.Tests/Security` and `Client`).** Each area was mutation-checked: the protecting line was removed for a moment, tests failed, and it was put back.
+
+| Area | Tests show |
+|---|---|
+| Authentication (`AuthenticationTests`, `DevelopmentTokenTests`) | Without a token every endpoint is a 401 ProblemDetails with `WWW-Authenticate: Bearer`, even a path that does not exist. Expired, wrongly signed, other-issuer, other-audience, unsigned, expiry-less and malformed tokens are 401s with the RFC 6750 error. The probe, the documents and Swagger UI stay open. The API refuses to start without its token settings, and accepts `Authority` in place of the issuer and keys. `/dev/token` exists in Development only, validates its request, and issues tokens the API accepts. |
+| Roles and the courierId rule (`AuthorizationTests`, `RoleAccessTests`) | Each wrong role on each protected action, in both versions and on the unversioned alias, is a 403 ProblemDetails naming the role. An upload under another courier's ID is a 403, decided before the shipment is even looked up, and stores nothing. A malformed upload is still a 400. Each role does its allowed work on a real database. One test pins the rule of every action in both versions and checks that exactly the role-protected ones declare a 403. |
+| Partner API keys (`PartnerApiKeyTests`, `PartnerShipmentTests`) | No key, a wrong key, a near-miss of a real key, two keys, a key in the query string and a bearer token instead are all 401s with `WWW-Authenticate: ApiKey header="X-Api-Key"`, and a partner key opens no other route. Malformed key settings stop the start without naming the key. Two keys per partner work during a rotation. Refusals are logged without any key. A valid key reads status, city and the latest scan, without the recipient. The v2 document declares the key scheme on that route only. |
+| HTTPS (`TransportSecurityTests`, `BearerTokenHandlerTests`) | HTTP is redirected (308 outside Development, 307 in it) before any token is used; HSTS for a year outside Development and not in it. No source file turns certificate validation off. The generated client refuses to send a token over plain HTTP except to this machine. |
+
+**The courier app (116, `ApexPost.Courier.Tests`).** The app's real composition (`CourierAppHost`) runs every test, against a Couchbase Lite database in a temporary folder. `FakeApi` is a small in-memory stand-in for the API, following its rules: tokens, the courierId check, validation, unknown shipments, duplicates. `FakeNetwork` is a network the test switches on and off. Timing values are shortened to milliseconds.
+
+| Area | Tests show |
+|---|---|
+| Screens (`CourierAppTests`) | Whole scripted sessions: Login, New Scan, Pending Scans with the count, Sync Now, Sync Status, Sign Out. The live count follows the change listener; bad input is explained and nothing is saved; scans survive a restart. Signing in offline still saves scans; without a network Sync Now sends nothing. A second app on the same folder is refused, and a byte order mark in piped input is ignored. |
+| Typed client and JSON (`ApexApiClientTests`, `ContractCompatibilityTests`, `ErrorAndJsonHandlingTests`) | `ApexApiClient` comes from the factory, and the app never creates an `HttpClient`. The token is added per request. The address comes from configuration, and an `http://` address for another machine stops the app. The app's request and response records match `contracts/v2.json`. ProblemDetails and validation errors become friendly messages, a 5xx never shows server internals, and unknown, missing, null and malformed content never crashes the app. |
+| Resilience (`ResilienceTests`) | Retries on 5xx, 408 and network errors, never on another 4xx or an unmarked POST; four tries in all; the same body and token each time. A slow attempt is abandoned and retried, and the whole call stops at the total timeout. The circuit opens after one failed sync, shows the banner and fails calls at once, then closes when the server answers again. Every event is logged, and the defaults are pinned to RESILIENCE.md. |
+| Sync (`ApiShipmentUploaderTests`, `AutoSyncTests`) | One request per shipment. Accepted and duplicate scans become Synced; rejected ones Failed with the reason; 404 and scans named in a 400 Failed; 403 and 409 left Pending; no answer, 401 and 5xx stop the batch. 45 scans go in batches of at most 20. Automatic sync runs when the network comes back and periodically (which finds the API again after an outage), and never without a network, a token or anything Pending. |
+| Token (`TokenHandlingTests`) | A 401 clears the token and returns to Login, with the same courier offered, and the scans are synced after the new sign-in. An expired token is never sent. A 401 for an older token clears nothing. A 401 during a background sync ends the sign-in too. A pasted token is checked for expiry, courier and role and never shown. A whole session at Trace logging shows no token and nothing from a request body. |
+
+**Run for real**, outside the test suite, against the API on a freshly migrated database:
+- the `.http` file, all 64 requests;
+- the console consumer;
+- two scripted courier sessions:
+  - sign in, sync, a 404 rejection; then the API stopped (retries, circuit open, banner) and restarted (automatic recovery, the waiting scan synced);
+  - the API restarted with a new signing key (401, back to Login, signed in again, synced), then a pasted token.
+
 ## Not covered
 
 - **No browser automation in the suite.** There is no real-browser, screen-reader, keyboard-only or automated accessibility test. The UI round was checked by hand in headless Edge, as each role at desktop and phone widths, with no console or CSP errors. That check is not part of CI.
 - **No load or penetration test.** `PERFORMANCE.md` measures query cost with a reproducible data set; it is not a load test.
 - **Two real processes on one courier database.** The single-process lock was checked by hand, by starting two harnesses on the same folder (the second exits with code 2). The automated tests check the same lock within one process.
+- **The operating system's network events.** `SystemNetworkStatus` (airplane mode, Wi-Fi reconnecting) is checked by hand and in the demo video. The tests drive automatic sync with a fake network, and one test checks only that the app watches the real one by default.
+- **A real identity provider.** Tokens come from `dotnet user-jwts`, `/dev/token` and test keys. The `Authority` configuration is checked only by the start-up rule (SECURITY.md describes the move).
+- **No MAUI app.** The courier client is a console program ([ADR 0029](adr/0029-courier-app-as-console-program.md)), so there are no device, emulator or UI-thread tests.
 - **The upload race is real, so its interleaving varies.** The parallel-upload tests accept 200 or 409 for each request and always check that no scan was stored twice. In 30 measured rounds, every round produced exactly one 200 and one 409.
 - **The `.http` file is not run in CI.** It was run by hand against a fresh database; the endpoint tests cover the same requests.
 - **Client regeneration is not run in CI.** CI does not run NSwag. Instead, `ClientGenerationTests` checks that the committed client has one method per operation in the committed contract and comes from the pinned NSwag version. Regenerating with the same contract and tool was checked by hand to give a byte-identical file.

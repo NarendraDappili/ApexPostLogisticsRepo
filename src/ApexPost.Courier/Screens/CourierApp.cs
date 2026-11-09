@@ -16,6 +16,7 @@ internal sealed class CourierApp(
     SyncHistory history,
     ServerAvailability server,
     ITokenStore tokens,
+    INetworkStatus network,
     LoginScreen login,
     NewScanScreen newScan,
     PendingScansScreen pendingScans,
@@ -78,6 +79,13 @@ internal sealed class CourierApp(
     {
         // The sign-in ended while the menu was waiting (a background sync got a 401): the loop says why and goes to Login.
         if (session.SignInEndedReason is not null) return;
+
+        // As a phone app checks for a connection first: without one nothing is sent, even to an API on this machine.
+        if (!network.IsAvailable)
+        {
+            screen.WriteLine("No network: nothing was sent. Your scans are saved on this device and are sent by themselves when the network comes back.");
+            return;
+        }
 
         if (await tokens.GetAsync() is null)
         {

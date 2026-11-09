@@ -15,7 +15,6 @@ namespace ApexPost.Courier.Tests.Sync;
 public sealed class AutoSyncTests : IDisposable
 {
     private readonly CourierAppRun _app = new();
-    private readonly FakeNetwork _network = new();
     private readonly StringWriter _output = new();
 
     public void Dispose() => _app.Dispose();
@@ -23,7 +22,7 @@ public sealed class AutoSyncTests : IDisposable
     [Fact]
     public async Task Scans_saved_offline_upload_when_the_network_comes_back()
     {
-        _network.IsAvailable = false;
+        _app.Network.IsAvailable = false;
         using var host = Host();
         SignIn(host);
         var repository = host.Services.GetRequiredService<IScanRepository>();
@@ -34,7 +33,7 @@ public sealed class AutoSyncTests : IDisposable
         await Task.Delay(200);
         Assert.Empty(_app.Api.Server.Requests);
 
-        _network.Change(true);
+        _app.Network.Change(true);
 
         await Until(() => repository.ListAll().All(scan => scan.SyncStatus == SyncStatus.Synced));
         await Until(() => host.Services.GetRequiredService<ScanChangeMonitor>().PendingCount == 0);
@@ -52,10 +51,10 @@ public sealed class AutoSyncTests : IDisposable
         SignIn(host);
         host.Services.GetRequiredService<IScanRepository>().Create(Scan());
         var autoSync = host.Services.GetRequiredService<AutoSyncService>();
-        _network.IsAvailable = false;
+        _app.Network.IsAvailable = false;
         await autoSync.StartAsync(CancellationToken.None);
 
-        _network.Change(false);
+        _app.Network.Change(false);
         await Task.Delay(200);
         await autoSync.StopAsync(CancellationToken.None);
 
@@ -107,7 +106,7 @@ public sealed class AutoSyncTests : IDisposable
         var autoSync = host.Services.GetRequiredService<AutoSyncService>();
 
         await autoSync.StartAsync(CancellationToken.None);
-        _network.Change(true);
+        _app.Network.Change(true);
         await Task.Delay(300);
         await autoSync.StopAsync(CancellationToken.None);
 
@@ -117,8 +116,7 @@ public sealed class AutoSyncTests : IDisposable
     private string Log => _output.ToString();
 
     private IHost Host(params string[] settings) =>
-        _app.CreateHost(TextReader.Null, _output, ["--Courier:AutoSync:SettleDelay=00:00:00.010", "--Courier:AutoSync:Interval=00:10:00", .. settings],
-            services => services.AddSingleton<INetworkStatus>(_network));
+        _app.CreateHost(TextReader.Null, _output, ["--Courier:AutoSync:SettleDelay=00:00:00.010", "--Courier:AutoSync:Interval=00:10:00", .. settings]);
 
     private static void SignIn(IHost host)
     {
@@ -135,19 +133,6 @@ public sealed class AutoSyncTests : IDisposable
         {
             if (DateTime.UtcNow > deadline) Assert.Fail("The condition was not met in time.");
             await Task.Delay(25);
-        }
-    }
-
-    private sealed class FakeNetwork : INetworkStatus
-    {
-        public bool IsAvailable { get; set; } = true;
-
-        public event EventHandler<bool>? AvailabilityChanged;
-
-        public void Change(bool available)
-        {
-            IsAvailable = available;
-            AvailabilityChanged?.Invoke(this, available);
         }
     }
 }

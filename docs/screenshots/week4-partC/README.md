@@ -7,6 +7,14 @@ dotnet ef database update --project src/ApexPost.Infrastructure      # once: add
 dotnet run --project src/ApexPost.Api --launch-profile http          # opens http://localhost:5245/swagger
 ```
 
+**Since Part D every operation needs a token.** Before the first request, get one and click **Authorize** in Swagger UI ([SECURITY.md](../../../SECURITY.md#trying-the-api-in-swagger-ui)):
+
+```powershell
+dotnet user-jwts create --project src/ApexPost.Api --role Admin --role Courier --claim courierId=CR-1042     # prints a token
+```
+
+Paste the token under **Bearer** and click **Authorize**; Swagger UI then sends it with every request.
+
 Swagger UI opens on **v2**. For each request: open the operation, choose **Try it out**, edit the example if the table says so, then **Execute**. The response, with its status and headers, appears under the button.
 
 | File | What it shows | Steps in Swagger UI |

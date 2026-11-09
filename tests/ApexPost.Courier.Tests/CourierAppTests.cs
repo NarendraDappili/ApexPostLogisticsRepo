@@ -1,3 +1,4 @@
+using ApexPost.Courier.Sync;
 using ApexPost.Courier.Api;
 using System.Globalization;
 using ApexPost.Courier.Offline.Domain;
@@ -161,6 +162,30 @@ public sealed class CourierAppTests : IDisposable
         await _app.RunAsync(["CR-001", "", "5", "CR-002", "", "6"], services => token = services.GetRequiredService<ITokenStore>().GetAsync().AsTask().Result);
 
         Assert.Equal("fake-token-CR-002#2", token);
+    }
+
+    [Fact]
+    public async Task Without_a_network_sync_now_sends_nothing_and_the_scans_wait()
+    {
+        IReadOnlyList<ShipmentScan> scans = [];
+        _app.Network.IsAvailable = false;
+
+        var output = await _app.RunAsync(["CR-001", "", "1", "APX-30000001", "1", "Riverside Depot", "", "", "3", "6"], services => scans = CourierAppRun.Scans(services));
+
+        Assert.Contains("No network: nothing was sent.", output, StringComparison.Ordinal);
+        Assert.Equal(SyncStatus.Pending, Assert.Single(scans).SyncStatus);
+        Assert.DoesNotContain(_app.Api.Server.Requests, request => request.Uri.AbsolutePath.EndsWith("/scans", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_app_watches_the_real_network_by_default()
+    {
+        using var host = CourierAppHost.Create([$"--Courier:DataDirectory={_app.DataDirectory}"], TextReader.Null, TextWriter.Null);
+
+        var network = host.Services.GetRequiredService<INetworkStatus>();
+
+        Assert.IsType<SystemNetworkStatus>(network);
+        Assert.Equal(SystemNetworkStatus.HasWayOut(), network.IsAvailable);
     }
 
     [Fact]
