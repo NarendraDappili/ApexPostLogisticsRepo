@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using ApexPost.Api.Validation;
@@ -13,32 +14,43 @@ namespace ApexPost.Api.Contracts;
 // with a 400 ValidationProblemDetails, keyed by the JSON field names. They are never bound to an entity: the service
 // builds the domain objects, and checks the same rules again. Fields are nullable so that a missing field is reported
 // as missing ([Required]) instead of arriving as "" or 0. The limits are the domain's own constants.
+// The XML comments are written for API clients: they are the descriptions and examples in the OpenAPI document.
 
-/// <summary>POST /api/shipments: a new shipment, which starts in Created status.</summary>
+/// <summary>A new shipment, which starts in Created status.</summary>
 public sealed class CreateShipmentRequest
 {
-    /// <summary>APX- followed by eight digits, for example APX-24000001.</summary>
+    /// <summary>APX- followed by eight digits. It must not be in use already.</summary>
+    /// <example>APX-24000001</example>
     [Required]
     [RegularExpression(TrackingNumberPattern, ErrorMessage = "{0} must be APX- followed by eight digits, for example APX-24000001.")]
     public string? TrackingNumber { get; init; }
 
+    /// <summary>The recipient's full name, up to 100 characters.</summary>
+    /// <example>Ama Mensah</example>
     [Required]
     [StringLength(Recipient.NameMaxLength)]
     public string? RecipientName { get; init; }
 
+    /// <summary>A number a courier can dial: 7 to 15 digits, with an optional leading +, spaces, hyphens and brackets.</summary>
+    /// <example>+44 20 7946 0000</example>
     [Required]
     [PhoneNumber]
     public string? RecipientPhone { get; init; }
 
+    /// <summary>The delivery address without the city, up to 200 characters.</summary>
+    /// <example>12 Harbour Road</example>
     [Required]
     [StringLength(Recipient.AddressMaxLength)]
     public string? RecipientAddress { get; init; }
 
+    /// <summary>The delivery city, up to 80 characters.</summary>
+    /// <example>Portside</example>
     [Required]
     [StringLength(Recipient.CityMaxLength)]
     public string? City { get; init; }
 
-    /// <summary>Between 0.1 and 70 kg.</summary>
+    /// <summary>The parcel's weight in kilograms, from 0.1 to 70.</summary>
+    /// <example>2.5</example>
     [Required]
     [WeightRange]
     public decimal? WeightKg { get; init; }
@@ -50,26 +62,35 @@ public sealed class CreateShipmentRequest
     internal NewTrackedShipment ToApplication() => new(TrackingNumber!, RecipientName!, RecipientPhone!, RecipientAddress!, City!, WeightKg!.Value);
 }
 
-/// <summary>PUT /api/shipments/{trackingNumber}: every editable detail, replacing the stored ones.</summary>
+/// <summary>Every editable detail of a shipment. Together they replace the stored ones.</summary>
 public sealed class UpdateShipmentRequest
 {
+    /// <summary>The recipient's full name, up to 100 characters.</summary>
+    /// <example>Ama Mensah</example>
     [Required]
     [StringLength(Recipient.NameMaxLength)]
     public string? RecipientName { get; init; }
 
+    /// <summary>A number a courier can dial: 7 to 15 digits, with an optional leading +, spaces, hyphens and brackets.</summary>
+    /// <example>+44 20 7946 0000</example>
     [Required]
     [PhoneNumber]
     public string? RecipientPhone { get; init; }
 
+    /// <summary>The delivery address without the city, up to 200 characters.</summary>
+    /// <example>14 Harbour Road</example>
     [Required]
     [StringLength(Recipient.AddressMaxLength)]
     public string? RecipientAddress { get; init; }
 
+    /// <summary>The delivery city, up to 80 characters.</summary>
+    /// <example>Portside</example>
     [Required]
     [StringLength(Recipient.CityMaxLength)]
     public string? City { get; init; }
 
-    /// <summary>Between 0.1 and 70 kg.</summary>
+    /// <summary>The parcel's weight in kilograms, from 0.1 to 70.</summary>
+    /// <example>3.2</example>
     [Required]
     [WeightRange]
     public decimal? WeightKg { get; init; }
@@ -77,34 +98,42 @@ public sealed class UpdateShipmentRequest
     internal TrackedShipmentDetails ToApplication() => new(RecipientName!, RecipientPhone!, RecipientAddress!, City!, WeightKg!.Value);
 }
 
-/// <summary>PATCH /api/shipments/{trackingNumber}/status: the next status, by name ("PickedUp") or number (1).</summary>
+/// <summary>The status to move a shipment to.</summary>
 public sealed class UpdateStatusRequest
 {
+    /// <summary>The next status: PickedUp, InTransit, OutForDelivery, Delivered or Failed. Its number (1 to 5) is accepted too.</summary>
+    /// <example>PickedUp</example>
     [Required]
     [EnumDataType(typeof(TrackingStatus), ErrorMessage = ShipmentListQuery.UnknownStatus)]
     [JsonConverter(typeof(JsonStringEnumConverter<TrackingStatus>))]
     public TrackingStatus? Status { get; init; }
 }
 
-/// <summary>GET /api/shipments?page=&amp;pageSize=&amp;status=&amp;city=</summary>
+/// <summary>The page of shipments to return, and the optional filters.</summary>
 public sealed class ShipmentListQuery
 {
     // The explicit names key a validation error by the query parameter the client wrote ("pageSize", not "PageSize").
 
+    /// <summary>The page to return, from 1.</summary>
+    [Description("The page to return, from 1.")]
     [FromQuery(Name = "page")]
     [Range(1, int.MaxValue, ErrorMessage = "{0} must be 1 or more.")]
     public int Page { get; init; } = 1;
 
+    /// <summary>Shipments per page: 20 by default, at most 50.</summary>
+    [Description("Shipments per page: 20 by default, at most 50.")]
     [FromQuery(Name = "pageSize")]
     [Range(1, TrackingListQuery.MaximumPageSize, ErrorMessage = "{0} must be between {1} and {2}.")]
     public int PageSize { get; init; } = TrackingListQuery.DefaultPageSize;
 
-    /// <summary>Only shipments in this status, by name or number.</summary>
+    /// <summary>Only shipments in this status: Created, PickedUp, InTransit, OutForDelivery, Delivered or Failed (or its number, 0 to 5).</summary>
+    [Description("Only shipments in this status: Created, PickedUp, InTransit, OutForDelivery, Delivered or Failed (or its number, 0 to 5).")]
     [FromQuery(Name = "status")]
     [EnumDataType(typeof(TrackingStatus), ErrorMessage = UnknownStatus)]
     public TrackingStatus? Status { get; init; }
 
     /// <summary>Only shipments to this city; case does not matter.</summary>
+    [Description("Only shipments to this city; case does not matter.")]
     [FromQuery(Name = "city")]
     [StringLength(Recipient.CityMaxLength)]
     public string? City { get; init; }

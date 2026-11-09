@@ -38,7 +38,15 @@ builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.Configure<RouteOptions>(options => options.SetParameterPolicy<TrackingNumberRouteConstraint>(TrackingNumberRouteConstraint.Name));
 builder.Services.AddApexPostPersistence(connectionString);
 // The built-in generator describes the controllers as OpenAPI document "v1" (/openapi/v1.json).
-builder.Services.AddOpenApi(options => options.AddDocumentTransformer<ApiDocumentInfoTransformer>());
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer<ApiDocumentInfoTransformer>();
+    // Make the document describe the HTTP contract where it differs from the CLR types (see ContractTransformers).
+    options.AddSchemaTransformer<EnumSchemaTransformer>();
+    options.AddSchemaTransformer<NumberSchemaTransformer>();
+    options.AddSchemaTransformer<RequiredNotNullSchemaTransformer>();
+    options.AddOperationTransformer<CreatedLocationHeaderTransformer>();
+});
 
 var app = builder.Build();
 // First, so an exception anywhere later in the pipeline becomes ProblemDetails through ApiExceptionHandler.
@@ -60,9 +68,12 @@ if (app.Environment.IsDevelopment())
         options.SwaggerEndpoint("/openapi/v1.json", "v1");
         options.RoutePrefix = "swagger";
         options.DocumentTitle = ApiDocumentInfoTransformer.Title;
+        // Shows each operationId (the action's route name, and the method name in a generated client).
+        options.DisplayOperationId();
     });
 }
 app.MapControllers();
 app.Run();
 
+/// <summary>The API host. Public so the integration tests can start it with WebApplicationFactory.</summary>
 public partial class Program;

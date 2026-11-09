@@ -267,6 +267,22 @@ In Development the API describes itself and offers a page for trying it. `dotnet
 
 In short: the specification is the format, the generator writes our API's document in that format, and Swagger UI shows that document to people.
 
+**What the document contains:**
+
+- **Operations:**
+  - **Operation IDs:** every action has a stable route name, such as `CreateShipment` or `UploadScans`. The route name becomes the operation's `operationId` and the method name in a generated client, so it is never renamed.
+  - **Tags and summaries:** `[Tags("Shipments")]` and `[Tags("Scans")]` group the operations, and `[EndpointSummary]` gives each one a one-line summary.
+  - **Response codes:** `[ProducesResponseType]` declares every status an operation can return, each with its body type and a description of when it happens. Errors are `application/problem+json` (`ValidationProblemDetails` for a 400).
+  - **201:** a 201 lists its `Location` header.
+- **XML comments:** `GenerateDocumentationFile` is on, and a public member without a comment fails the build. The comments on actions and DTOs become the descriptions, and each request field has an `<example>`, so "Try it out" opens with a valid body.
+- **The contract, not the C# types:** [`ContractTransformers.cs`](src/ApexPost.Api/OpenApi/ContractTransformers.cs) corrects the places where the C# types would mislead a client:
+  - an enum that travels as a name is a named string enum;
+  - a v1 response's numeric status lists its numbers;
+  - numbers are typed as numbers, not "number or string";
+  - a `[Required]` request field is never nullable.
+
+  A test sends every operation the document's own examples on a real database. Each answer must have a documented status, and each success body must have exactly the documented fields.
+
 **Development only.** Outside Development, both URLs return 404. This decides what we publish; it is not security. Hiding the description protects no endpoint, and every endpoint answers the same either way (authentication comes in Part D). `/health` is left out of the document because it is a probe for the hosting platform, not part of the client contract.
 
 ## Tests
