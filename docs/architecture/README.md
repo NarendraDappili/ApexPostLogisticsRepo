@@ -27,8 +27,21 @@ flowchart LR
 | `ApexPost.Web` | Controllers, views, view models, filters, middleware, authentication, `Program.cs` | Business rules |
 | `ApexPost.Courier.Offline` (Week 4) | The courier device's offline store. `Domain`: scans and contracts. `Storage`: Couchbase Lite database, repository, SQL++ queries, change listener. `Sync`: the outbox | Couchbase types in `Domain`; any reference to the Week 3 projects |
 | `ApexPost.Courier.Offline.Harness` (Week 4) | Console menu over the offline store, with a fake server | Business rules |
+| `ApexPost.Api` (Week 4) | The tracking REST API: `Program.cs` (minimal hosting), thin controllers, request/response DTOs, validation attributes, the global exception handler | Business rules; EF Core types; any entity in a request or response |
 
-The courier projects are a separate deployable for the courier's device. They share no code or database with the counter application; Part B connects them through the ApexPost API. See [OFFLINE-DESIGN.md](../../OFFLINE-DESIGN.md).
+The courier projects are a separate deployable for the courier's device. They share no code or database with the counter application; they reach ApexPost through the tracking API. See [OFFLINE-DESIGN.md](../../OFFLINE-DESIGN.md).
+
+`ApexPost.Api` is a second host on the Week 3 layers and database. Its use cases are in `ApexPost.Application` (`ShipmentTrackingService`), its model in `ApexPost.Domain` (`TrackedShipment`, `TrackingScan`) and its persistence in `ApexPost.Infrastructure`. All of these are additions; nothing Week 3 uses was changed ([ADR 0025](../adr/0025-tracked-shipments-beside-counter-shipments.md)). See [API-NOTES.md](../../API-NOTES.md).
+
+```mermaid
+flowchart LR
+    Device[Courier device<br/>Couchbase Lite outbox] -->|HTTPS, JSON scans| Api[ApexPost.Api]
+    Portal[Customer portal / partners] -->|HTTPS| Api
+    Api --> App[ApexPost.Application<br/>ShipmentTrackingService]
+    App --> Domain[ApexPost.Domain<br/>TrackedShipment]
+    Api -->|composition root| Infra[ApexPost.Infrastructure]
+    Infra -->|EF Core 10| Sql[(SQL Server ApexPostDb<br/>TrackedShipments, TrackingScans)]
+```
 
 ## Main runtime rules
 

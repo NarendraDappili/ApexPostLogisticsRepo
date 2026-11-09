@@ -326,6 +326,7 @@ The tables are in third normal form. Each fact is stored once, in the table whos
 | `AdjustStockRequiresBranchManager` | `usp_AdjustStock` accepts only an active Branch Manager of the branch; `Down` restores the previous body |
 | `AddBranchSalesForPeriod` | Adds `usp_BranchSalesForPeriod`, sales per day for a from-to period; `Down` drops it |
 | `AddAuditTrail` | Adds `DataChanges` and `SecurityEvents` with their CHECKs, plus the eleven audit-screen indexes on the three audit tables; `Down` drops them ([ADR 0024](docs/adr/0024-complete-audit-trail-and-audit-log-screen.md)) |
+| `AddShipmentTracking` (Week 4) | Adds `TrackedShipments` and `TrackingScans` for the tracking API, with their keys, CHECKs, `rowversion` and indexes; no existing table changes; `Down` drops them ([ADR 0025](docs/adr/0025-tracked-shipments-beside-counter-shipments.md)) |
 
 - **Migrations are immutable snapshots.** A migration that deploys a procedure keeps the exact text it deployed, so replaying it on a new database always gives the same result. The `.sql` files hold the current version. `StoredProcedureMigrationTests` and `StoredProcedureTests` check both rules: the migrations keep their shipped text, and the migrated database runs exactly the files in source control.
 
@@ -597,8 +598,10 @@ A guard refuses to run tests against any database whose name is not a test datab
 | [0022](docs/adr/0022-week-2-business-rule-tests-in-week-3.md) | How the Week 2 business-rule tests carry into Week 3 | Accepted |
 | [0023](docs/adr/0023-application-shell-and-theme-under-the-strict-csp.md) | Application shell, role-aware navigation and theme under the strict CSP | Accepted |
 | [0024](docs/adr/0024-complete-audit-trail-and-audit-log-screen.md) | A complete audit trail (data changes, security events, `ApexPost.Audit` log) and an Audit log screen by role | Accepted |
+| [0025](docs/adr/0025-tracked-shipments-beside-counter-shipments.md) | Tracked shipments (tracking API) as a new aggregate beside the counter's `Shipment`; additive migration only | Accepted |
+| [0026](docs/adr/0026-api-errors-by-exception-type.md) | The tracking API maps errors to 400/404/409/500 by exception type only | Accepted |
 
-Week 3 added thirteen ADRs (0011–0023). The seven the brief requires are in bold. ADR 0024 answers the final review's remark that auditing was not visible anywhere.
+Week 3 added thirteen ADRs (0011–0023). The seven the brief requires are in bold. ADR 0024 answers the final review's remark that auditing was not visible anywhere. Week 4 added ADRs 0025 and 0026 for the tracking API ([API-NOTES.md](API-NOTES.md)).
 
 ## Known limitations
 

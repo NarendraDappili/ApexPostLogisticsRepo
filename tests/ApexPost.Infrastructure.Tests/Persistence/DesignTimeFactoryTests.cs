@@ -23,7 +23,7 @@ public sealed class DesignTimeFactoryTests
             Assert.Equal("ApexPostDb_DesignTime", new SqlConnectionStringBuilder(db.Database.GetConnectionString()).InitialCatalog);
             var migrations = db.Database.GetMigrations().ToArray();
             Assert.Equal("20261030172857_InitialCreate", migrations[0]);
-            Assert.EndsWith("_AddAuditTrail", migrations[^1], StringComparison.Ordinal);
+            Assert.EndsWith("_AddShipmentTracking", migrations[^1], StringComparison.Ordinal);
             Assert.Equal(migrations.Order(StringComparer.Ordinal), migrations);
         }
         finally
