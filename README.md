@@ -9,7 +9,7 @@ ApexPost is a .NET 10 ASP.NET Core MVC application for post-office counters:
 
 Data lives in **Microsoft SQL Server** (`ApexPostDb`), accessed through **EF Core 10** with code-first migrations.
 
-Week 4 adds the courier side. **Part A** is an offline store for the courier device: shipment scans saved as JSON documents in an embedded **Couchbase Lite** database, with an outbox that uploads them later ([details below](#courier-offline-store-week-4-part-a), [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)). **Part B** is **ApexPost.Api**, a REST API for tracked shipments and the idempotent upload of those scans, on the same SQL Server database ([details below](#tracking-api-week-4-part-b), [API-NOTES.md](API-NOTES.md)).
+Week 4 adds the courier side. **Part A** is an offline store for the courier device: shipment scans saved as JSON documents in an embedded **Couchbase Lite** database, with an outbox that uploads them later ([details below](#courier-offline-store-week-4-part-a), [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md)). **Part B** is **ApexPost.Api**, a REST API for tracked shipments and the idempotent upload of those scans, on the same SQL Server database ([details below](#tracking-api-week-4-part-b), [API-NOTES.md](API-NOTES.md)). **Part C** documents that API with OpenAPI and Swagger UI and versions it: v1 keeps the Part B contract and is deprecated, and v2 is current. It also adds **ApexPost.Client**, a typed C# client generated from the committed contract ([details below](#api-documentation-openapi-and-swagger-ui-week-4-part-c), [VERSIONING.md](VERSIONING.md)).
 
 ## Prerequisites
 
@@ -211,9 +211,9 @@ With single-field indexes, the first two queries used their index but still sort
 
 | Project | Contents |
 |---|---|
-| [`ApexPost.Api`](src/ApexPost.Api) | `Program.cs`. `Controllers`: `ShipmentsController`, `ScansController`. `Contracts`: request and response DTOs. `Validation`: the custom rules. `Errors/ApiExceptionHandler`. `Routing`: the `{trackingNumber:trackingNumber}` constraint. [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) |
+| [`ApexPost.Api`](src/ApexPost.Api) | `Program.cs`. `Controllers/V1` and `Controllers/V2`: `ShipmentsController`, `ScansController`. `Contracts`: request DTOs and v1's response DTOs; `Contracts/V2`: v2's response DTOs. `Validation`: the custom rules. `Errors/ApiExceptionHandler`. `Routing`: the `{trackingNumber:trackingNumber}` constraint. `OpenApi` and `Versioning` (Part C). [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) |
 | Week 3 projects (additions only) | Domain: `TrackedShipment`, `TrackingScan`, `TrackingStatusRules`, `TrackingNumber`, `TrackingScanId`, `Recipient`. Application: `ShipmentTrackingService`, `ITrackedShipmentRepository`, `ITrackingQueries`. Infrastructure: their EF Core configuration, repository and queries, plus the migration `AddShipmentTracking` |
-| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 142 tests: every endpoint over HTTP on a disposable SQL Server database, the error handling in Production and Development, the validation rules |
+| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 237 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer |
 
 **Run it:**
 
@@ -222,20 +222,20 @@ dotnet ef database update --project src/ApexPost.Infrastructure      # once: add
 dotnet run --project src/ApexPost.Api --launch-profile http          # http://localhost:5245
 ```
 
-It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web application, so there is nothing else to set up. Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) from Visual Studio or VS Code (REST Client), top to bottom. Each endpoint has one success and at least one failure; all 27 requests were run against a fresh database and returned the codes in their titles.
+It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web application, so there is nothing else to set up. Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) from Visual Studio or VS Code (REST Client), top to bottom. Each endpoint has one success and at least one failure, for both versions. All 50 requests were run against a fresh database and returned the codes in their titles.
 
-**Endpoints:**
+**Endpoints** (`{version}` is `2`, or `1` for the deprecated Part B contract; see [Versions](#api-documentation-openapi-and-swagger-ui-week-4-part-c)):
 
 | Verb | Route | Success |
 |---|---|---|
-| GET | `/api/shipments?page=&pageSize=&status=&city=` | 200 (page size 20 by default, at most 50) |
-| GET | `/api/shipments/{trackingNumber}` | 200 |
-| POST | `/api/shipments` | 201 with `Location` |
-| PUT | `/api/shipments/{trackingNumber}` | 200 |
-| PATCH | `/api/shipments/{trackingNumber}/status` | 200 |
-| DELETE | `/api/shipments/{trackingNumber}` | 204, only while Created |
-| POST | `/api/shipments/{trackingNumber}/scans` | 200 with `accepted`, `duplicatesSkipped` and `rejected` (with reasons) |
-| GET | `/api/shipments/{trackingNumber}/scans` | 200, oldest first |
+| GET | `/api/v{version}/shipments?page=&pageSize=&status=&city=` | 200 (page size 20 by default, at most 50) |
+| GET | `/api/v{version}/shipments/{trackingNumber}` | 200 |
+| POST | `/api/v{version}/shipments` | 201 with `Location` |
+| PUT | `/api/v{version}/shipments/{trackingNumber}` | 200 |
+| PATCH | `/api/v{version}/shipments/{trackingNumber}/status` | 200 |
+| DELETE | `/api/v{version}/shipments/{trackingNumber}` | 204, only while Created |
+| POST | `/api/v{version}/shipments/{trackingNumber}/scans` | 200 with `accepted`, `duplicatesSkipped` and `rejected` (with reasons) |
+| GET | `/api/v{version}/shipments/{trackingNumber}/scans` | 200, oldest first |
 
 **Errors and validation:**
 - **Every error is ProblemDetails:** 400, 404, 405, 409, 415 and 500.
@@ -319,6 +319,13 @@ The console consumer [`ApexPost.Client.Consumer`](src/ApexPost.Client.Consumer) 
 
 Start the API, then run `dotnet run --project src/ApexPost.Client.Consumer` (the address is `ApexPostApi:BaseAddress` in its `appsettings.json`).
 
+**Contract tracking.** [`contracts/v1.json`](contracts/v1.json) and [`contracts/v2.json`](contracts/v2.json) are the published contracts.
+- `ContractTests` fails when the API no longer produces exactly these documents, so every contract change, even to a description, arrives as a reviewed diff of those files.
+- **[VERSIONING.md](VERSIONING.md)** lists each change between v1 and v2, whether it is breaking and why, and v1's deprecation and sunset plan.
+- [ADR 0027](docs/adr/0027-url-segment-api-versioning-with-sunset.md) and [ADR 0028](docs/adr/0028-openapi-contracts-and-generated-client.md) record the decisions.
+
+**Screenshots:** [docs/screenshots/week4-partC/README.md](docs/screenshots/week4-partC/README.md) lists the ones to take: Swagger UI with v1 and v2, a 400, a 409, and a 201 with `Location`.
+
 **Development only.** Outside Development, both URLs return 404. This decides what we publish; it is not security. Hiding the description protects no endpoint, and every endpoint answers the same either way (authentication comes in Part D). `/health` is left out of the document because it is a probe for the hosting platform, not part of the client contract.
 
 ## Tests
@@ -337,7 +344,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 830 tests passing and a zero-warning build:
+**Results:** the latest run had 925 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -346,7 +353,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Infrastructure | 145 |
 | Web integration | 110 |
 | Courier offline | 128 |
-| API | 142 |
+| API (with the OpenAPI, versioning, contract and generated-client tests) | 237 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 
@@ -393,6 +400,7 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - [DESIGN.md](DESIGN.md): architecture, layer diagrams, ER diagram, normalisation, data access patterns, user interface, SOLID mapping, all ADRs.
 - [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md): the courier offline store: save locally first, conflict handling, one process per database.
 - [API-NOTES.md](API-NOTES.md): the tracking API: endpoints and status codes, validation, errors, the idempotent scan upload.
+- [VERSIONING.md](VERSIONING.md): the tracking API's versions: every change from v1 to v2, breaking or not and why, v1's deprecation and sunset plan, how to change the contract. The contracts are in [contracts/](contracts).
 - [PERFORMANCE.md](PERFORMANCE.md): execution plans, before/after measurements, index trade-offs, generated SQL.
 - [sql/README.md](sql/README.md): reporting queries, the atomic T-SQL sale, the blocking demo, deadlock avoidance.
 - [docs/security.md](docs/security.md), [docs/testing.md](docs/testing.md), [docs/business-rules.md](docs/business-rules.md), [docs/architecture/README.md](docs/architecture/README.md).
