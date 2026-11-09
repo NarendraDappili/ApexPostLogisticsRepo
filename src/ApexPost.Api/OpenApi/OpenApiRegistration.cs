@@ -26,6 +26,8 @@ internal static class OpenApiRegistration
     {
         options.AddDocumentTransformer<ApiDocumentInfoTransformer>();
         options.AddOperationTransformer<DeprecatedOperationTransformer>();
+        options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
+        options.AddOperationTransformer<UnauthorizedResponseTransformer>();
         // Make the document describe the HTTP contract where it differs from the CLR types (see ContractTransformers).
         options.AddSchemaTransformer<EnumSchemaTransformer>();
         options.AddSchemaTransformer<NumberSchemaTransformer>();

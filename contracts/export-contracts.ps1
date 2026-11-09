@@ -4,8 +4,8 @@
 
 .DESCRIPTION
     Builds ApexPost.Api, starts it in Development on a local port, downloads /openapi/v1.json and /openapi/v2.json
-    and stops it. The documents are built from the controllers' metadata, so the database is never opened: the
-    connection string is a placeholder.
+    and stops it. The documents are built from the controllers' metadata, so the database is never opened and no
+    token is ever checked: the connection string and the token settings are placeholders.
 
     Line breaks inside descriptions (from multi-line XML comments) are written as \n, so the files are the same
     whichever operating system checked out the sources.
@@ -37,6 +37,12 @@ $start.UseShellExecute = $false
 $start.EnvironmentVariables['ASPNETCORE_ENVIRONMENT'] = 'Development'
 $start.EnvironmentVariables['ASPNETCORE_URLS'] = "http://127.0.0.1:$Port"
 $start.EnvironmentVariables['ConnectionStrings__ApexPostDb'] = 'Server=(placeholder);Database=ApexPostDb_ContractExport;Trusted_Connection=True'
+# The API refuses to start without token validation settings. No token is ever checked here, so a throwaway key does.
+$exportKey = [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 } | ForEach-Object { [byte]$_ }))
+$start.EnvironmentVariables['Authentication__Schemes__Bearer__ValidIssuer'] = 'apexpost-contract-export'
+$start.EnvironmentVariables['Authentication__Schemes__Bearer__ValidAudiences__0'] = 'apexpost-contract-export'
+$start.EnvironmentVariables['Authentication__Schemes__Bearer__SigningKeys__0__Issuer'] = 'apexpost-contract-export'
+$start.EnvironmentVariables['Authentication__Schemes__Bearer__SigningKeys__0__Value'] = $exportKey
 $start.EnvironmentVariables['Logging__LogLevel__Default'] = 'Warning'
 $process = [System.Diagnostics.Process]::Start($start)
 

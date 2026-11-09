@@ -24,14 +24,14 @@ public sealed class OpenApiMetadataTests
     // are a published contract: a generated client's method names come from them, so a change here breaks clients.
     private static readonly (string Route, string OperationId, string Tag, int[] StatusCodes)[] OperationTable =
     [
-        ("GET /shipments", "ListShipments", "Shipments", [200, 400, 500]),
-        ("GET /shipments/{trackingNumber}", "GetShipment", "Shipments", [200, 404, 500]),
-        ("POST /shipments", "CreateShipment", "Shipments", [201, 400, 409, 415, 500]),
-        ("PUT /shipments/{trackingNumber}", "UpdateShipment", "Shipments", [200, 400, 404, 409, 415, 500]),
-        ("PATCH /shipments/{trackingNumber}/status", "UpdateShipmentStatus", "Shipments", [200, 400, 404, 409, 415, 500]),
-        ("DELETE /shipments/{trackingNumber}", "DeleteShipment", "Shipments", [204, 404, 409, 500]),
-        ("GET /shipments/{trackingNumber}/scans", "GetScanHistory", "Scans", [200, 404, 500]),
-        ("POST /shipments/{trackingNumber}/scans", "UploadScans", "Scans", [200, 400, 404, 409, 415, 500]),
+        ("GET /shipments", "ListShipments", "Shipments", [200, 401, 400, 500]),
+        ("GET /shipments/{trackingNumber}", "GetShipment", "Shipments", [200, 401, 404, 500]),
+        ("POST /shipments", "CreateShipment", "Shipments", [201, 401, 400, 409, 415, 500]),
+        ("PUT /shipments/{trackingNumber}", "UpdateShipment", "Shipments", [200, 401, 400, 404, 409, 415, 500]),
+        ("PATCH /shipments/{trackingNumber}/status", "UpdateShipmentStatus", "Shipments", [200, 401, 400, 404, 409, 415, 500]),
+        ("DELETE /shipments/{trackingNumber}", "DeleteShipment", "Shipments", [204, 401, 404, 409, 500]),
+        ("GET /shipments/{trackingNumber}/scans", "GetScanHistory", "Scans", [200, 401, 404, 500]),
+        ("POST /shipments/{trackingNumber}/scans", "UploadScans", "Scans", [200, 401, 400, 404, 409, 415, 500]),
     ];
 
     public static TheoryData<string, string, string, string, int[]> Operations

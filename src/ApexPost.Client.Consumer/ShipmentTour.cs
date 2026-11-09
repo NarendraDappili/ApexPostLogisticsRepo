@@ -13,11 +13,15 @@ public sealed class ShipmentTour(IApexPostClient client, TimeProvider clock)
     /// <summary>A well-formed tracking number that is never issued, for the 404 step.</summary>
     public const string UnknownTrackingNumber = "APX-00000000";
 
+    /// <summary>The courier in appsettings.json.</summary>
+    public const string DefaultCourierId = "CR-1042";
+
     /// <summary>Runs the tour and returns the process exit code: 0 when every step behaved as the API documents.</summary>
     /// <param name="output">Where each step is reported.</param>
     /// <param name="trackingNumber">The new shipment's number; a random fictional one by default.</param>
+    /// <param name="courierId">The courier the scans are recorded under: the courierId of the token the client sends.</param>
     /// <param name="cancellationToken">Stops the tour.</param>
-    public async Task<int> RunAsync(TextWriter output, string? trackingNumber = null, CancellationToken cancellationToken = default)
+    public async Task<int> RunAsync(TextWriter output, string? trackingNumber = null, string courierId = DefaultCourierId, CancellationToken cancellationToken = default)
     {
         trackingNumber ??= $"APX-9{Random.Shared.Next(0, 10_000_000):D7}";
         try
@@ -44,8 +48,8 @@ public sealed class ShipmentTour(IApexPostClient client, TimeProvider clock)
             {
                 Scans =
                 [
-                    Scan(TrackingScanType.Pickup, "Portside depot", now.AddHours(-2)),
-                    Scan(TrackingScanType.InTransit, "Northgate hub", now.AddHours(-1)),
+                    Scan(TrackingScanType.Pickup, "Portside depot", now.AddHours(-2), courierId),
+                    Scan(TrackingScanType.InTransit, "Northgate hub", now.AddHours(-1), courierId),
                 ],
             }, cancellationToken);
             await output.WriteLineAsync($"Uploaded 2 scans: {upload.Accepted} accepted, {upload.DuplicatesSkipped} duplicates skipped, {upload.Rejected} rejected; the shipment is now {upload.ShipmentStatus}.");
@@ -79,12 +83,12 @@ public sealed class ShipmentTour(IApexPostClient client, TimeProvider clock)
         }
     }
 
-    private static ScanUploadItem Scan(TrackingScanType type, string location, DateTimeOffset scannedAtUtc) => new()
+    private static ScanUploadItem Scan(TrackingScanType type, string location, DateTimeOffset scannedAtUtc, string courierId) => new()
     {
         ScanId = $"scan::{Guid.NewGuid()}",
         ScanType = type,
         Location = location,
-        CourierId = "CR-1042",
+        CourierId = courierId,
         ScannedAtUtc = scannedAtUtc,
     };
 
