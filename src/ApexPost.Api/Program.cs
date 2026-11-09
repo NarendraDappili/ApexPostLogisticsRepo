@@ -4,6 +4,7 @@ using ApexPost.Api.OpenApi;
 using ApexPost.Api.Routing;
 using ApexPost.Api.Validation;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
+using Microsoft.AspNetCore.Rewrite;
 using ApexPost.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -37,7 +38,11 @@ builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 // {trackingNumber:trackingNumber} in a route template: anything that is not APX-######## never reaches an action.
 builder.Services.Configure<RouteOptions>(options => options.SetParameterPolicy<TrackingNumberRouteConstraint>(TrackingNumberRouteConstraint.Name));
 builder.Services.AddApexPostPersistence(connectionString);
-// The built-in generator describes the controllers as OpenAPI document "v1" (/openapi/v1.json).
+// /api/v1 (deprecated, the Part B contract) and /api/v2. Both versions call the same ShipmentTrackingService; only
+// their response DTOs differ.
+builder.Services.AddApexPostApiVersioning();
+// The built-in generator describes the API as OpenAPI document "v1" (/openapi/v1.json). With versioning, a document
+// holds the API Explorer group of the same name, so this one describes /api/v1.
 builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer<ApiDocumentInfoTransformer>();
@@ -54,6 +59,11 @@ app.UseExceptionHandler();
 // Errors that end without a body (no route matches: 404; wrong method: 405) get a ProblemDetails body as well.
 app.UseStatusCodePages();
 app.UseHttpsRedirection();
+// Part B published /api/shipments without a version. Those URLs keep answering as v1, with v1's deprecation and
+// sunset headers, until v1 is retired. A rewrite, not a second set of endpoints: it is not in any document. Routing
+// must come after it, so the rewritten path is the one matched.
+app.UseRewriter(new RewriteOptions().AddRewrite("^api/shipments(/.*)?$", "api/v1/shipments$1", skipRemainingRules: true));
+app.UseRouting();
 // A probe for the hosting platform, not part of the client contract, so it stays out of the OpenAPI document (and
 // out of the generated client). It still answers everyone.
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).ExcludeFromDescription();

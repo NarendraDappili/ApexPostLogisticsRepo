@@ -31,31 +31,31 @@ public sealed class TryItOutTests(SqlApiFactory factory)
         var upload = Example(document, "ScanUploadRequest");
 
         // The successes, in the order a user trying the API would go.
-        await Expect(document, "POST /api/shipments", null, With(create, "trackingNumber", number), 201);
-        await Expect(document, "POST /api/shipments", null, With(create, "trackingNumber", deletable), 201);
-        await Expect(document, "GET /api/shipments/{trackingNumber}", number, null, 200);
-        await Expect(document, "GET /api/shipments", null, null, 200, "?page=1&pageSize=20&status=Created&city=Portside");
-        await Expect(document, "PUT /api/shipments/{trackingNumber}", number, update, 200);
-        await Expect(document, "PATCH /api/shipments/{trackingNumber}/status", number, status, 200);
-        await Expect(document, "POST /api/shipments/{trackingNumber}/scans", number, WithFreshScanIds(upload), 200);
-        await Expect(document, "GET /api/shipments/{trackingNumber}/scans", number, null, 200);
-        await Expect(document, "DELETE /api/shipments/{trackingNumber}", deletable, null, 204);
+        await Expect(document, "POST /api/v1/shipments", null, With(create, "trackingNumber", number), 201);
+        await Expect(document, "POST /api/v1/shipments", null, With(create, "trackingNumber", deletable), 201);
+        await Expect(document, "GET /api/v1/shipments/{trackingNumber}", number, null, 200);
+        await Expect(document, "GET /api/v1/shipments", null, null, 200, "?page=1&pageSize=20&status=Created&city=Portside");
+        await Expect(document, "PUT /api/v1/shipments/{trackingNumber}", number, update, 200);
+        await Expect(document, "PATCH /api/v1/shipments/{trackingNumber}/status", number, status, 200);
+        await Expect(document, "POST /api/v1/shipments/{trackingNumber}/scans", number, WithFreshScanIds(upload), 200);
+        await Expect(document, "GET /api/v1/shipments/{trackingNumber}/scans", number, null, 200);
+        await Expect(document, "DELETE /api/v1/shipments/{trackingNumber}", deletable, null, 204);
 
         // At least one failure each.
-        await Expect(document, "GET /api/shipments", null, null, 400, "?pageSize=0");
-        await Expect(document, "GET /api/shipments/{trackingNumber}", unknown, null, 404);
-        await Expect(document, "POST /api/shipments", null, With(create, "trackingNumber", number), 409);
-        await Expect(document, "POST /api/shipments", null, new JsonObject(), 400);
-        await Expect(document, "PUT /api/shipments/{trackingNumber}", unknown, update, 404);
-        await Expect(document, "PATCH /api/shipments/{trackingNumber}/status", number, status, 409);
-        await Expect(document, "DELETE /api/shipments/{trackingNumber}", number, null, 409);
-        await Expect(document, "GET /api/shipments/{trackingNumber}/scans", unknown, null, 404);
-        await Expect(document, "POST /api/shipments/{trackingNumber}/scans", number, new JsonObject { ["scans"] = new JsonArray() }, 400);
+        await Expect(document, "GET /api/v1/shipments", null, null, 400, "?pageSize=0");
+        await Expect(document, "GET /api/v1/shipments/{trackingNumber}", unknown, null, 404);
+        await Expect(document, "POST /api/v1/shipments", null, With(create, "trackingNumber", number), 409);
+        await Expect(document, "POST /api/v1/shipments", null, new JsonObject(), 400);
+        await Expect(document, "PUT /api/v1/shipments/{trackingNumber}", unknown, update, 404);
+        await Expect(document, "PATCH /api/v1/shipments/{trackingNumber}/status", number, status, 409);
+        await Expect(document, "DELETE /api/v1/shipments/{trackingNumber}", number, null, 409);
+        await Expect(document, "GET /api/v1/shipments/{trackingNumber}/scans", unknown, null, 404);
+        await Expect(document, "POST /api/v1/shipments/{trackingNumber}/scans", number, new JsonObject { ["scans"] = new JsonArray() }, 400);
 
         // 415: the body as text/plain.
-        using var wrongType = await _client.PostAsync("/api/shipments", new StringContent(With(create, "trackingNumber", unknown).ToJsonString(), Encoding.UTF8, "text/plain"));
+        using var wrongType = await _client.PostAsync("/api/v1/shipments", new StringContent(With(create, "trackingNumber", unknown).ToJsonString(), Encoding.UTF8, "text/plain"));
         Assert.Equal(415, (int)wrongType.StatusCode);
-        Assert.Contains("415", Declared(OpenApiMetadataTests.Operation(document, "POST /api/shipments")));
+        Assert.Contains("415", Declared(OpenApiMetadataTests.Operation(document, "POST /api/v1/shipments")));
     }
 
     private async Task Expect(JsonElement document, string route, string? trackingNumber, JsonObject? body, int expected, string query = "")

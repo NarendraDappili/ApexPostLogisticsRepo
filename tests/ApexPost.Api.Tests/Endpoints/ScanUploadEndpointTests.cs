@@ -6,7 +6,7 @@ using ApexPost.Api.Tests.Hosting;
 namespace ApexPost.Api.Tests.Endpoints;
 
 /// <summary>
-/// B6: POST /api/shipments/{trackingNumber}/scans over HTTP on a real database. Re-sending a scan ID never creates a
+/// B6: POST /api/v1/shipments/{trackingNumber}/scans over HTTP on a real database. Re-sending a scan ID never creates a
 /// duplicate, the response counts accepted, skipped and rejected scans, and parallel uploads of the same scans
 /// still store each scan once.
 /// </summary>
@@ -30,7 +30,7 @@ public sealed class ScanUploadEndpointTests(SqlApiFactory factory)
         Assert.Equal((2, 0, 0, 2), Counts(result));
         Assert.Equal(0, result.GetProperty("rejections").GetArrayLength());
         Assert.Equal([Id(pickup), Id(transit)], await HistoryAsync(number));
-        Assert.Equal(2, (await (await _client.GetAsync($"/api/shipments/{number}")).JsonAsync()).GetProperty("status").GetInt32());
+        Assert.Equal(2, (await (await _client.GetAsync($"/api/v1/shipments/{number}")).JsonAsync()).GetProperty("status").GetInt32());
     }
 
     [Fact]
@@ -153,9 +153,9 @@ public sealed class ScanUploadEndpointTests(SqlApiFactory factory)
         var number = await NewShipmentAsync();
         var scan = Scan("Pickup", Scanned);
 
-        var missing = await (await _client.PostAsync($"/api/shipments/{number}/scans", ApiClient.RawJson("""{ "scans": [ { "scanType": "Lost" } ] }"""))).JsonAsync();
+        var missing = await (await _client.PostAsync($"/api/v1/shipments/{number}/scans", ApiClient.RawJson("""{ "scans": [ { "scanType": "Lost" } ] }"""))).JsonAsync();
         using var repeated = await UploadAsync(number, scan, scan);
-        using var empty = await _client.PostAsJsonAsync($"/api/shipments/{number}/scans", new { scans = Array.Empty<object>() });
+        using var empty = await _client.PostAsJsonAsync($"/api/v1/shipments/{number}/scans", new { scans = Array.Empty<object>() });
 
         Assert.True(missing.GetProperty("errors").TryGetProperty("scans[0].scanType", out _) || missing.GetProperty("errors").TryGetProperty("$.scans[0].scanType", out _));
         Assert.Equal(HttpStatusCode.BadRequest, repeated.StatusCode);
@@ -170,7 +170,7 @@ public sealed class ScanUploadEndpointTests(SqlApiFactory factory)
     {
         var number = await NewShipmentAsync();
 
-        using var response = await _client.PostAsync($"/api/shipments/{number}/scans", ApiClient.RawJson("""{ "scans": [ {} ] }"""));
+        using var response = await _client.PostAsync($"/api/v1/shipments/{number}/scans", ApiClient.RawJson("""{ "scans": [ {} ] }"""));
         var errors = (await response.JsonAsync()).GetProperty("errors");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -186,10 +186,10 @@ public sealed class ScanUploadEndpointTests(SqlApiFactory factory)
     }
 
     private Task<HttpResponseMessage> UploadAsync(string trackingNumber, params object[] scans) =>
-        _client.PostAsJsonAsync($"/api/shipments/{trackingNumber}/scans", new { scans });
+        _client.PostAsJsonAsync($"/api/v1/shipments/{trackingNumber}/scans", new { scans });
 
     private async Task<string[]> HistoryAsync(string trackingNumber) =>
-        [.. (await (await _client.GetAsync($"/api/shipments/{trackingNumber}/scans")).JsonAsync()).EnumerateArray().Select(scan => scan.GetProperty("scanId").GetString()!)];
+        [.. (await (await _client.GetAsync($"/api/v1/shipments/{trackingNumber}/scans")).JsonAsync()).EnumerateArray().Select(scan => scan.GetProperty("scanId").GetString()!)];
 
     private static Dictionary<string, object?> Scan(object scanType, DateTimeOffset scannedAt) => new()
     {

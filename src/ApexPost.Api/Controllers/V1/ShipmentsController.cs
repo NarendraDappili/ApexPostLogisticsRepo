@@ -1,14 +1,17 @@
 using System.Net.Mime;
 using ApexPost.Api.Contracts;
+using ApexPost.Api.Versioning;
 using ApexPost.Application.Tracking;
+using Asp.Versioning;
 using Microsoft.AspNetCore.Mvc;
 
-namespace ApexPost.Api.Controllers;
+namespace ApexPost.Api.Controllers.V1;
 
 /// <summary>
-/// Shipments. Each action binds its input, calls <see cref="ShipmentTrackingService"/> once and chooses the success
-/// result. Every rule and every error is the service's: ApiExceptionHandler turns its typed errors into 400, 404 and
-/// 409 responses, so no action catches anything.
+/// Shipments, version 1 (deprecated): the Part B contract, unchanged. Version 2 is the same set of actions on the
+/// same service, with v2's response DTOs. Each action binds its input, calls <see cref="ShipmentTrackingService"/>
+/// once and chooses the success result. Every rule and every error is the service's: ApiExceptionHandler turns its
+/// typed errors into 400, 404 and 409 responses, so no action catches anything.
 /// </summary>
 /// <remarks>
 /// The OpenAPI description of each action: [EndpointSummary] is its one-line summary; the XML remarks, params and
@@ -17,7 +20,8 @@ namespace ApexPost.Api.Controllers;
 /// replace [EndpointSummary] in the document, so actions have none.
 /// </remarks>
 [ApiController]
-[Route("api/shipments")]
+[ApiVersion(ApiVersions.V1, Deprecated = true)]
+[Route("api/v{version:apiVersion}/shipments")]
 [Tags("Shipments")]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, MediaTypeNames.Application.ProblemJson)]
 public sealed class ShipmentsController(ShipmentTrackingService tracking) : ControllerBase

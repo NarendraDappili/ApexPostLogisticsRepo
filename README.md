@@ -283,6 +283,16 @@ In short: the specification is the format, the generator writes our API's docume
 
   A test sends every operation the document's own examples on a real database. Each answer must have a documented status, and each success body must have exactly the documented fields.
 
+**Versions.** The version is part of the URL: `/api/v1/shipments` and `/api/v2/shipments`. Both versions call the same `ShipmentTrackingService` and take the same requests; only their response DTOs and mapping differ.
+
+| | v1 (deprecated) | v2 |
+|---|---|---|
+| Response shape | The Part B contract, unchanged: flat recipient fields | `recipient { name, phone, address, city }`, plus `latestScan { scanType, location, scannedAtUtc }` (null until the first scan) |
+| Enums in responses | Numbers (`"status": 2`) | Names (`"status": "InTransit"`) |
+| Headers | `api-supported-versions: 2.0`, `api-deprecated-versions: 1.0`. Successful responses also carry `Deprecation` (since 9 November 2026) and `Sunset` (31 May 2027), with `Link` headers to the versioning policy | `api-supported-versions`, `api-deprecated-versions` |
+
+The unversioned Part B URLs (`/api/shipments…`) still answer as v1 until v1's sunset, so Part B clients keep working. A `Location` header always gives the versioned URL.
+
 **Development only.** Outside Development, both URLs return 404. This decides what we publish; it is not security. Hiding the description protects no endpoint, and every endpoint answers the same either way (authentication comes in Part D). `/health` is left out of the document because it is a probe for the hosting platform, not part of the client contract.
 
 ## Tests
@@ -369,5 +379,5 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - **Audit history is never pruned.** Nothing deletes audit rows; retention is a deployment decision.
 - **IP allowlist and proxies.** The allowlist uses the direct connection address. Behind a reverse proxy, configure trusted forwarded headers first.
 - **The tracking API has no authentication yet.** Anyone who can reach it can call every endpoint. Part D adds JWT bearer tokens with roles, and API keys for partners; until then, run it only locally.
-- **The tracking API is not versioned yet.** Its routes are `/api/shipments…`. Part C moves them to `/api/v1` and adds `/api/v2`.
+- **v1 of the tracking API is deprecated.** It answers until 31 May 2027, and so do the unversioned Part B URLs (`/api/shipments…`), which are an alias of v1. New clients should use `/api/v2`.
 - **Counter and tracked shipments are not linked.** A parcel accepted at the counter does not get a tracking number automatically ([ADR 0025](docs/adr/0025-tracked-shipments-beside-counter-shipments.md)).

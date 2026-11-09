@@ -30,7 +30,7 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
         using var fetched = await _client.GetAsync(created.Headers.Location);
 
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-        Assert.Equal($"/api/shipments/{number}", created.Headers.Location!.AbsolutePath);
+        Assert.Equal($"/api/v1/shipments/{number}", created.Headers.Location!.AbsolutePath);
         Assert.Equal((number, 0, 69.5m, "Ama Mensah", "Portside"),
             (body.GetProperty("trackingNumber").GetString(), body.GetProperty("status").GetInt32(), body.GetProperty("weightKg").GetDecimal(),
              body.GetProperty("recipientName").GetString(), body.GetProperty("city").GetString()));
@@ -67,8 +67,8 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
     [Fact]
     public async Task Missing_fields_and_malformed_json_are_400()
     {
-        using var missing = await _client.PostAsync("/api/shipments", ApiClient.RawJson("""{ "trackingNumber": "APX-00000001" }"""));
-        using var malformed = await _client.PostAsync("/api/shipments", ApiClient.RawJson("""{ "trackingNumber": """));
+        using var missing = await _client.PostAsync("/api/v1/shipments", ApiClient.RawJson("""{ "trackingNumber": "APX-00000001" }"""));
+        using var malformed = await _client.PostAsync("/api/v1/shipments", ApiClient.RawJson("""{ "trackingNumber": """));
 
         Assert.Equal(HttpStatusCode.BadRequest, missing.StatusCode);
         Assert.True((await missing.JsonAsync()).GetProperty("errors").TryGetProperty("recipientName", out _));
@@ -78,7 +78,7 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
     [Fact]
     public async Task A_body_that_is_not_json_is_415()
     {
-        using var response = await _client.PostAsync("/api/shipments", new StringContent("trackingNumber=APX-00000001", Encoding.UTF8, "text/plain"));
+        using var response = await _client.PostAsync("/api/v1/shipments", new StringContent("trackingNumber=APX-00000001", Encoding.UTF8, "text/plain"));
 
         Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
     }
@@ -88,7 +88,7 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
     {
         var number = SqlApiFactory.NextTrackingNumber();
 
-        using var response = await _client.GetAsync($"/api/shipments/{number}");
+        using var response = await _client.GetAsync($"/api/v1/shipments/{number}");
         var problem = await response.JsonAsync();
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -96,9 +96,9 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
     }
 
     [Theory]
-    [InlineData("/api/shipments/APX-123")]
-    [InlineData("/api/shipments/not-a-number")]
-    [InlineData("/api/shipments/APX-12345678'%20OR%20'1'='1")]
+    [InlineData("/api/v1/shipments/APX-123")]
+    [InlineData("/api/v1/shipments/not-a-number")]
+    [InlineData("/api/v1/shipments/APX-12345678'%20OR%20'1'='1")]
     public async Task A_malformed_tracking_number_never_reaches_an_action(string path)
     {
         using var response = await _client.GetAsync(path);
@@ -114,10 +114,10 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
         foreach (var number in numbers) (await _client.CreateAsync(number, city)).Dispose();
         await _client.AdvanceAsync(numbers[2], 1);
 
-        var all = await (await _client.GetAsync($"/api/shipments?city={Uri.EscapeDataString(city.ToUpperInvariant())}&pageSize=2")).JsonAsync();
-        var second = await (await _client.GetAsync($"/api/shipments?city={Uri.EscapeDataString(city)}&pageSize=2&page=2")).JsonAsync();
-        var byName = await (await _client.GetAsync($"/api/shipments?city={Uri.EscapeDataString(city)}&status=PickedUp")).JsonAsync();
-        var byNumber = await (await _client.GetAsync($"/api/shipments?city={Uri.EscapeDataString(city)}&status=0")).JsonAsync();
+        var all = await (await _client.GetAsync($"/api/v1/shipments?city={Uri.EscapeDataString(city.ToUpperInvariant())}&pageSize=2")).JsonAsync();
+        var second = await (await _client.GetAsync($"/api/v1/shipments?city={Uri.EscapeDataString(city)}&pageSize=2&page=2")).JsonAsync();
+        var byName = await (await _client.GetAsync($"/api/v1/shipments?city={Uri.EscapeDataString(city)}&status=PickedUp")).JsonAsync();
+        var byNumber = await (await _client.GetAsync($"/api/v1/shipments?city={Uri.EscapeDataString(city)}&status=0")).JsonAsync();
 
         Assert.Equal((1, 2, 3, 2), (all.GetProperty("page").GetInt32(), all.GetProperty("pageSize").GetInt32(), all.GetProperty("totalCount").GetInt32(), all.GetProperty("totalPages").GetInt32()));
         Assert.Equal(numbers[..2], Numbers(all));
@@ -129,7 +129,7 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
     [Fact]
     public async Task The_list_defaults_to_20_per_page()
     {
-        var page = await (await _client.GetAsync("/api/shipments")).JsonAsync();
+        var page = await (await _client.GetAsync("/api/v1/shipments")).JsonAsync();
 
         Assert.Equal((1, 20), (page.GetProperty("page").GetInt32(), page.GetProperty("pageSize").GetInt32()));
     }
@@ -140,7 +140,7 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
     [InlineData("page=0", "page")]
     public async Task A_page_outside_the_limits_is_400(string query, string field)
     {
-        using var response = await _client.GetAsync($"/api/shipments?{query}");
+        using var response = await _client.GetAsync($"/api/v1/shipments?{query}");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.True((await response.JsonAsync()).GetProperty("errors").TryGetProperty(field, out _));
@@ -151,7 +151,7 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
     [InlineData("page=abc")]
     public async Task A_query_value_of_the_wrong_type_is_400(string query)
     {
-        using var response = await _client.GetAsync($"/api/shipments?{query}");
+        using var response = await _client.GetAsync($"/api/v1/shipments?{query}");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -162,7 +162,7 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
         var number = SqlApiFactory.NextTrackingNumber();
         (await _client.CreateAsync(number)).Dispose();
 
-        using var response = await _client.PutAsJsonAsync($"/api/shipments/{number}",
+        using var response = await _client.PutAsJsonAsync($"/api/v1/shipments/{number}",
             new { recipientName = "Kofi Mensah", recipientPhone = "020 7946 0001", recipientAddress = "3 Quay Street", city = "Rivermouth", weightKg = 12.5m });
         var body = await response.JsonAsync();
 
@@ -179,8 +179,8 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
         await _client.AdvanceAsync(number, 4);
         var details = new { recipientName = "Kofi Mensah", recipientPhone = "020 7946 0001", recipientAddress = "3 Quay Street", city = "Rivermouth", weightKg = 1m };
 
-        using var delivered = await _client.PutAsJsonAsync($"/api/shipments/{number}", details);
-        using var unknown = await _client.PutAsJsonAsync($"/api/shipments/{SqlApiFactory.NextTrackingNumber()}", details);
+        using var delivered = await _client.PutAsJsonAsync($"/api/v1/shipments/{number}", details);
+        using var unknown = await _client.PutAsJsonAsync($"/api/v1/shipments/{SqlApiFactory.NextTrackingNumber()}", details);
 
         Assert.Equal(HttpStatusCode.Conflict, delivered.StatusCode);
         Assert.Equal("The shipment is Delivered; its details can no longer change.", (await delivered.JsonAsync()).GetProperty("detail").GetString());
@@ -221,7 +221,7 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
         var number = SqlApiFactory.NextTrackingNumber();
         (await _client.CreateAsync(number)).Dispose();
 
-        using var response = await _client.PatchAsync($"/api/shipments/{number}/status", ApiClient.RawJson(json));
+        using var response = await _client.PatchAsync($"/api/v1/shipments/{number}/status", ApiClient.RawJson(json));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -232,8 +232,8 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
         var number = SqlApiFactory.NextTrackingNumber();
         (await _client.CreateAsync(number)).Dispose();
 
-        using var deleted = await _client.DeleteAsync($"/api/shipments/{number}");
-        using var fetched = await _client.GetAsync($"/api/shipments/{number}");
+        using var deleted = await _client.DeleteAsync($"/api/v1/shipments/{number}");
+        using var fetched = await _client.GetAsync($"/api/v1/shipments/{number}");
 
         Assert.Equal(HttpStatusCode.NoContent, deleted.StatusCode);
         Assert.Equal(0, deleted.Content.Headers.ContentLength ?? 0);
@@ -247,8 +247,8 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
         (await _client.CreateAsync(number)).Dispose();
         await _client.AdvanceAsync(number, 1);
 
-        using var pickedUp = await _client.DeleteAsync($"/api/shipments/{number}");
-        using var unknown = await _client.DeleteAsync($"/api/shipments/{SqlApiFactory.NextTrackingNumber()}");
+        using var pickedUp = await _client.DeleteAsync($"/api/v1/shipments/{number}");
+        using var unknown = await _client.DeleteAsync($"/api/v1/shipments/{SqlApiFactory.NextTrackingNumber()}");
 
         Assert.Equal(HttpStatusCode.Conflict, pickedUp.StatusCode);
         Assert.Equal("Only a shipment in Created status can be deleted; this one is PickedUp.", (await pickedUp.JsonAsync()).GetProperty("detail").GetString());
@@ -261,8 +261,8 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
         var number = SqlApiFactory.NextTrackingNumber();
         (await _client.CreateAsync(number)).Dispose();
 
-        var empty = await (await _client.GetAsync($"/api/shipments/{number}/scans")).JsonAsync();
-        using var unknown = await _client.GetAsync($"/api/shipments/{SqlApiFactory.NextTrackingNumber()}/scans");
+        var empty = await (await _client.GetAsync($"/api/v1/shipments/{number}/scans")).JsonAsync();
+        using var unknown = await _client.GetAsync($"/api/v1/shipments/{SqlApiFactory.NextTrackingNumber()}/scans");
 
         Assert.Equal(0, empty.GetArrayLength());
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
@@ -289,7 +289,7 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
             await db.SaveChangesAsync();
         }
 
-        var history = await (await _client.GetAsync($"/api/shipments/{number}/scans")).JsonAsync();
+        var history = await (await _client.GetAsync($"/api/v1/shipments/{number}/scans")).JsonAsync();
 
         Assert.Equal([pickup, transit], history.EnumerateArray().Select(scan => scan.GetProperty("scanId").GetString()));
         var first = history[0];
