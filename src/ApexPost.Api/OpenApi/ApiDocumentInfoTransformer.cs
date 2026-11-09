@@ -8,7 +8,8 @@ namespace ApexPost.Api.OpenApi;
 /// <summary>
 /// Gives each version's OpenAPI document the information a client developer reads first: the API's name, what it is
 /// for, its version and who to contact. The generator writes the paths and schemas; this transformer writes only the
-/// <c>info</c> section. The contact details are fictional (the reserved <c>.example</c> domain).
+/// <c>info</c> section, and removes the <c>servers</c> list. The contact details are fictional (the reserved
+/// <c>.example</c> domain).
 /// A deprecated version's description starts with a notice: since when it is deprecated, when it will stop answering
 /// and which version to use instead. The dates and the link come from the versioning policies, the same ones that
 /// write v1's Deprecation and Sunset headers, so the document and the headers cannot disagree.
@@ -41,6 +42,10 @@ internal sealed class ApiDocumentInfoTransformer(IApiVersionDescriptionProvider 
                 Url = new Uri(ContactUrl),
             },
         };
+        // The generator lists the host that served the document (http://localhost:5245/). The committed contracts and
+        // the client generated from them must not depend on one machine, so there is no servers list: Swagger UI
+        // calls the host it was loaded from, and a client is given its base address (AddHttpClient).
+        document.Servers = [];
         return Task.CompletedTask;
     }
 

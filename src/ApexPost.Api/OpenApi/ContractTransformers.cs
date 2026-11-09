@@ -60,6 +60,8 @@ internal sealed class EnumSchemaTransformer : IOpenApiSchemaTransformer
 /// Numbers are documented as numbers. The web JSON defaults also read a number written as a string ("2.5"), so the
 /// generator types every number as "number or string" with a digits pattern. That leniency stays, but a client
 /// should send numbers, and a response never writes a number as a string.
+/// A C# decimal (the weight) is documented with format "decimal" instead of the generator's "double", so a generated
+/// client holds it as a decimal too and never rounds it through binary floating point.
 /// </summary>
 internal sealed class NumberSchemaTransformer : IOpenApiSchemaTransformer
 {
@@ -69,6 +71,10 @@ internal sealed class NumberSchemaTransformer : IOpenApiSchemaTransformer
         {
             schema.Type = type & ~JsonSchemaType.String;
             schema.Pattern = null;
+        }
+        if ((Nullable.GetUnderlyingType(context.JsonTypeInfo.Type) ?? context.JsonTypeInfo.Type) == typeof(decimal))
+        {
+            schema.Format = "decimal";
         }
         return Task.CompletedTask;
     }
