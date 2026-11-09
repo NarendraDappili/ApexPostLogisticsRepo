@@ -21,7 +21,8 @@ public static class ClientRegistration
 
     /// <summary>
     /// Sends a bearer token with every request: the API requires one with the Courier or Admin role. The function is
-    /// called per request, so it can read a token that is renewed while the program runs.
+    /// called per request, so it can read a token that is renewed while the program runs. A request to any other host
+    /// than this machine must use HTTPS, or it fails before the token is read.
     /// </summary>
     public static IHttpClientBuilder WithBearerToken(this IHttpClientBuilder builder, Func<IServiceProvider, CancellationToken, ValueTask<string?>> getToken)
     {

@@ -213,7 +213,7 @@ With single-field indexes, the first two queries used their index but still sort
 |---|---|
 | [`ApexPost.Api`](src/ApexPost.Api) | `Program.cs`. `Controllers/V1` and `Controllers/V2`: `ShipmentsController`, `ScansController`. `Contracts`: request DTOs and v1's response DTOs; `Contracts/V2`: v2's response DTOs. `Validation`: the custom rules. `Errors/ApiExceptionHandler`. `Routing`: the `{trackingNumber:trackingNumber}` constraint. `OpenApi` and `Versioning` (Part C). [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) |
 | Week 3 projects (additions only) | Domain: `TrackedShipment`, `TrackingScan`, `TrackingStatusRules`, `TrackingNumber`, `TrackingScanId`, `Recipient`. Application: `ShipmentTrackingService`, `ITrackedShipmentRepository`, `ITrackingQueries`. Infrastructure: their EF Core configuration, repository and queries, plus the migration `AddShipmentTracking` |
-| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 314 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles, the courierId rule and partner API keys |
+| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 327 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles, the courierId rule, partner API keys, HTTPS redirection and HSTS |
 
 **Run it:**
 
@@ -221,6 +221,8 @@ With single-field indexes, the first two queries used their index but still sort
 dotnet ef database update --project src/ApexPost.Infrastructure      # once: adds TrackedShipments and TrackingScans
 dotnet user-jwts create --project src/ApexPost.Api --role Admin      # once: creates the token signing key (and a token)
 dotnet run --project src/ApexPost.Api --launch-profile http          # http://localhost:5245
+# or, over HTTPS (trust the development certificate once: dotnet dev-certs https --trust)
+dotnet run --project src/ApexPost.Api --launch-profile https         # https://localhost:7245, and http://localhost:5245 redirects there
 ```
 
 It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web application. **Every API request needs a bearer token** ([SECURITY.md](SECURITY.md)): use the one `dotnet user-jwts` prints, or get one from the Development-only `POST /dev/token`.
@@ -359,7 +361,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1018 tests passing and a zero-warning build:
+**Results:** the latest run had 1031 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -369,7 +371,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Web integration | 110 |
 | Courier offline | 128 |
 | Courier app (Part D) | 16 |
-| API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key tests) | 314 |
+| API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 327 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 
@@ -416,7 +418,7 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - [DESIGN.md](DESIGN.md): architecture, layer diagrams, ER diagram, normalisation, data access patterns, user interface, SOLID mapping, all ADRs.
 - [OFFLINE-DESIGN.md](OFFLINE-DESIGN.md): the courier offline store: save locally first, conflict handling, one process per database.
 - [API-NOTES.md](API-NOTES.md): the tracking API: endpoints and status codes, validation, errors, the idempotent scan upload.
-- [SECURITY.md](SECURITY.md): the tracking API's security: JWT bearer authentication, development tokens, moving to a real identity provider.
+- [SECURITY.md](SECURITY.md): the tracking API's security: JWT bearer authentication and roles, partner API keys, HTTPS and HSTS, OAuth2 flows (Authorization Code with PKCE, Client Credentials), and moving to a real identity provider.
 - [VERSIONING.md](VERSIONING.md): the tracking API's versions: every change from v1 to v2, breaking or not and why, v1's deprecation and sunset plan, how to change the contract. The contracts are in [contracts/](contracts).
 - [PERFORMANCE.md](PERFORMANCE.md): execution plans, before/after measurements, index trade-offs, generated SQL.
 - [sql/README.md](sql/README.md): reporting queries, the atomic T-SQL sale, the blocking demo, deadlock avoidance.
