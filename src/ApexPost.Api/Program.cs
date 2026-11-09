@@ -49,11 +49,18 @@ app.UseHttpsRedirection();
 // A probe for the hosting platform, not part of the client contract, so it stays out of the OpenAPI document (and
 // out of the generated client). It still answers everyone.
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).ExcludeFromDescription();
-// The document is served in Development only. Not publishing it elsewhere is a choice about what to publish, not a
-// security control: every endpoint answers the same with or without it.
+// The document and the Swagger UI page are served in Development only. Not publishing them elsewhere is a choice
+// about what to publish, not a security control: every endpoint answers the same with or without them.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    // Swagger UI is only a viewer: it renders the built-in document above and generates nothing itself.
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "v1");
+        options.RoutePrefix = "swagger";
+        options.DocumentTitle = ApiDocumentInfoTransformer.Title;
+    });
 }
 app.MapControllers();
 app.Run();

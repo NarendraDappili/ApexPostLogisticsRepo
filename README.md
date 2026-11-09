@@ -244,6 +244,31 @@ It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web applicat
 
 **Why a new tracking model:** the Week 3 `Shipment` is a counter parcel. It has no recipient, status or scans, and a 30 kg limit. Tracked shipments are a new aggregate added by a migration that only creates tables, so the counter application is unchanged ([ADR 0025](docs/adr/0025-tracked-shipments-beside-counter-shipments.md)).
 
+## API documentation: OpenAPI and Swagger UI (Week 4, Part C)
+
+In Development the API describes itself and offers a page for trying it. `dotnet run --project src/ApexPost.Api --launch-profile http` opens that page in the browser.
+
+| URL | What it serves |
+|---|---|
+| `http://localhost:5245/openapi/v1.json` | The OpenAPI document |
+| `http://localhost:5245/swagger` | Swagger UI |
+
+**The OpenAPI specification, the built-in .NET generator and Swagger UI are three different things:**
+
+- **The OpenAPI specification is a format, not a tool.** It is a vendor-neutral standard for describing an HTTP API in JSON or YAML. A description covers:
+  - its paths, verbs and parameters;
+  - its request and response schemas;
+  - its status codes;
+  - who to contact.
+
+  A document written to it (ours is OpenAPI 3.1) is the API's contract. Anyone can read it, and tools can generate a client from it or compare two versions of it without seeing our code.
+- **The built-in .NET generator writes our document.** It is `Microsoft.AspNetCore.OpenApi`, with `AddOpenApi()` and `MapOpenApi()`. At run time it reads the controllers, routes, DTOs and attributes through ASP.NET Core's API explorer and produces `/openapi/v1.json`. A document transformer, [`ApiDocumentInfoTransformer`](src/ApexPost.Api/OpenApi/ApiDocumentInfoTransformer.cs), adds the title "ApexPost Logistics API", the description, the version and the team's contact (fictional). The generator produces JSON only; it has no user interface.
+- **Swagger UI only displays the document.** It is a static HTML and JavaScript page that reads an OpenAPI document and renders it as interactive documentation. Its "Try it out" button sends real requests to the API. We install only the viewer package, `Swashbuckle.AspNetCore.SwaggerUI`, and point it at the built-in document. Swashbuckle's own generator (SwaggerGen) is not installed, so there is one generator and one document; a test checks this.
+
+In short: the specification is the format, the generator writes our API's document in that format, and Swagger UI shows that document to people.
+
+**Development only.** Outside Development, both URLs return 404. This decides what we publish; it is not security. Hiding the description protects no endpoint, and every endpoint answers the same either way (authentication comes in Part D). `/health` is left out of the document because it is a probe for the hosting platform, not part of the client contract.
+
 ## Tests
 
 ```powershell
