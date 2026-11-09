@@ -160,7 +160,7 @@ Couriers record pickups and deliveries without a network. Each scan is saved fir
 |---|---|
 | [`ApexPost.Courier.Offline`](src/ApexPost.Courier.Offline) | `Domain`: `ShipmentScan`, `ScanId`, `IScanRepository`, `IShipmentUploader`, with no Couchbase types (a test enforces this). `Storage`: `CourierDatabase`, `CouchbaseScanRepository`, `ScanChangeMonitor`, the SQL++ queries. `Sync`: `OutboxService`, `FakeShipmentUploader`. |
 | [`ApexPost.Courier.Offline.Harness`](src/ApexPost.Courier.Offline.Harness) | The console test harness |
-| [`ApexPost.Courier.Offline.Tests`](tests/ApexPost.Courier.Offline.Tests) | 128 tests on real temporary databases; no SQL Server or network needed |
+| [`ApexPost.Courier.Offline.Tests`](tests/ApexPost.Courier.Offline.Tests) | 129 tests on real temporary databases; no SQL Server or network needed |
 
 **Run the harness** (no Couchbase Server, Sync Gateway or network needed):
 
@@ -197,7 +197,7 @@ Enums are stored by name. `scannedAtUtc` is fixed-width UTC text, so sorting the
 
 With single-field indexes, the first two queries used their index but still sorted the results in a temporary B-tree, and the courier count read every document (`SCAN _`). The third index is an addition to the two the brief requires; each index costs a little on every save.
 
-**Change listener.** `ScanChangeMonitor` registers a collection change listener. Each notification logs the changed document IDs and recounts the Pending scans (`Scan documents changed: scan::…; pending scans: 3`), and the harness header shows that live count. `CourierDatabase` keeps every listener token and removes them all in `Dispose()` before it closes the database.
+**Change listener.** `ScanChangeMonitor` registers a collection change listener. Each notification logs the changed document IDs and recounts the Pending scans (`Scan documents changed: scan::…; pending scans: 3`), and the harness header shows that live count. `CourierDatabase` keeps every listener token and removes them all in `Dispose()` before it closes the database, and closing waits for a notification in progress.
 
 **Outbox.** `OutboxService.SyncPendingAsync()` uploads the Pending scans, oldest first, in batches of 20 through `IShipmentUploader`. The server's answer marks each scan: accepted or duplicate becomes Synced, rejected becomes Failed with the reason. A failed upload leaves the remaining scans Pending, and runs never overlap. In Part D, the real API client replaces `FakeShipmentUploader`.
 
@@ -332,11 +332,11 @@ Start the API, then run `dotnet run --project src/ApexPost.Client.Consumer` (the
 
 **Screenshots:** [docs/screenshots/week4-partC/README.md](docs/screenshots/week4-partC/README.md) lists the ones to take: Swagger UI with v1 and v2, a 400, a 409, and a 201 with `Location`.
 
-**Development only.** Outside Development, both URLs return 404. This decides what we publish; it is not security. Hiding the description protects no endpoint, and every endpoint answers the same either way (authentication comes in Part D). `/health` is left out of the document because it is a probe for the hosting platform, not part of the client contract.
+**Development only.** Outside Development, both URLs return 404. This decides what we publish; it is not security. Hiding the description protects no endpoint, and every endpoint answers the same either way, and access is controlled by tokens and keys ([SECURITY.md](SECURITY.md)). `/health` is left out of the document because it is a probe for the hosting platform, not part of the client contract.
 
 ## Courier app (Week 4, Part D)
 
-[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. Pending scans are uploaded to the tracking API, by the courier (**Sync Now**) or by themselves when the network comes back.
+[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now** and **Out for Delivery**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. Pending scans are uploaded to the tracking API, by the courier (**Sync Now**) or by themselves when the network comes back.
 
 Start the API first (see [Tracking API](#tracking-api-week-4-part-b)), then the app:
 
@@ -361,6 +361,7 @@ The header then says `Uploads: on until 18:35 UTC`. The token lives in memory on
 - **Only the signed-in courier's scans** are sent; another courier's scans wait for that courier.
 - **Automatic sync:** `AutoSyncService` uploads Pending scans when the network comes back. `SystemNetworkStatus` watches `NetworkChange`, the console's counterpart of MAUI's `Connectivity.ConnectivityChanged`. It also syncs at start-up, and every minute while online, so the app finds the API again after an outage without the courier pressing anything. It does nothing without a network, a token, or anything Pending. Configure it with `Courier:AutoSync` (`Enabled`, `SettleDelay`, `Interval`).
 - **Live count:** the Part A change listener keeps the pending count in the header current as scans are marked.
+- **Out for Delivery:** scans have no such type, and the API takes a Delivered or Failed scan only from `OutForDelivery`. This action sends any Pending scans, then changes the status with `PATCH /api/v2/shipments/{trackingNumber}/status`, so a whole delivery works from the app. Unlike a scan it needs a connection. A Delivered scan recorded without it is refused and marked Failed with the reason; do Out for Delivery and record the scan again.
 
 The app keeps its database in its own folder, not the harness's, because an embedded database belongs to one process at a time. Log lines appear between the menu lines as they happen; set their level with `--Logging:LogLevel:Default=Warning`.
 
@@ -407,7 +408,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1131 tests passing and a zero-warning build:
+**Results:** the latest run had 1144 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -415,8 +416,8 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Application | 152 |
 | Infrastructure | 145 |
 | Web integration | 110 |
-| Courier offline | 128 |
-| Courier app (Part D) | 116 |
+| Courier offline | 129 |
+| Courier app (Part D) | 128 |
 | API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 327 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).

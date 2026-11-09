@@ -74,6 +74,7 @@ internal static class CourierAppHost
         builder.Services.AddSingleton<NewScanScreen>();
         builder.Services.AddSingleton<PendingScansScreen>();
         builder.Services.AddSingleton<SyncStatusScreen>();
+        builder.Services.AddSingleton<OutForDeliveryScreen>();
         builder.Services.AddSingleton<CourierApp>();
         configureServices?.Invoke(builder.Services);
 

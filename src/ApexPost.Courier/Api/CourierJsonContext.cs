@@ -12,6 +12,7 @@ namespace ApexPost.Courier.Api;
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web, UseStringEnumConverter = true)]
 [JsonSerializable(typeof(ScanUploadRequest))]
 [JsonSerializable(typeof(ScanUploadResult))]
+[JsonSerializable(typeof(UpdateStatusRequest))]
 [JsonSerializable(typeof(ApiProblem))]
 [JsonSerializable(typeof(DevelopmentTokenRequest))]
 [JsonSerializable(typeof(DevelopmentToken))]

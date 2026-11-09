@@ -36,7 +36,7 @@ public sealed class TokenHandlingTests : IDisposable
                 "3",                                                     // sync: 401
                 "", "",                                                  // back at Login: Enter keeps CR-001, Enter gets token #2
                 "3",                                                     // sync again: accepted
-                "6",
+                "7",
             ],
             services =>
             {
@@ -105,7 +105,7 @@ public sealed class TokenHandlingTests : IDisposable
         var output = new StringWriter();
         IHost? running = null;
         // The fourth answer is read just after a background sync got a 401 (simulated by ending the sign-in).
-        var input = new ScriptedReader(["CR-001", "", "3", "", "", "6"], beforeLine: 2, () =>
+        var input = new ScriptedReader(["CR-001", "", "3", "", "", "7"], beforeLine: 2, () =>
         {
             running!.Services.GetRequiredService<ITokenStore>().ClearAsync().AsTask().GetAwaiter().GetResult();
             running.Services.GetRequiredService<CourierSession>().EndSignIn("The server no longer accepts your sign-in. Please sign in again; your scans are saved on this device.");
@@ -126,7 +126,7 @@ public sealed class TokenHandlingTests : IDisposable
         var jwt = Jwt(new JsonObject { ["sub"] = "Kofi", ["role"] = "Courier", ["courierId"] = "CR-001", ["exp"] = InAnHour.ToUnixTimeSeconds() });
         string? token = null;
 
-        var output = await _app.RunAsync(["CR-001", jwt, "6"], services => token = services.GetRequiredService<ITokenStore>().GetAsync().AsTask().Result);
+        var output = await _app.RunAsync(["CR-001", jwt, "7"], services => token = services.GetRequiredService<ITokenStore>().GetAsync().AsTask().Result);
 
         Assert.Contains($"Signed in as CR-001 with your token. Scans upload to the server (sign-in valid until {ConsoleScreen.Time(DateTimeOffset.FromUnixTimeSeconds(InAnHour.ToUnixTimeSeconds()))} UTC).", output, StringComparison.Ordinal);
         Assert.Contains($"Uploads: on until {InAnHour.UtcDateTime:HH:mm} UTC", output, StringComparison.Ordinal);
@@ -141,7 +141,7 @@ public sealed class TokenHandlingTests : IDisposable
     {
         var otherCourier = Jwt(new JsonObject { ["role"] = "Courier", ["courierId"] = "CR-002", ["exp"] = InAnHour.ToUnixTimeSeconds() });
 
-        var output = await _app.RunAsync(["CR-001", otherCourier, "", "6"]);
+        var output = await _app.RunAsync(["CR-001", otherCourier, "", "7"]);
 
         Assert.Contains("That token belongs to courier CR-002, not CR-001.", output, StringComparison.Ordinal);
         Assert.Contains("Signed in as CR-001. Scans upload to the server", output, StringComparison.Ordinal);
@@ -190,7 +190,7 @@ public sealed class TokenHandlingTests : IDisposable
         var output = new StringWriter();
         string[] everything = ["--Logging:LogLevel:Default=Trace", "--Logging:LogLevel:Microsoft=Trace", "--Logging:LogLevel:System=Trace", "--Logging:LogLevel:System.Net.Http.HttpClient=Trace", "--Logging:LogLevel:Polly=Trace"];
         _app.Api.RevokedTokens.Add("fake-token-CR-001#1");
-        using (var host = _app.CreateHost(new StringReader("CR-001\n\n1\nAPX-30000001\n1\nRiverside Depot\nSecret note\n\n3\n\n\n3\n6"), output, everything))
+        using (var host = _app.CreateHost(new StringReader("CR-001\n\n1\nAPX-30000001\n1\nRiverside Depot\nSecret note\n\n3\n\n\n3\n7"), output, everything))
         {
             await host.Services.GetRequiredService<CourierApp>().RunAsync();
         }
