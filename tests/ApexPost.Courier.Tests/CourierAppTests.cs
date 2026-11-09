@@ -135,7 +135,7 @@ public sealed class CourierAppTests : IDisposable
     public async Task The_logging_configuration_decides_which_log_lines_are_shown()
     {
         var output = new StringWriter();
-        using (var host = _app.CreateHost(new StringReader("CR-001\n1\nAPX-30000001\n1\nDepot\n\n\n6"), output, "--Logging:LogLevel:Default=Warning"))
+        using (var host = _app.CreateHost(new StringReader("CR-001\n1\nAPX-30000001\n1\nDepot\n\n\n6"), output, ["--Logging:LogLevel:Default=Warning"]))
         {
             await host.Services.GetRequiredService<CourierApp>().RunAsync();
         }

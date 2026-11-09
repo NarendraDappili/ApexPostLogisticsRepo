@@ -186,6 +186,7 @@ Swagger UI keeps the token in the page only and forgets it on reload. Persisting
 ## Clients
 
 - **[`ApexPost.Client`](src/ApexPost.Client):** `AddApexPostClient(baseAddress).WithBearerToken(...)` adds a handler that sets `Authorization: Bearer` on every request. The token is fetched per request, so a renewed token takes effect at once. The handler never logs or stores it, and refuses to send it over plain HTTP to any host but this machine.
+- **The courier app ([`ApexPost.Courier`](src/ApexPost.Courier)):** `AuthHeaderHandler` adds the courier's token to every request of its `ApexApiClient`. The token lives in `InMemoryTokenStore` and nowhere else: not in a file, a setting or a log. It plays the part of MAUI's SecureStorage, which a console program does not have, so the courier signs in again after the app closes. The app refuses to start with a plain `http://` API address for any machine but this one, and the handler refuses to send the token over one.
 - **The console consumer:** uses `--ApexPostApi:AccessToken=<token>` (or the environment variable `ApexPostApi__AccessToken`). Without one, it asks a Development API's `/dev/token` and keeps the token in memory only.
 - **[`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http):** gets a token from `/dev/token` in its first request and sends it with every other request. The partner requests read the key from the environment variable `APEXPOST_PARTNER_API_KEY`, so it is never written into the file.
 

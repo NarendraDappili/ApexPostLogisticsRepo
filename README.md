@@ -345,6 +345,18 @@ dotnet run --project src/ApexPost.Courier -- --Courier:DataDirectory=.\courier-a
 
 The app keeps its database in its own folder, not the harness's, because an embedded database belongs to one process at a time. Log lines appear between the menu lines as they happen; set their level with `--Logging:LogLevel:Default=Warning`.
 
+**Talking to the API.** The app calls the v2 API through `ApexApiClient`, a typed client registered with `AddHttpClient<ApexApiClient>()`. `IHttpClientFactory` makes and recycles its `HttpClient`, and the app never creates one itself; a test checks the source for that. `AuthHeaderHandler`, a `DelegatingHandler` in the client's pipeline, adds the courier's token from the token store to every request. The token store keeps it in memory only, never in a file or a log ([SECURITY.md](SECURITY.md#clients)). The request and response bodies are the app's own records, serialised by a source-generated `JsonSerializerContext`, and a test compares them with `contracts/v2.json`.
+
+The API's address is `ApexPostApi:BaseAddress`:
+
+| Where | Address |
+|---|---|
+| `appsettings.json` (the default) | `https://localhost:7245/`: the API's `https` launch profile on this machine |
+| Launch profile "API over HTTP" | `http://localhost:5245/`: the API's `http` profile |
+| Anything else | `--ApexPostApi:BaseAddress=<url>`, or the environment variable `ApexPostApi__BaseAddress` |
+
+These play the part of the per-platform addresses a phone app would have. The app refuses to start with a plain `http://` address for any machine but this one, because every request carries the courier's token. The upload itself still goes to the stand-in server until the sync step connects them.
+
 ## Tests
 
 ```powershell
@@ -361,7 +373,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1031 tests passing and a zero-warning build:
+**Results:** the latest run had 1047 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -370,7 +382,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Infrastructure | 145 |
 | Web integration | 110 |
 | Courier offline | 128 |
-| Courier app (Part D) | 16 |
+| Courier app (Part D) | 32 |
 | API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 327 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).

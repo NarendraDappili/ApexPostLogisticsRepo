@@ -24,8 +24,8 @@ internal sealed class CourierAppRun : IDisposable
     public int ExitCode { get; private set; }
 
     /// <summary>Builds a host on this run's folder; the caller disposes it.</summary>
-    public IHost CreateHost(TextReader input, TextWriter output, params string[] settings) =>
-        CourierAppHost.Create([$"--Courier:DataDirectory={DataDirectory}", .. settings], input, output);
+    public IHost CreateHost(TextReader input, TextWriter output, string[]? settings = null, Action<IServiceCollection>? configureServices = null) =>
+        CourierAppHost.Create([$"--Courier:DataDirectory={DataDirectory}", .. settings ?? []], input, output, configureServices);
 
     /// <summary>Runs one session with the given answers, then gives <paramref name="inspect"/> the session's services.</summary>
     public async Task<string> RunAsync(string[] answers, Action<IServiceProvider>? inspect = null)

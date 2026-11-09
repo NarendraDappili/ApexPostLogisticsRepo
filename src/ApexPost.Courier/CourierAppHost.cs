@@ -1,3 +1,4 @@
+using ApexPost.Courier.Api;
 using ApexPost.Courier.Offline.Domain;
 using ApexPost.Courier.Offline.Storage;
 using ApexPost.Courier.Offline.Sync;
@@ -16,7 +17,8 @@ namespace ApexPost.Courier;
 /// </summary>
 internal static class CourierAppHost
 {
-    public static IHost Create(string[] args, TextReader input, TextWriter output)
+    /// <param name="configureServices">For tests: runs after the app's own registrations, for example to replace the network.</param>
+    public static IHost Create(string[] args, TextReader input, TextWriter output, Action<IServiceCollection>? configureServices = null)
     {
         // appsettings.json sits next to the program; read it from there whatever directory the program is started from.
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { Args = args, ContentRootPath = AppContext.BaseDirectory });
@@ -48,6 +50,15 @@ internal static class CourierAppHost
         builder.Services.AddSingleton<SyncHistory>();
         builder.Services.AddSingleton<SyncService>();
 
+        // The v2 API: a typed client from IHttpClientFactory, its address from configuration, the courier's token added
+        // by AuthHeaderHandler from the token store.
+        builder.Services.AddOptions<ApexApiOptions>().Bind(builder.Configuration.GetSection(ApexApiOptions.Section));
+        builder.Services.AddSingleton<IValidateOptions<ApexApiOptions>, ApexApiOptionsValidator>();
+        builder.Services.AddSingleton<ITokenStore, InMemoryTokenStore>();
+        builder.Services.AddTransient<AuthHeaderHandler>();
+        builder.Services.AddHttpClient<ApexApiClient>((services, client) => client.BaseAddress = services.GetRequiredService<IOptions<ApexApiOptions>>().Value.Root)
+            .AddHttpMessageHandler<AuthHeaderHandler>();
+
         builder.Services.AddSingleton<CourierSession>();
         builder.Services.AddSingleton(services => new ConsoleScreen(input, screenOutput, services.GetRequiredService<ScanChangeMonitor>()));
         builder.Services.AddSingleton<LoginScreen>();
@@ -55,7 +66,11 @@ internal static class CourierAppHost
         builder.Services.AddSingleton<PendingScansScreen>();
         builder.Services.AddSingleton<SyncStatusScreen>();
         builder.Services.AddSingleton<CourierApp>();
+        configureServices?.Invoke(builder.Services);
 
-        return builder.Build();
+        var host = builder.Build();
+        // Check the API address now, so a wrong one stops the start with its reason, not the first sync.
+        _ = host.Services.GetRequiredService<IOptions<ApexApiOptions>>().Value;
+        return host;
     }
 }

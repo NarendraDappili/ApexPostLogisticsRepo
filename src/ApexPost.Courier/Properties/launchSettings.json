@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "API over HTTPS (localhost:7245)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ApexPostApi__BaseAddress": "https://localhost:7245/"
+      }
+    },
+    "API over HTTP (localhost:5245)": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ApexPostApi__BaseAddress": "http://localhost:5245/"
+      }
+    }
+  }
+}
