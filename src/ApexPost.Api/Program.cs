@@ -1,5 +1,6 @@
 using ApexPost.Api.Composition;
 using ApexPost.Api.Errors;
+using ApexPost.Api.OpenApi;
 using ApexPost.Api.Routing;
 using ApexPost.Api.Validation;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Metadata;
@@ -36,6 +37,8 @@ builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 // {trackingNumber:trackingNumber} in a route template: anything that is not APX-######## never reaches an action.
 builder.Services.Configure<RouteOptions>(options => options.SetParameterPolicy<TrackingNumberRouteConstraint>(TrackingNumberRouteConstraint.Name));
 builder.Services.AddApexPostPersistence(connectionString);
+// The built-in generator describes the controllers as OpenAPI document "v1" (/openapi/v1.json).
+builder.Services.AddOpenApi(options => options.AddDocumentTransformer<ApiDocumentInfoTransformer>());
 
 var app = builder.Build();
 // First, so an exception anywhere later in the pipeline becomes ProblemDetails through ApiExceptionHandler.
@@ -43,7 +46,15 @@ app.UseExceptionHandler();
 // Errors that end without a body (no route matches: 404; wrong method: 405) get a ProblemDetails body as well.
 app.UseStatusCodePages();
 app.UseHttpsRedirection();
-app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }));
+// A probe for the hosting platform, not part of the client contract, so it stays out of the OpenAPI document (and
+// out of the generated client). It still answers everyone.
+app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).ExcludeFromDescription();
+// The document is served in Development only. Not publishing it elsewhere is a choice about what to publish, not a
+// security control: every endpoint answers the same with or without it.
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+}
 app.MapControllers();
 app.Run();
 
