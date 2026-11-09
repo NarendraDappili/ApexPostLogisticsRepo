@@ -7,10 +7,11 @@ dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build
 ```
 
-The latest run had **830 tests passing, 0 failing, 0 skipped**, with a zero-warning build:
+The latest run had **925 tests passing, 0 failing, 0 skipped**, with a zero-warning build:
 - 428 for Week 3;
 - 128 for the Week 4 courier offline store (Part A);
-- 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model.
+- 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model;
+- 95 for Part C, all in the API project: the OpenAPI documents, Swagger UI, versioning, the committed contracts and the generated client.
 
 The Week 3 error-handling tests also pass with `DOTNET_TieredCompilation=0` (55 tests).
 
@@ -74,16 +75,22 @@ The other five runs are the pushes to `master` that merged #22–#26.
 | `ApexPost.Infrastructure.Tests` | 145 (128 Week 3, 17 tracking) | SQL Server (except the model, migration, simulation, design-time factory and password-hasher tests) |
 | `ApexPost.Web.IntegrationTests` | 110 | SQL Server (except the CSV, display and demo-seed guard tests) |
 | `ApexPost.Courier.Offline.Tests` | 128 | No: each test opens its own Couchbase Lite database in a temporary folder |
-| `ApexPost.Api.Tests` | 142 | SQL Server for the endpoint tests (one disposable database per run). The composition, routing, error-handling and custom-rule tests use a connection string that is never opened. |
+| `ApexPost.Api.Tests` | 237 (142 Part B, 95 Part C) | SQL Server for the endpoint, versioning, "Try it out" and generated-client tests (one disposable database per run). The composition, routing, error-handling, custom-rule, OpenAPI, Swagger UI and contract tests use a connection string that is never opened. |
 
 The final-review round added 136 tests:
 - 117 in new test files;
 - 15 audit-schema tests appended to `ApexPostModelTests`;
 - 4 branch-check tests appended to `AuthenticationTests`.
 
-No existing test was changed or removed: since `1b2a090`, `git diff --numstat -- tests` shows additions only. The one exception is in Week 4 Part B: `DesignTimeFactoryTests` checks the name of the newest migration, which is now `AddShipmentTracking` rather than `AddAuditTrail`.
+No existing Week 3 test was changed or removed: since `1b2a090`, `git diff --numstat -- tests` shows additions only. The one exception is in Week 4 Part B: `DesignTimeFactoryTests` checks the name of the newest migration, which is now `AddShipmentTracking` rather than `AddAuditTrail`.
 
-Each test project references only the production project it tests. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
+Week 4 Part C changed the Part B API tests in two ways, without weakening any assertion:
+- they call the API at its versioned URLs (`/api/v1/…` instead of `/api/shipments…`), which shows the Part B contract unchanged at its new address;
+- `ControllerArchitectureTests` and the OpenAPI tests now cover both versions.
+
+A separate test (`VersioningTests`) keeps the old unversioned URLs working.
+
+Each test project references only the production project it tests. The exception is `ApexPost.Api.Tests`, which also references `ApexPost.Client` and its console consumer, to run them against the real API. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
 
 ## The test database
 
@@ -280,7 +287,21 @@ These cover Week 4 Part A. Every test runs on a real Couchbase Lite database in 
 | Errors (`ErrorHandlingTests`) | Production and Staging: **a 500 has no message, type or stack trace**, but the server log has the exception. Development: the 500 carries them. A library `ArgumentException` is 500, not 400. Unknown route, malformed tracking number, 405 and 415 are all ProblemDetails. |
 | Scan upload (`ScanUploadEndpointTests`) | Accepted in scan-time order; re-sent → duplicates only; accepted, skipped and rejected (with reason) in one upload; a rejected scan accepted once the shipment is ready. **Parallel identical uploads store each scan once.** A lost race is a 409 that says to send again. Future and malformed scans are 400s naming the scan. |
 
-[`ApexPost.Api.http`](../src/ApexPost.Api/ApexPost.Api.http) was also run, request by request, against the API on a freshly migrated database: all 27 requests returned the status code in their titles.
+### OpenAPI, versioning, contracts and client tests (Week 4, Part C)
+
+**API (95 more, `ApexPost.Api.Tests`).** Everything in the OpenAPI documents is checked for **both versions**. Each check was confirmed by a mutation: the code or the document was changed for a moment, the test failed, and the change was undone.
+
+| Area | Tests show |
+|---|---|
+| Documents (`OpenApiDocumentTests`) | One OpenAPI 3.1 document per API version and no other (`/openapi/v3.json` is a 404). Each has its title, version (1.0, 2.0) and contact, and exactly its version's 8 operations. **v1 opens with its deprecation notice and every v1 operation is `deprecated`**; v2 has neither. The documents describe DTOs, never entities, and are not served outside Development. |
+| Metadata (`OpenApiMetadataTests`) | For each operation in each version: its **operation ID, tag, summary and exact status codes**. Every response is described, and every error is `application/problem+json` (`ValidationProblemDetails` for 400). The 201 documents `Location`. Every parameter and field is described; every request field has an example. Enums are named in requests (both versions), numbered in v1 responses and named in v2's. Required request fields are never null; nullable response fields stay nullable. No number is typed as a string. v2 nests the recipient and `latestScan`. |
+| "Try it out" (`TryItOutTests`) | For each version, every operation is sent a body built only from the document's own examples, on a real database. Each answer must have a **documented status**, and every success body must have **exactly the documented fields** (including a nested `latestScan`). |
+| Swagger UI (`SwaggerUiTests`) | `/swagger` with the API's title, in Development only. The dropdown lists **"v2" then "v1 (deprecated)"**, and each entry loads its document. Swashbuckle's generator is not installed, so there is only one generator. |
+| Versioning (`VersioningTests`, `ControllerArchitectureTests`) | v2's shape: a 201 with a v2 `Location`, a nested recipient, names, `latestScan` (the latest by scan time). Both versions show the same shipment. Every response reports the supported and deprecated versions. **v1 carries `Deprecation`, `Sunset` and `Link` with the policy's dates**; v2 does not. The Part B URLs answer as v1, query string included. Unknown versions are 404s. Each controller serves one version, and v1 and v2 have the same routes, operation IDs and requests. v2 never returns a v1 DTO. |
+| Contracts (`ContractTests`) | `contracts/v1.json` and `contracts/v2.json` **equal what the API serves**; even a changed XML comment fails the test. The two contracts share their requests and operations and differ in their responses. |
+| Generated client (`GeneratedClientTests`, `ClientGenerationTests`) | The console consumer's tour on a real database: create, fetch, two scans, a 404 handled by the generated exception. 404, 400 and 409 arrive as `ApexPostApiException<ProblemDetails>` or `<ValidationProblemDetails>`. Enums, query parameters, nested objects and decimal weights make the round trip. The client has exactly one method per operation in `contracts/v2.json`, says it was generated by the pinned NSwag version, and is registered by `AddApexPostClient` with `AddHttpClient`. |
+
+[`ApexPost.Api.http`](../src/ApexPost.Api/ApexPost.Api.http) was also run, request by request, against the API on a freshly migrated database. All 50 requests (both versions, the documents, an unknown version and the unversioned alias) returned the status code in their titles. The consumer was also run as a real process against a real API: exit code 0, and exit code 1 with a one-line message when the API is down.
 
 ## Not covered
 
@@ -289,4 +310,6 @@ These cover Week 4 Part A. Every test runs on a real Couchbase Lite database in 
 - **Two real processes on one courier database.** The single-process lock was checked by hand, by starting two harnesses on the same folder (the second exits with code 2). The automated tests check the same lock within one process.
 - **The upload race is real, so its interleaving varies.** The parallel-upload tests accept 200 or 409 for each request and always check that no scan was stored twice. In 30 measured rounds, every round produced exactly one 200 and one 409.
 - **The `.http` file is not run in CI.** It was run by hand against a fresh database; the endpoint tests cover the same requests.
+- **Client regeneration is not run in CI.** CI does not run NSwag. Instead, `ClientGenerationTests` checks that the committed client has one method per operation in the committed contract and comes from the pinned NSwag version. Regenerating with the same contract and tool was checked by hand to give a byte-identical file.
+- **Swagger UI's page is checked through its configuration, not in a browser.** The tests read the dropdown configuration and load each document. The "Try it out" behaviour is reproduced over HTTP in `TryItOutTests`.
 - **No proxy or multi-host deployment test.** The concurrency tests use several contexts and connections against one SQL Server. That reproduces the conditions of several web servers, but not an actual farm.
