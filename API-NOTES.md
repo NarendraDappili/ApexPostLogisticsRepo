@@ -7,7 +7,9 @@ dotnet ef database update --project src/ApexPost.Infrastructure      # adds the 
 dotnet run --project src/ApexPost.Api --launch-profile http          # http://localhost:5245 (https profile: https://localhost:7245)
 ```
 
-The API reads the same `ConnectionStrings:ApexPostDb` user-secret as ApexPost.Web, so no extra setup is needed. In Development, the OpenAPI documents are at `/openapi/v1.json` and `/openapi/v2.json`, and Swagger UI is at `/swagger`. Part D adds authentication.
+The API reads the same `ConnectionStrings:ApexPostDb` user-secret as ApexPost.Web. In Development, the OpenAPI documents are at `/openapi/v1.json` and `/openapi/v2.json`, and Swagger UI is at `/swagger`.
+
+**Every endpoint needs a JWT bearer token** (`Authorization: Bearer <token>`). Without a valid one the answer is a 401 ProblemDetails. In Development, get a token from `dotnet user-jwts create --project src/ApexPost.Api` or from `POST /dev/token`. [SECURITY.md](SECURITY.md) has the details.
 
 ## Versions
 
@@ -47,6 +49,7 @@ Any endpoint can also return **500** for a failure that is not the caller's (see
 | 201 Created | A shipment was created; `Location` gives its URL (`CreatedAtAction`) |
 | 204 No Content | A shipment was deleted |
 | 400 Bad Request | Validation failure: `ValidationProblemDetails`, with errors keyed by the JSON field |
+| 401 Unauthorized | No bearer token, or one that is expired or not valid for this API. `WWW-Authenticate` says which |
 | 404 Not Found | Unknown tracking number, malformed tracking number, unknown route, unknown API version |
 | 405 Method Not Allowed | A known route with a verb it does not support, for example `DELETE /api/v2/shipments` |
 | 409 Conflict | Duplicate tracking number; a status move that is not allowed; deleting a shipment that is not Created; changing a finished shipment; a concurrent change won |

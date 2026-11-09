@@ -63,6 +63,14 @@ None of these changes the bytes of a v1 response, so they are not breaking. v1 s
 | Responses add the `api-supported-versions`, `api-deprecated-versions`, `Deprecation`, `Sunset` and `Link` headers | Non-breaking | They are new headers; the bodies are unchanged. |
 | The OpenAPI document was added and then made more precise (Part C):<br>• descriptions and examples;<br>• every status code;<br>• enums named in requests;<br>• numbers typed as numbers, with the weight as a decimal;<br>• required request fields not nullable;<br>• no host-specific `servers` list;<br>• operations marked deprecated | Non-breaking | Documentation only: it now describes what the API already did. |
 
+### Security changes in every version (Part D)
+
+These apply to **v1 and v2 alike**, and to the unversioned Part B URLs. Security is not versioned: an old version that kept accepting anonymous callers would be the way around every check.
+
+| Change | Breaking? | Why |
+|---|---|---|
+| Every endpoint requires a JWT bearer token. Without a valid one the answer is **401** ProblemDetails with `WWW-Authenticate`. Both documents declare the `Bearer` scheme and a 401 on every operation ([SECURITY.md](SECURITY.md)) | **Breaking**, made without a new version | A client that sent no token now gets 401. It is not versioned because anonymous access was never meant to last: until now the README said to run the API only locally, and that authentication would follow in Part D. |
+
 ## Deprecation and sunset plan for v1
 
 | When | What happens |

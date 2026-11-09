@@ -6,15 +6,43 @@
 #
 # v2 is the current version. v1 is deprecated: each successful v1 response carries Deprecation, Sunset and Link
 # headers (see VERSIONING.md). Every response reports api-supported-versions: 2.0 and api-deprecated-versions: 1.0.
+#
+# Every API request needs a bearer token. The first request gets a one-hour Courier and Admin token from the
+# Development-only POST /dev/token; the requests after it send it as {{token}}. With dotnet user-jwts instead, replace
+# {{token}}'s definition with the token it prints (SECURITY.md).
 
 @host = http://localhost:5245
 @v2Number = APX-24200001
 @v2Deletable = APX-24200002
 @v1Number = APX-24100001
 @v1Deletable = APX-24100002
+# The token from the login request below (# @name login).
+@token = {{login.response.body.$.accessToken}}
 
-### Health check -> 200
+### Health check, no token needed -> 200
 GET {{host}}/health
+
+### Get a development token (Development only): roles Courier and Admin, courier CR-001 -> 200
+# @name login
+POST {{host}}/dev/token
+Content-Type: application/json
+
+{ "name": "Kofi Boateng", "roles": ["Courier", "Admin"], "courierId": "CR-001" }
+
+# ----------------------------------------------------------------------------------------------------------------
+# Authentication
+# ----------------------------------------------------------------------------------------------------------------
+
+### No token -> 401 ProblemDetails, WWW-Authenticate: Bearer
+GET {{host}}/api/v2/shipments
+
+### An invalid token -> 401, WWW-Authenticate: Bearer error="invalid_token"
+GET {{host}}/api/v2/shipments
+Authorization: Bearer not-a-valid-token
+
+### A valid token -> 200
+GET {{host}}/api/v2/shipments
+Authorization: Bearer {{token}}
 
 # --------------------------------------------------------------------------------------------------------------
 # Documents and versions
@@ -28,6 +56,7 @@ GET {{host}}/openapi/v1.json
 
 ### A version that does not exist -> 404 ProblemDetails
 GET {{host}}/api/v3/shipments
+Authorization: Bearer {{token}}
 
 # --------------------------------------------------------------------------------------------------------------
 # Version 2 (current): nested recipient, latestScan, enums by name
@@ -35,6 +64,7 @@ GET {{host}}/api/v3/shipments
 
 ### v2 1. POST /api/v2/shipments: create -> 201 Created, Location: /api/v2/shipments/APX-24200001, latestScan null
 POST {{host}}/api/v2/shipments
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -48,6 +78,7 @@ Content-Type: application/json
 
 ### v2 1. POST /api/v2/shipments: the same tracking number again -> 409 Conflict
 POST {{host}}/api/v2/shipments
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -61,6 +92,7 @@ Content-Type: application/json
 
 ### v2 1. POST /api/v2/shipments: invalid values -> 400 ValidationProblemDetails (tracking number, phone, weight, missing city)
 POST {{host}}/api/v2/shipments
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -73,24 +105,30 @@ Content-Type: application/json
 
 ### v2 1. POST /api/v2/shipments: not JSON -> 415 Unsupported Media Type
 POST {{host}}/api/v2/shipments
+Authorization: Bearer {{token}}
 Content-Type: text/plain
 
 trackingNumber=APX-24200009
 
 ### v2 2. GET /api/v2/shipments/{trackingNumber} -> 200 OK, "status": "Created", "recipient": { ... }
 GET {{host}}/api/v2/shipments/{{v2Number}}
+Authorization: Bearer {{token}}
 
 ### v2 2. GET /api/v2/shipments/{trackingNumber}: unknown -> 404 Not Found
 GET {{host}}/api/v2/shipments/APX-99999999
+Authorization: Bearer {{token}}
 
 ### v2 3. GET /api/v2/shipments: page 1, 20 per page, filtered by status and city -> 200 OK
 GET {{host}}/api/v2/shipments?page=1&pageSize=20&status=Created&city=Portside
+Authorization: Bearer {{token}}
 
 ### v2 3. GET /api/v2/shipments: pageSize above 50 -> 400
 GET {{host}}/api/v2/shipments?pageSize=51
+Authorization: Bearer {{token}}
 
 ### v2 4. PUT /api/v2/shipments/{trackingNumber}: replace the editable details -> 200 OK
 PUT {{host}}/api/v2/shipments/{{v2Number}}
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -103,6 +141,7 @@ Content-Type: application/json
 
 ### v2 4. PUT /api/v2/shipments/{trackingNumber}: invalid phone and weight -> 400
 PUT {{host}}/api/v2/shipments/{{v2Number}}
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -115,6 +154,7 @@ Content-Type: application/json
 
 ### v2 4. PUT /api/v2/shipments/{trackingNumber}: unknown -> 404
 PUT {{host}}/api/v2/shipments/APX-99999999
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -127,24 +167,28 @@ Content-Type: application/json
 
 ### v2 5. PATCH /api/v2/shipments/{trackingNumber}/status: Created -> PickedUp -> 200 OK
 PATCH {{host}}/api/v2/shipments/{{v2Number}}/status
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "status": "PickedUp" }
 
 ### v2 5. PATCH /api/v2/shipments/{trackingNumber}/status: skipping to Delivered -> 409 Conflict (names the allowed next status)
 PATCH {{host}}/api/v2/shipments/{{v2Number}}/status
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "status": "Delivered" }
 
 ### v2 5. PATCH /api/v2/shipments/{trackingNumber}/status: unknown status -> 400
 PATCH {{host}}/api/v2/shipments/{{v2Number}}/status
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "status": "Lost" }
 
 ### v2 6. POST /api/v2/shipments/{trackingNumber}/scans: offline scans -> 200 OK, accepted 2, rejected 1, "shipmentStatus": "InTransit"
 POST {{host}}/api/v2/shipments/{{v2Number}}/scans
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -157,6 +201,7 @@ Content-Type: application/json
 
 ### v2 6. POST /api/v2/shipments/{trackingNumber}/scans: the same upload again -> 200 OK, accepted 0, duplicatesSkipped 2 (idempotent)
 POST {{host}}/api/v2/shipments/{{v2Number}}/scans
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -169,6 +214,7 @@ Content-Type: application/json
 
 ### v2 6. POST /api/v2/shipments/{trackingNumber}/scans: a scan time in the future -> 400 (custom rule, key scans[0].scannedAtUtc)
 POST {{host}}/api/v2/shipments/{{v2Number}}/scans
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -179,6 +225,7 @@ Content-Type: application/json
 
 ### v2 6. POST /api/v2/shipments/{trackingNumber}/scans: unknown shipment -> 404
 POST {{host}}/api/v2/shipments/APX-99999999/scans
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -189,18 +236,23 @@ Content-Type: application/json
 
 ### v2 2. GET /api/v2/shipments/{trackingNumber}: after the scans -> 200 OK, "latestScan": { "scanType": "InTransit", ... }
 GET {{host}}/api/v2/shipments/{{v2Number}}
+Authorization: Bearer {{token}}
 
 ### v2 7. GET /api/v2/shipments/{trackingNumber}/scans: history, oldest first, scan types by name -> 200 OK
 GET {{host}}/api/v2/shipments/{{v2Number}}/scans
+Authorization: Bearer {{token}}
 
 ### v2 7. GET /api/v2/shipments/{trackingNumber}/scans: unknown shipment -> 404
 GET {{host}}/api/v2/shipments/APX-99999999/scans
+Authorization: Bearer {{token}}
 
 ### v2 8. DELETE /api/v2/shipments/{trackingNumber}: already InTransit -> 409 Conflict
 DELETE {{host}}/api/v2/shipments/{{v2Number}}
+Authorization: Bearer {{token}}
 
 ### v2 8. DELETE: create a second shipment to delete -> 201
 POST {{host}}/api/v2/shipments
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -214,9 +266,11 @@ Content-Type: application/json
 
 ### v2 8. DELETE /api/v2/shipments/{trackingNumber}: still Created -> 204 No Content
 DELETE {{host}}/api/v2/shipments/{{v2Deletable}}
+Authorization: Bearer {{token}}
 
 ### v2 8. DELETE /api/v2/shipments/{trackingNumber}: already deleted -> 404
 DELETE {{host}}/api/v2/shipments/{{v2Deletable}}
+Authorization: Bearer {{token}}
 
 # --------------------------------------------------------------------------------------------------------------
 # Version 1 (deprecated): the Part B contract. Flat recipient fields, enums as numbers.
@@ -225,6 +279,7 @@ DELETE {{host}}/api/v2/shipments/{{v2Deletable}}
 
 ### v1 1. POST /api/v1/shipments: create -> 201 Created, Location: /api/v1/shipments/APX-24100001, "status": 0
 POST {{host}}/api/v1/shipments
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -238,6 +293,7 @@ Content-Type: application/json
 
 ### v1 1. POST /api/v1/shipments: the same tracking number again -> 409 Conflict
 POST {{host}}/api/v1/shipments
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -251,30 +307,37 @@ Content-Type: application/json
 
 ### v1 1. POST /api/v1/shipments: missing fields -> 400 ValidationProblemDetails
 POST {{host}}/api/v1/shipments
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "trackingNumber": "{{v1Number}}" }
 
 ### v1 1. POST /api/v1/shipments: not JSON -> 415 Unsupported Media Type
 POST {{host}}/api/v1/shipments
+Authorization: Bearer {{token}}
 Content-Type: text/plain
 
 trackingNumber=APX-24100009
 
 ### v1 2. GET /api/v1/shipments/{trackingNumber} -> 200 OK, flat recipient fields, "status": 0
 GET {{host}}/api/v1/shipments/{{v1Number}}
+Authorization: Bearer {{token}}
 
 ### v1 2. GET /api/v1/shipments/{trackingNumber}: not a tracking number -> 404 (the route constraint never matches)
 GET {{host}}/api/v1/shipments/12345
+Authorization: Bearer {{token}}
 
 ### v1 3. GET /api/v1/shipments: filtered by status number and city -> 200 OK
 GET {{host}}/api/v1/shipments?status=0&city=Portside
+Authorization: Bearer {{token}}
 
 ### v1 3. GET /api/v1/shipments: page 0 -> 400
 GET {{host}}/api/v1/shipments?page=0
+Authorization: Bearer {{token}}
 
 ### v1 4. PUT /api/v1/shipments/{trackingNumber}: replace the editable details -> 200 OK
 PUT {{host}}/api/v1/shipments/{{v1Number}}
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -287,6 +350,7 @@ Content-Type: application/json
 
 ### v1 4. PUT /api/v1/shipments/{trackingNumber}: unknown -> 404
 PUT {{host}}/api/v1/shipments/APX-99999999
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -299,18 +363,21 @@ Content-Type: application/json
 
 ### v1 5. PATCH /api/v1/shipments/{trackingNumber}/status: by number, 1 = PickedUp -> 200 OK
 PATCH {{host}}/api/v1/shipments/{{v1Number}}/status
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "status": 1 }
 
 ### v1 5. PATCH /api/v1/shipments/{trackingNumber}/status: back to Created -> 409 Conflict
 PATCH {{host}}/api/v1/shipments/{{v1Number}}/status
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "status": "Created" }
 
 ### v1 6. POST /api/v1/shipments/{trackingNumber}/scans: offline scans -> 200 OK, accepted 1, "shipmentStatus": 2
 POST {{host}}/api/v1/shipments/{{v1Number}}/scans
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -321,6 +388,7 @@ Content-Type: application/json
 
 ### v1 6. POST /api/v1/shipments/{trackingNumber}/scans: the same scan ID twice in one upload -> 400
 POST {{host}}/api/v1/shipments/{{v1Number}}/scans
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -332,12 +400,15 @@ Content-Type: application/json
 
 ### v1 7. GET /api/v1/shipments/{trackingNumber}/scans: history, scan types as numbers -> 200 OK
 GET {{host}}/api/v1/shipments/{{v1Number}}/scans
+Authorization: Bearer {{token}}
 
 ### v1 7. GET /api/v1/shipments/{trackingNumber}/scans: unknown shipment -> 404
 GET {{host}}/api/v1/shipments/APX-99999999/scans
+Authorization: Bearer {{token}}
 
 ### v1 8. DELETE: create a second shipment to delete -> 201
 POST {{host}}/api/v1/shipments
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -351,9 +422,11 @@ Content-Type: application/json
 
 ### v1 8. DELETE /api/v1/shipments/{trackingNumber}: still Created -> 204 No Content
 DELETE {{host}}/api/v1/shipments/{{v1Deletable}}
+Authorization: Bearer {{token}}
 
 ### v1 8. DELETE /api/v1/shipments/{trackingNumber}: already InTransit -> 409 Conflict
 DELETE {{host}}/api/v1/shipments/{{v1Number}}
+Authorization: Bearer {{token}}
 
 # --------------------------------------------------------------------------------------------------------------
 # The Part B URLs without a version: an alias of v1 until v1's sunset (VERSIONING.md)
@@ -361,6 +434,8 @@ DELETE {{host}}/api/v1/shipments/{{v1Number}}
 
 ### GET /api/shipments/{trackingNumber}: answers as v1, with v1's deprecation headers -> 200 OK
 GET {{host}}/api/shipments/{{v1Number}}
+Authorization: Bearer {{token}}
 
 ### Both versions read the same shipment: the v1 one in v2's shape -> 200 OK
 GET {{host}}/api/v2/shipments/{{v1Number}}
+Authorization: Bearer {{token}}
