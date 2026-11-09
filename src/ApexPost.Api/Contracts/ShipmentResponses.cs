@@ -38,6 +38,19 @@ public sealed record ScanResponse(
         new(view.ScanId, view.ScanType, view.Location, view.CourierId, view.ScannedAtUtc, view.Notes, view.ReceivedAtUtc);
 }
 
+/// <summary>
+/// The answer to a scan upload: how many scans were accepted, skipped as already stored, and rejected, with each
+/// rejection's reason, plus the shipment's status after the upload. Accepted and skipped scans are both stored, so
+/// the device marks every scan synced except the ones listed in <see cref="Rejections"/>.
+/// </summary>
+public sealed record ScanUploadResponse(int Accepted, int DuplicatesSkipped, int Rejected, IReadOnlyList<ScanRejectionResponse> Rejections, TrackingStatus ShipmentStatus)
+{
+    internal static ScanUploadResponse From(ScanUploadResult result) =>
+        new(result.Accepted, result.DuplicatesSkipped, result.Rejected.Count, [.. result.Rejected.Select(rejection => new ScanRejectionResponse(rejection.ScanId, rejection.Reason))], result.ShipmentStatus);
+}
+
+public sealed record ScanRejectionResponse(string ScanId, string Reason);
+
 /// <summary>One page of a list, with what a client needs to fetch the next one.</summary>
 public sealed record PagedResponse<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount, int TotalPages);
 

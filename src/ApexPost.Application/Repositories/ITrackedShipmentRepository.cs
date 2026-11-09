@@ -12,4 +12,10 @@ public interface ITrackedShipmentRepository
     void Add(TrackedShipment shipment);
 
     void Remove(TrackedShipment shipment);
+
+    /// <summary>Which of these scan IDs are already stored, and for which shipment. Unknown IDs are left out.</summary>
+    Task<IReadOnlyDictionary<TrackingScanId, TrackingNumber>> FindScanOwnersAsync(IReadOnlyCollection<TrackingScanId> scanIds, CancellationToken cancellationToken = default);
+
+    /// <summary>Stages a scan that <see cref="TrackedShipment.RecordScan"/> accepted.</summary>
+    void AddScan(TrackingScan scan);
 }

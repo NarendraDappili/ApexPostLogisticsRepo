@@ -63,6 +63,7 @@ public sealed class ControllerArchitectureTests
             "GET api/shipments/{trackingNumber:trackingNumber}/scans",
             "PATCH api/shipments/{trackingNumber:trackingNumber}/status",
             "POST api/shipments",
+            "POST api/shipments/{trackingNumber:trackingNumber}/scans",
             "PUT api/shipments/{trackingNumber:trackingNumber}",
         ], routes);
     }
