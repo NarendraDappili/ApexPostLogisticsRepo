@@ -56,14 +56,14 @@ public sealed class OpenApiDocumentTests
         // The eight Part B endpoints. /health is a hosting probe, not part of the contract.
         Assert.Equal(
         [
-            "DELETE /api/shipments/{trackingNumber}",
-            "GET /api/shipments",
-            "GET /api/shipments/{trackingNumber}",
-            "GET /api/shipments/{trackingNumber}/scans",
-            "PATCH /api/shipments/{trackingNumber}/status",
-            "POST /api/shipments",
-            "POST /api/shipments/{trackingNumber}/scans",
-            "PUT /api/shipments/{trackingNumber}",
+            "DELETE /api/v1/shipments/{trackingNumber}",
+            "GET /api/v1/shipments",
+            "GET /api/v1/shipments/{trackingNumber}",
+            "GET /api/v1/shipments/{trackingNumber}/scans",
+            "PATCH /api/v1/shipments/{trackingNumber}/status",
+            "POST /api/v1/shipments",
+            "POST /api/v1/shipments/{trackingNumber}/scans",
+            "PUT /api/v1/shipments/{trackingNumber}",
         ], operations);
     }
 

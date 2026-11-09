@@ -17,7 +17,7 @@ public sealed class RequestValidationTests(SqlApiFactory factory)
     [Fact]
     public async Task A_validation_failure_is_a_400_validation_problem_details()
     {
-        using var response = await _client.PostAsJsonAsync("/api/shipments", Shipment(trackingNumber: "APX-1"));
+        using var response = await _client.PostAsJsonAsync("/api/v1/shipments", Shipment(trackingNumber: "APX-1"));
         var problem = await response.JsonAsync();
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -31,7 +31,7 @@ public sealed class RequestValidationTests(SqlApiFactory factory)
     [Fact]
     public async Task An_empty_body_reports_every_required_field()
     {
-        using var response = await _client.PostAsync("/api/shipments", ApiClient.RawJson("{}"));
+        using var response = await _client.PostAsync("/api/v1/shipments", ApiClient.RawJson("{}"));
         var problem = await response.JsonAsync();
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -74,7 +74,7 @@ public sealed class RequestValidationTests(SqlApiFactory factory)
     [InlineData(70)]
     public async Task The_weight_limits_themselves_are_accepted(double weight)
     {
-        using var response = await _client.PostAsJsonAsync("/api/shipments", Shipment(SqlApiFactory.NextTrackingNumber(), weightKg: (decimal)weight));
+        using var response = await _client.PostAsJsonAsync("/api/v1/shipments", Shipment(SqlApiFactory.NextTrackingNumber(), weightKg: (decimal)weight));
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
@@ -124,7 +124,7 @@ public sealed class RequestValidationTests(SqlApiFactory factory)
         var number = SqlApiFactory.NextTrackingNumber();
         (await _client.CreateAsync(number)).Dispose();
 
-        using var response = await _client.PutAsJsonAsync($"/api/shipments/{number}", new { recipientName = "", recipientPhone = "12", recipientAddress = "3 Quay Street", city = "Rivermouth", weightKg = 71m });
+        using var response = await _client.PutAsJsonAsync($"/api/v1/shipments/{number}", new { recipientName = "", recipientPhone = "12", recipientAddress = "3 Quay Street", city = "Rivermouth", weightKg = 71m });
         var problem = await response.JsonAsync();
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -140,7 +140,7 @@ public sealed class RequestValidationTests(SqlApiFactory factory)
         var number = SqlApiFactory.NextTrackingNumber();
         (await _client.CreateAsync(number)).Dispose();
 
-        using var response = await _client.PatchAsync($"/api/shipments/{number}/status", ApiClient.RawJson(json));
+        using var response = await _client.PatchAsync($"/api/v1/shipments/{number}/status", ApiClient.RawJson(json));
         var problem = await response.JsonAsync();
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -154,7 +154,7 @@ public sealed class RequestValidationTests(SqlApiFactory factory)
     [InlineData("status=42", "status")]
     public async Task The_list_query_is_validated_too(string query, string field)
     {
-        using var response = await _client.GetAsync($"/api/shipments?{query}");
+        using var response = await _client.GetAsync($"/api/v1/shipments?{query}");
         var problem = await response.JsonAsync();
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -162,9 +162,9 @@ public sealed class RequestValidationTests(SqlApiFactory factory)
     }
 
     [Theory]
-    [InlineData("/api/shipments/APX-00000001/status", "PATCH", """{ "status": "Lost" }""", "$.status")]
-    [InlineData("/api/shipments", "POST", """{ "trackingNumber": """, "$.trackingNumber")]
-    [InlineData("/api/shipments", "POST", """{ "weightKg": "heavy" }""", "$.weightKg")]
+    [InlineData("/api/v1/shipments/APX-00000001/status", "PATCH", """{ "status": "Lost" }""", "$.status")]
+    [InlineData("/api/v1/shipments", "POST", """{ "trackingNumber": """, "$.trackingNumber")]
+    [InlineData("/api/v1/shipments", "POST", """{ "weightKg": "heavy" }""", "$.weightKg")]
     public async Task Unreadable_json_names_the_path_without_internal_type_names(string path, string method, string json, string key)
     {
         using var response = await _client.SendAsync(new HttpRequestMessage(new HttpMethod(method), path) { Content = ApiClient.RawJson(json) });
@@ -183,7 +183,7 @@ public sealed class RequestValidationTests(SqlApiFactory factory)
     [InlineData("null")]
     public async Task An_empty_body_is_one_error_not_two(string body)
     {
-        using var response = await _client.PostAsync("/api/shipments", ApiClient.RawJson(body));
+        using var response = await _client.PostAsync("/api/v1/shipments", ApiClient.RawJson(body));
         var errors = (await response.JsonAsync()).GetProperty("errors");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -195,16 +195,16 @@ public sealed class RequestValidationTests(SqlApiFactory factory)
     public async Task A_refused_create_stores_nothing()
     {
         var number = SqlApiFactory.NextTrackingNumber();
-        (await _client.PostAsJsonAsync("/api/shipments", Shipment(number, weightKg: 71m))).Dispose();
+        (await _client.PostAsJsonAsync("/api/v1/shipments", Shipment(number, weightKg: 71m))).Dispose();
 
-        using var fetched = await _client.GetAsync($"/api/shipments/{number}");
+        using var fetched = await _client.GetAsync($"/api/v1/shipments/{number}");
 
         Assert.Equal(HttpStatusCode.NotFound, fetched.StatusCode);
     }
 
     private async Task<JsonElement> RejectedAsync(Dictionary<string, object?> body)
     {
-        using var response = await _client.PostAsJsonAsync("/api/shipments", body);
+        using var response = await _client.PostAsJsonAsync("/api/v1/shipments", body);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         return await response.JsonAsync();
     }

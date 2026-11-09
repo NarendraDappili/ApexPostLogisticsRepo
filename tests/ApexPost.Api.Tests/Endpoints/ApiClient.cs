@@ -18,10 +18,10 @@ internal static class ApiClient
     };
 
     public static async Task<HttpResponseMessage> CreateAsync(this HttpClient client, string trackingNumber, string city = "Portside", decimal weightKg = 5m) =>
-        await client.PostAsJsonAsync("/api/shipments", NewShipment(trackingNumber, city, weightKg));
+        await client.PostAsJsonAsync("/api/v1/shipments", NewShipment(trackingNumber, city, weightKg));
 
     public static async Task<HttpResponseMessage> PatchStatusAsync(this HttpClient client, string trackingNumber, object status) =>
-        await client.PatchAsJsonAsync($"/api/shipments/{trackingNumber}/status", new { status });
+        await client.PatchAsJsonAsync($"/api/v1/shipments/{trackingNumber}/status", new { status });
 
     /// <summary>Moves a new shipment along the chain to OutForDelivery, then optionally to a final status.</summary>
     public static async Task AdvanceAsync(this HttpClient client, string trackingNumber, int steps)

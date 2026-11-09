@@ -1,16 +1,23 @@
 using System.Net.Mime;
 using ApexPost.Api.Contracts;
+using ApexPost.Api.Versioning;
 using ApexPost.Application.Tracking;
+using Asp.Versioning;
 using Microsoft.AspNetCore.Mvc;
+// v2's response DTOs have v1's names; these aliases pick v2's over the v1 ones in ApexPost.Api.Contracts.
+using ScanResponse = ApexPost.Api.Contracts.V2.ScanResponse;
+using ScanUploadResponse = ApexPost.Api.Contracts.V2.ScanUploadResponse;
+using ShipmentResponse = ApexPost.Api.Contracts.V2.ShipmentResponse;
 
-namespace ApexPost.Api.Controllers;
+namespace ApexPost.Api.Controllers.V2;
 
 /// <summary>
-/// A shipment's scans: the history, and the bulk upload of a courier's offline scans. Documented the same way as
-/// <see cref="ShipmentsController"/>.
+/// A shipment's scans, version 2: the same actions as version 1, with scan types and statuses written by name.
+/// Documented the same way as <see cref="ShipmentsController"/>.
 /// </summary>
 [ApiController]
-[Route("api/shipments/{trackingNumber:trackingNumber}/scans")]
+[ApiVersion(ApiVersions.V2)]
+[Route("api/v{version:apiVersion}/shipments/{trackingNumber:trackingNumber}/scans")]
 [Tags("Scans")]
 [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, MediaTypeNames.Application.ProblemJson)]
 public sealed class ScansController(ShipmentTrackingService tracking) : ControllerBase

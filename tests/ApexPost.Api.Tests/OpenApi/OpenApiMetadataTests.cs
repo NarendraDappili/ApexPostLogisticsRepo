@@ -19,14 +19,14 @@ public sealed class OpenApiMetadataTests
     // a generated client's method names come from them, so a change here breaks clients.
     public static TheoryData<string, string, string, int[]> Operations => new()
     {
-        { "GET /api/shipments", "ListShipments", "Shipments", [200, 400, 500] },
-        { "GET /api/shipments/{trackingNumber}", "GetShipment", "Shipments", [200, 404, 500] },
-        { "POST /api/shipments", "CreateShipment", "Shipments", [201, 400, 409, 415, 500] },
-        { "PUT /api/shipments/{trackingNumber}", "UpdateShipment", "Shipments", [200, 400, 404, 409, 415, 500] },
-        { "PATCH /api/shipments/{trackingNumber}/status", "UpdateShipmentStatus", "Shipments", [200, 400, 404, 409, 415, 500] },
-        { "DELETE /api/shipments/{trackingNumber}", "DeleteShipment", "Shipments", [204, 404, 409, 500] },
-        { "GET /api/shipments/{trackingNumber}/scans", "GetScanHistory", "Scans", [200, 404, 500] },
-        { "POST /api/shipments/{trackingNumber}/scans", "UploadScans", "Scans", [200, 400, 404, 409, 415, 500] },
+        { "GET /api/v1/shipments", "ListShipments", "Shipments", [200, 400, 500] },
+        { "GET /api/v1/shipments/{trackingNumber}", "GetShipment", "Shipments", [200, 404, 500] },
+        { "POST /api/v1/shipments", "CreateShipment", "Shipments", [201, 400, 409, 415, 500] },
+        { "PUT /api/v1/shipments/{trackingNumber}", "UpdateShipment", "Shipments", [200, 400, 404, 409, 415, 500] },
+        { "PATCH /api/v1/shipments/{trackingNumber}/status", "UpdateShipmentStatus", "Shipments", [200, 400, 404, 409, 415, 500] },
+        { "DELETE /api/v1/shipments/{trackingNumber}", "DeleteShipment", "Shipments", [204, 404, 409, 500] },
+        { "GET /api/v1/shipments/{trackingNumber}/scans", "GetScanHistory", "Scans", [200, 404, 500] },
+        { "POST /api/v1/shipments/{trackingNumber}/scans", "UploadScans", "Scans", [200, 400, 404, 409, 415, 500] },
     };
 
     [Theory]
@@ -84,7 +84,7 @@ public sealed class OpenApiMetadataTests
     [Fact]
     public async Task A_201_documents_its_location_header()
     {
-        var created = Operation(await DocumentAsync(), "POST /api/shipments").GetProperty("responses").GetProperty("201");
+        var created = Operation(await DocumentAsync(), "POST /api/v1/shipments").GetProperty("responses").GetProperty("201");
         var location = created.GetProperty("headers").GetProperty("Location");
 
         Assert.True(location.GetProperty("required").GetBoolean());
@@ -144,7 +144,7 @@ public sealed class OpenApiMetadataTests
         Assert.Equal(["Pickup", "InTransit", "Delivered", "Failed"], EnumValues(Schema(document, "TrackingScanType"), "string"));
         Assert.Equal("#/components/schemas/TrackingStatus", Schema(document, "UpdateStatusRequest").GetProperty("properties").GetProperty("status").GetProperty("$ref").GetString());
         Assert.Equal("#/components/schemas/TrackingScanType", Schema(document, "ScanUploadItem").GetProperty("properties").GetProperty("scanType").GetProperty("$ref").GetString());
-        var statusFilter = Operation(document, "GET /api/shipments").GetProperty("parameters").EnumerateArray().Single(parameter => parameter.GetProperty("name").GetString() == "status");
+        var statusFilter = Operation(document, "GET /api/v1/shipments").GetProperty("parameters").EnumerateArray().Single(parameter => parameter.GetProperty("name").GetString() == "status");
         Assert.Equal("#/components/schemas/TrackingStatus", statusFilter.GetProperty("schema").GetProperty("$ref").GetString());
 
         // v1 responses write numbers, and say which number is which.
