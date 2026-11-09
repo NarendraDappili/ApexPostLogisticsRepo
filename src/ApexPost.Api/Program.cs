@@ -23,15 +23,19 @@ builder.Services.AddControllers(options =>
     options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider());
     options.ModelMetadataDetailsProviders.Add(new JsonDisplayNameProvider());
 });
-builder.Services.AddProblemDetails();
+// Every error response is ProblemDetails (application/problem+json) with the traceId and the request it answers.
+builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
+    context.ProblemDetails.Instance ??= $"{context.HttpContext.Request.Method} {context.HttpContext.Request.Path}");
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 // {trackingNumber:trackingNumber} in a route template: anything that is not APX-######## never reaches an action.
 builder.Services.Configure<RouteOptions>(options => options.SetParameterPolicy<TrackingNumberRouteConstraint>(TrackingNumberRouteConstraint.Name));
 builder.Services.AddApexPostPersistence(connectionString);
 
 var app = builder.Build();
-// First, so an error anywhere later in the pipeline becomes ProblemDetails (ApiExceptionHandler, then a plain 500).
+// First, so an exception anywhere later in the pipeline becomes ProblemDetails through ApiExceptionHandler.
 app.UseExceptionHandler();
+// Errors that end without a body (no route matches: 404; wrong method: 405) get a ProblemDetails body as well.
+app.UseStatusCodePages();
 app.UseHttpsRedirection();
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }));
 app.MapControllers();
