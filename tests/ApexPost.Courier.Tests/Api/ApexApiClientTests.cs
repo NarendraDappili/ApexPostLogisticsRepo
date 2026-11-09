@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using System.Text.Json;
 using ApexPost.Courier.Api;
@@ -148,7 +149,7 @@ public sealed class ApexApiClientTests : IDisposable
     {
         var tokens = new InMemoryTokenStore();
         await tokens.SaveAsync("courier-token");
-        using var client = new HttpMessageInvoker(new AuthHeaderHandler(tokens) { InnerHandler = _server });
+        using var client = new HttpMessageInvoker(new AuthHeaderHandler(tokens, new CourierSession(), TimeProvider.System, NullLogger<AuthHeaderHandler>.Instance) { InnerHandler = _server });
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             client.SendAsync(new HttpRequestMessage(HttpMethod.Get, "http://api.apexpost.example/api/v2/shipments"), CancellationToken.None));

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using ApexPost.Courier.Offline.Domain;
 using ApexPost.Courier.Offline.Storage;
 
@@ -37,6 +38,37 @@ internal sealed class ConsoleScreen
         if (line is null) Output.WriteLine();
         // Input piped from Windows PowerShell starts with a byte order mark, which would make the first answer invalid.
         return line?.TrimStart('﻿');
+    }
+
+    /// <summary>
+    /// Asks for a secret, such as a token. Typed or pasted into a real console it shows one * per character instead
+    /// of the text; piped input (tests, scripts) is read as a line.
+    /// </summary>
+    public string? AskSecret(string prompt)
+    {
+        if (!ReferenceEquals(_input, Console.In) || Console.IsInputRedirected) return Ask(prompt);
+
+        Output.Write($"{prompt}: ");
+        var secret = new StringBuilder();
+        while (true)
+        {
+            var key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter) break;
+            if (key.Key == ConsoleKey.Backspace)
+            {
+                if (secret.Length == 0) continue;
+                secret.Length--;
+                Output.Write("\b \b");
+            }
+            else if (!char.IsControl(key.KeyChar))
+            {
+                secret.Append(key.KeyChar);
+                Output.Write('*');
+            }
+        }
+
+        Output.WriteLine();
+        return secret.ToString();
     }
 
     public bool Confirm(string question, bool defaultYes)

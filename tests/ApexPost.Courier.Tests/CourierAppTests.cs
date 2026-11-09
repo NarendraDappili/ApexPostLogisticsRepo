@@ -26,7 +26,7 @@ public sealed class CourierAppTests : IDisposable
 
         var output = await _app.RunAsync(
             [
-                "cr-001",                                                    // login
+                "cr-001", "",                                                // login, then Enter: a development token
                 "1", "apx-30000001", "1", "Riverside Depot", "Front desk", "", // a pickup, now
                 "1", "APX-30000002", "3", "14 Elm Street", "", tomorrow,     // a delivery dated tomorrow
                 "2",                                                         // pending scans
@@ -57,7 +57,7 @@ public sealed class CourierAppTests : IDisposable
     [Fact]
     public async Task The_listener_log_line_and_the_live_count_follow_the_save()
     {
-        var output = await _app.RunAsync(["CR-001", "1", "APX-30000001", "1", "Riverside Depot", "", "", "6"]);
+        var output = await _app.RunAsync(["CR-001", "", "1", "APX-30000001", "1", "Riverside Depot", "", "", "6"]);
 
         var saved = output.IndexOf("Saved on this device as Pending", StringComparison.Ordinal);
         var logged = output.IndexOf("[info ScanChangeMonitor] Scan documents changed: scan::", StringComparison.Ordinal);
@@ -69,7 +69,7 @@ public sealed class CourierAppTests : IDisposable
     [Fact]
     public async Task Login_explains_a_bad_courier_id_and_asks_again()
     {
-        var output = await _app.RunAsync(["", "CR 001", "cr-007", "6"]);
+        var output = await _app.RunAsync(["", "CR 001", "cr-007", "", "6"]);
 
         Assert.Equal(2, CountOf("A courier ID has letters, digits and hyphens only", output));
         Assert.Contains("Signed in as CR-007.", output, StringComparison.Ordinal);
@@ -82,9 +82,9 @@ public sealed class CourierAppTests : IDisposable
 
         var output = await _app.RunAsync(
             [
-                "CR-001", "1", "APX-30000001", "1", "Riverside Depot", "", "",
+                "CR-001", "", "1", "APX-30000001", "1", "Riverside Depot", "", "",
                 "5",
-                "CR-002", "1", "APX-30000002", "1", "North Hub", "", "",
+                "CR-002", "", "1", "APX-30000002", "1", "North Hub", "", "",
                 "6",
             ],
             services => scans = CourierAppRun.Scans(services));
@@ -104,8 +104,8 @@ public sealed class CourierAppTests : IDisposable
     {
         IReadOnlyList<ShipmentScan> scans = [];
         string[] answers = type == "9"
-            ? ["CR-001", "1", tracking, type, "6"]
-            : ["CR-001", "1", tracking, type, location, "", message.Contains("time", StringComparison.Ordinal) ? "tomorrow" : "", "6"];
+            ? ["CR-001", "", "1", tracking, type, "6"]
+            : ["CR-001", "", "1", tracking, type, location, "", message.Contains("time", StringComparison.Ordinal) ? "tomorrow" : "", "6"];
 
         var output = await _app.RunAsync(answers, services => scans = CourierAppRun.Scans(services));
 
@@ -116,9 +116,9 @@ public sealed class CourierAppTests : IDisposable
     [Fact]
     public async Task Scans_stay_pending_on_the_device_across_restarts()
     {
-        await _app.RunAsync(["CR-001", "1", "APX-30000001", "1", "Riverside Depot", "", "", "6"]);
+        await _app.RunAsync(["CR-001", "", "1", "APX-30000001", "1", "Riverside Depot", "", "", "6"]);
 
-        var output = await _app.RunAsync(["CR-001", "2", "6"]);
+        var output = await _app.RunAsync(["CR-001", "", "2", "6"]);
 
         Assert.Contains("Pending scans (live): 1", output, StringComparison.Ordinal);
         Assert.Contains("Pending scans waiting for upload (oldest first): 1", output, StringComparison.Ordinal);
@@ -129,11 +129,11 @@ public sealed class CourierAppTests : IDisposable
     {
         string? token = null;
 
-        var output = await _app.RunAsync(["cr-001", "6"], services => token = services.GetRequiredService<ITokenStore>().GetAsync().AsTask().Result);
+        var output = await _app.RunAsync(["cr-001", "", "6"], services => token = services.GetRequiredService<ITokenStore>().GetAsync().AsTask().Result);
 
         Assert.Contains("Signed in as CR-001. Scans upload to the server (sign-in valid until", output, StringComparison.Ordinal);
         Assert.Contains("Uploads: on", output, StringComparison.Ordinal);
-        Assert.Equal("fake-token-CR-001", token);
+        Assert.Equal("fake-token-CR-001#1", token);
         Assert.Equal("""{"name":"CR-001","roles":["Courier"],"courierId":"CR-001"}""", Assert.Single(_app.Api.Server.Requests).Body);
     }
 
@@ -143,7 +143,7 @@ public sealed class CourierAppTests : IDisposable
         _app.Api.Down = true;
         IReadOnlyList<ShipmentScan> scans = [];
 
-        var output = await _app.RunAsync(["CR-001", "1", "APX-30000001", "1", "Riverside Depot", "", "", "3", "6"], services => scans = CourierAppRun.Scans(services));
+        var output = await _app.RunAsync(["CR-001", "", "1", "APX-30000001", "1", "Riverside Depot", "", "", "3", "6"], services => scans = CourierAppRun.Scans(services));
 
         Assert.Contains("Signed in as CR-001, offline: The server had a problem", output, StringComparison.Ordinal);
         Assert.Contains("Uploads: off (signed in offline)", output, StringComparison.Ordinal);
@@ -158,15 +158,15 @@ public sealed class CourierAppTests : IDisposable
     {
         string? token = null;
 
-        await _app.RunAsync(["CR-001", "5", "CR-002", "6"], services => token = services.GetRequiredService<ITokenStore>().GetAsync().AsTask().Result);
+        await _app.RunAsync(["CR-001", "", "5", "CR-002", "", "6"], services => token = services.GetRequiredService<ITokenStore>().GetAsync().AsTask().Result);
 
-        Assert.Equal("fake-token-CR-002", token);
+        Assert.Equal("fake-token-CR-002#2", token);
     }
 
     [Fact]
     public async Task A_byte_order_mark_at_the_start_of_piped_input_is_ignored()
     {
-        var output = await _app.RunAsync(["﻿CR-001", "6"]);
+        var output = await _app.RunAsync(["﻿CR-001", "", "6"]);
 
         Assert.Contains("Signed in as CR-001.", output, StringComparison.Ordinal);
         Assert.DoesNotContain("A courier ID has letters", output, StringComparison.Ordinal);
@@ -185,7 +185,7 @@ public sealed class CourierAppTests : IDisposable
     public async Task The_logging_configuration_decides_which_log_lines_are_shown()
     {
         var output = new StringWriter();
-        using (var host = _app.CreateHost(new StringReader("CR-001\n1\nAPX-30000001\n1\nDepot\n\n\n6"), output, ["--Logging:LogLevel:Default=Warning"]))
+        using (var host = _app.CreateHost(new StringReader("CR-001\n\n1\nAPX-30000001\n1\nDepot\n\n\n6"), output, ["--Logging:LogLevel:Default=Warning"]))
         {
             await host.Services.GetRequiredService<CourierApp>().RunAsync();
         }

@@ -186,9 +186,23 @@ Swagger UI keeps the token in the page only and forgets it on reload. Persisting
 ## Clients
 
 - **[`ApexPost.Client`](src/ApexPost.Client):** `AddApexPostClient(baseAddress).WithBearerToken(...)` adds a handler that sets `Authorization: Bearer` on every request. The token is fetched per request, so a renewed token takes effect at once. The handler never logs or stores it, and refuses to send it over plain HTTP to any host but this machine.
-- **The courier app ([`ApexPost.Courier`](src/ApexPost.Courier)):** `AuthHeaderHandler` adds the courier's token to every request of its `ApexApiClient`. The token lives in `InMemoryTokenStore` and nowhere else: not in a file, a setting or a log. It plays the part of MAUI's SecureStorage, which a console program does not have, so the courier signs in again after the app closes. The app refuses to start with a plain `http://` API address for any machine but this one, and the handler refuses to send the token over one.
+- **The courier app ([`ApexPost.Courier`](src/ApexPost.Courier)):** `AuthHeaderHandler` adds the courier's token to every request of its `ApexApiClient`. See [The courier app's token](#the-courier-apps-token).
 - **The console consumer:** uses `--ApexPostApi:AccessToken=<token>` (or the environment variable `ApexPostApi__AccessToken`). Without one, it asks a Development API's `/dev/token` and keeps the token in memory only.
 - **[`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http):** gets a token from `/dev/token` in its first request and sends it with every other request. The partner requests read the key from the environment variable `APEXPOST_PARTNER_API_KEY`, so it is never written into the file.
+
+## The courier app's token
+
+The courier app ([`ApexPost.Courier`](src/ApexPost.Courier)) handles the courier's token like this:
+
+| Step | What happens |
+|---|---|
+| **Getting it** | At Login the courier gives their courier ID and then presses Enter, which gets a one-hour Courier token from the Development API's `/dev/token`, or pastes a token, for example from `dotnet user-jwts`. A pasted token is checked before it is kept: it must be a JWT that has not expired, carry the courier's own `courierId` and have the `Courier` role. Those are the checks the server would otherwise fail it on. The app does not check the signature; it has no key for that and needs none, because the server checks it on every request. In a real console the pasted token appears as `*` characters, and no message ever repeats it. |
+| **Keeping it** | Only in `InMemoryTokenStore`, the console's stand-in for MAUI's SecureStorage: in this process's memory, with its expiry, and nowhere else. Never in a file, a setting, the courier database or a log. It is gone when the app closes, so the courier signs in again. Unlike a phone's secure storage, it does not survive a restart, which is the safe side of the trade. |
+| **Sending it** | `AuthHeaderHandler` adds `Authorization: Bearer` to each request. It does not send an expired token at all, and refuses to send one over plain HTTP to any machine but this one (the app also refuses to start with such an address). |
+| **Losing it** | A **401** for the token that was sent clears it from the store and ends the sign-in. At the next screen the app tells the courier why and goes to **Login**, offering the same courier ID, so signing in again is two presses of Enter. The same happens when the token expires, and when the 401 comes from a background sync. A 401 answering an older token, after the courier has already signed in again, clears nothing. Scans are never lost: they stay Pending and go after the new sign-in. |
+| **Signing out** | Clears the token. |
+
+**Never logged.** No log line contains a token, an API key or a request body. The app logs methods and paths only, and the HTTP client's own logging masks header values. A test runs a whole session, with a 401 and a second sign-in, with every log category at Trace and checks that neither the token nor anything from the request body appears.
 
 ## OAuth2: how couriers and partners would get tokens in production
 

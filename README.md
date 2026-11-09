@@ -345,7 +345,11 @@ dotnet run --project src/ApexPost.Courier                                       
 dotnet run --project src/ApexPost.Courier -- --ApexPostApi:BaseAddress=http://localhost:5245/ --Courier:DataDirectory=.\courier-app-data
 ```
 
-**Sign-in.** Login asks for the courier ID and gets a one-hour Courier token for it from the Development API's `POST /dev/token`, the stand-in for a real sign-in ([SECURITY.md](SECURITY.md)). The header says `Uploads: on`. Without a server, the courier is signed in offline (`Uploads: off`): scans are recorded and saved as usual, and uploads start after signing in again with a network.
+**Sign-in.** Login asks for the courier ID, then for a token:
+- **Enter** gets a one-hour Courier token for that courier from the Development API's `POST /dev/token`, the stand-in for a real sign-in.
+- **Pasting** uses a token you already have, for example from `dotnet user-jwts create --project src/ApexPost.Api --role Courier --claim courierId=CR-001`. The app checks it is for this courier, has the Courier role and has not expired, and shows only `*` while you paste.
+
+The header then says `Uploads: on until 18:35 UTC`. The token lives in memory only. If the server answers 401, or the token expires, the token is cleared and the courier is taken back to Login, where Enter keeps the same courier ID; scans stay Pending until then ([SECURITY.md](SECURITY.md#the-courier-apps-token)). Without a server, the courier is signed in offline (`Uploads: off`): scans are recorded and saved as usual, and uploads start after signing in again with a network.
 
 **Sync** ([`Sync/`](src/ApexPost.Courier/Sync)):
 - **The real uploader:** `ApiShipmentUploader` replaces Part A's stand-in server. The outbox still sends the Pending scans in batches of 20. The uploader sends each batch to the API, one request per shipment, and marks every scan Synced or Failed from the API's answer:
@@ -401,7 +405,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1111 tests passing and a zero-warning build:
+**Results:** the latest run had 1129 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -410,7 +414,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Infrastructure | 145 |
 | Web integration | 110 |
 | Courier offline | 128 |
-| Courier app (Part D) | 96 |
+| Courier app (Part D) | 114 |
 | API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 327 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).

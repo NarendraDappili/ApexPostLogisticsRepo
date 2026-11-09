@@ -26,6 +26,15 @@ internal sealed class CourierApp(
         screen.WriteLine("ApexPost Courier - scans are saved on this device first and uploaded when you sync.");
         while (true)
         {
+            // The server refused the token (401) or it expired, perhaps during a background sync: back to Login. The
+            // token is already gone from the store; the scans stay on the device.
+            if (session.SignInEndedReason is { } reason)
+            {
+                screen.WriteLine();
+                screen.WriteLine(reason);
+                session.SignOut();
+            }
+
             if (!session.IsSignedIn && !await login.RunAsync()) return Goodbye();
 
             await PrintHeaderAsync();
@@ -54,7 +63,8 @@ internal sealed class CourierApp(
     private async Task PrintHeaderAsync()
     {
         var last = history.LastRun;
-        var uploads = await tokens.GetAsync() is null ? "off (signed in offline)" : "on";
+        var uploads = await tokens.GetAsync() is null ? "off (signed in offline)"
+            : tokens.ExpiresAtUtc is { } expiresAt ? $"on until {expiresAt.UtcDateTime:HH:mm} UTC" : "on";
         screen.WriteLine();
         screen.WriteLine(new string('-', 78));
         screen.WriteLine($" ApexPost Courier                                   signed in as {session.CourierId}");
@@ -66,6 +76,9 @@ internal sealed class CourierApp(
 
     private async Task SyncNowAsync()
     {
+        // The sign-in ended while the menu was waiting (a background sync got a 401): the loop says why and goes to Login.
+        if (session.SignInEndedReason is not null) return;
+
         if (await tokens.GetAsync() is null)
         {
             screen.WriteLine("Nothing was sent: you are signed in offline. Your scans are saved on this device; sign out and in again with a network to upload them.");

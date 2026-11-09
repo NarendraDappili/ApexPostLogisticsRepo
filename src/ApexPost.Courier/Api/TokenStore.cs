@@ -8,9 +8,18 @@ internal interface ITokenStore
 {
     ValueTask<string?> GetAsync(CancellationToken cancellationToken = default);
 
-    ValueTask SaveAsync(string token, CancellationToken cancellationToken = default);
+    /// <summary>When the stored token stops being accepted; null if there is none or its expiry is unknown.</summary>
+    DateTimeOffset? ExpiresAtUtc { get; }
+
+    ValueTask SaveAsync(string token, DateTimeOffset? expiresAtUtc = null, CancellationToken cancellationToken = default);
 
     ValueTask ClearAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears the token only if it is still <paramref name="token"/>: an answer to an old request must not throw
+    /// away a token the courier got meanwhile. Returns whether it cleared it.
+    /// </summary>
+    bool ClearIfCurrent(string token);
 }
 
 /// <summary>
@@ -19,20 +28,39 @@ internal interface ITokenStore
 /// </summary>
 internal sealed class InMemoryTokenStore : ITokenStore
 {
-    private volatile string? _token;
+    private StoredToken? _current;
 
-    public ValueTask<string?> GetAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(_token);
+    public DateTimeOffset? ExpiresAtUtc => Volatile.Read(ref _current)?.ExpiresAtUtc;
 
-    public ValueTask SaveAsync(string token, CancellationToken cancellationToken = default)
+    public ValueTask<string?> GetAsync(CancellationToken cancellationToken = default) => ValueTask.FromResult(Volatile.Read(ref _current)?.Value);
+
+    public ValueTask SaveAsync(string token, DateTimeOffset? expiresAtUtc = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(token);
-        _token = token;
+        Volatile.Write(ref _current, new StoredToken(token, expiresAtUtc));
         return ValueTask.CompletedTask;
     }
 
     public ValueTask ClearAsync(CancellationToken cancellationToken = default)
     {
-        _token = null;
+        Volatile.Write(ref _current, null);
         return ValueTask.CompletedTask;
+    }
+
+    public bool ClearIfCurrent(string token)
+    {
+        var current = Volatile.Read(ref _current);
+        return current is not null && current.Value == token && Interlocked.CompareExchange(ref _current, null, current) == current;
+    }
+
+    /// <summary>The token and its expiry, replaced together so a reader never sees one without the other.</summary>
+    private sealed class StoredToken(string value, DateTimeOffset? expiresAtUtc)
+    {
+        public string Value { get; } = value;
+
+        public DateTimeOffset? ExpiresAtUtc { get; } = expiresAtUtc;
+
+        // Never the token itself, should this object ever reach a log or a debugger display.
+        public override string ToString() => "StoredToken(****)";
     }
 }

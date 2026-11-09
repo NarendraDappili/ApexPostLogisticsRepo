@@ -9,7 +9,7 @@ namespace ApexPost.Courier.Tests.Api;
 /// A small in-memory stand-in for the v2 API behind the app's HttpClient, so app tests never reach a real server.
 /// It follows the real API's rules where the app depends on them (API-NOTES.md, SECURITY.md):
 /// <list type="bullet">
-/// <item>POST dev/token issues a token for the courier ID sent; a scan upload needs it (401 otherwise);</item>
+/// <item>POST dev/token issues a token for the courier ID sent (fake-token-{courierId}#{n}); a scan upload needs a token that is not revoked (401 otherwise);</item>
 /// <item>a courier uploads only under their own courierId (403);</item>
 /// <item>a scan more than 5 minutes in the future is a 400 naming scans[i].scannedAtUtc;</item>
 /// <item>an unknown tracking number is a 404;</item>
@@ -19,6 +19,7 @@ namespace ApexPost.Courier.Tests.Api;
 internal sealed partial class FakeApi
 {
     private readonly ConcurrentDictionary<string, string> _stored = new(StringComparer.Ordinal);
+    private int _issued;
 
     public FakeApi()
     {
@@ -29,6 +30,9 @@ internal sealed partial class FakeApi
 
     /// <summary>When set, every request gets 503, as from a server that is down.</summary>
     public bool Down { get; set; }
+
+    /// <summary>Tokens the server no longer accepts (401), as after an expiry or a revocation.</summary>
+    public HashSet<string> RevokedTokens { get; } = [];
 
     /// <summary>Tracking numbers the API does not know (404).</summary>
     public HashSet<string> UnknownShipments { get; } = [];
@@ -48,19 +52,20 @@ internal sealed partial class FakeApi
         if (path.EndsWith("/dev/token", StringComparison.Ordinal))
         {
             var courierId = body!["courierId"]!.GetValue<string>();
-            return StubServer.Json(HttpStatusCode.OK, $$"""{ "accessToken": "fake-token-{{courierId}}", "tokenType": "Bearer", "expiresAtUtc": "{{DateTimeOffset.UtcNow.AddHours(1):O}}" }""");
+            return StubServer.Json(HttpStatusCode.OK, $$"""{ "accessToken": "fake-token-{{courierId}}#{{Interlocked.Increment(ref _issued)}}", "tokenType": "Bearer", "expiresAtUtc": "{{DateTimeOffset.UtcNow.AddHours(1):O}}" }""");
         }
 
         var upload = UploadPath().Match(path);
         if (!upload.Success) return Problem(HttpStatusCode.NotFound, "Not Found", null);
 
         var auth = request.Headers.Authorization?.Parameter;
-        if (auth is null || !auth.StartsWith("fake-token-", StringComparison.Ordinal))
+        if (auth is null || !auth.StartsWith("fake-token-", StringComparison.Ordinal) || RevokedTokens.Contains(auth))
         {
             return Problem(HttpStatusCode.Unauthorized, "Authentication is required.", "Send an access token in the Authorization header: Authorization: Bearer <token>.");
         }
 
-        var courier = auth["fake-token-".Length..];
+        // fake-token-CR-001#2: the courier ID, then the number of the token.
+        var courier = auth["fake-token-".Length..].Split('#')[0];
         var trackingNumber = upload.Groups["tn"].Value;
         var scans = body!["scans"]!.AsArray().Select(scan => scan!).ToList();
         var others = scans.Select(scan => scan["courierId"]!.GetValue<string>()).Where(id => id != courier).Distinct().ToList();

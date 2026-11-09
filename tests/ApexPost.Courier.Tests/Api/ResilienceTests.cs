@@ -170,7 +170,7 @@ public sealed class ResilienceTests : IDisposable
     public async Task Repeated_failures_open_the_circuit_the_app_shows_the_banner_and_calls_fail_at_once()
     {
         _server.Respond = _ => Status(HttpStatusCode.ServiceUnavailable);
-        using var host = HostWithInput("CR-001\n4\n6");
+        using var host = HostWithInput("CR-001\n\n4\n6");
         var server = host.Services.GetRequiredService<ServerAvailability>();
 
         await Assert.ThrowsAsync<ApexApiException>(() => Upload(host));
@@ -191,7 +191,7 @@ public sealed class ResilienceTests : IDisposable
     public async Task The_circuit_closes_and_the_banner_goes_when_the_server_answers_again()
     {
         _server.Respond = _ => Status(HttpStatusCode.ServiceUnavailable);
-        using var host = HostWithInput("CR-001\n6");
+        using var host = HostWithInput("CR-001\n\n6");
         var server = host.Services.GetRequiredService<ServerAvailability>();
         await Assert.ThrowsAsync<ApexApiException>(() => Upload(host));
         Assert.Equal(ConnectionState.Open, server.State);
