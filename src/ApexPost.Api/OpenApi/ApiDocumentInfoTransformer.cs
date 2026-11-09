@@ -1,17 +1,21 @@
+using System.Globalization;
+using Asp.Versioning.ApiExplorer;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.OpenApi;
 
 namespace ApexPost.Api.OpenApi;
 
 /// <summary>
-/// Gives the generated OpenAPI document the information a client developer reads first: the API's name, what it is
+/// Gives each version's OpenAPI document the information a client developer reads first: the API's name, what it is
 /// for, its version and who to contact. The generator writes the paths and schemas; this transformer writes only the
 /// <c>info</c> section. The contact details are fictional (the reserved <c>.example</c> domain).
+/// A deprecated version's description starts with a notice: since when it is deprecated, when it will stop answering
+/// and which version to use instead. The dates and the link come from the versioning policies, the same ones that
+/// write v1's Deprecation and Sunset headers, so the document and the headers cannot disagree.
 /// </summary>
-internal sealed class ApiDocumentInfoTransformer : IOpenApiDocumentTransformer
+internal sealed class ApiDocumentInfoTransformer(IApiVersionDescriptionProvider versions) : IOpenApiDocumentTransformer
 {
     public const string Title = "ApexPost Logistics API";
-    public const string Version = "1.0";
     public const string ContactName = "ApexPost Platform Team";
     public const string ContactEmail = "platform-team@apexpost.example";
     public const string ContactUrl = "https://developer.apexpost.example/support";
@@ -24,11 +28,12 @@ internal sealed class ApiDocumentInfoTransformer : IOpenApiDocumentTransformer
 
     public Task TransformAsync(OpenApiDocument document, OpenApiDocumentTransformerContext context, CancellationToken cancellationToken)
     {
+        var version = versions.ApiVersionDescriptions.Single(description => description.GroupName == context.DocumentName);
         document.Info = new OpenApiInfo
         {
             Title = Title,
-            Version = Version,
-            Description = Description,
+            Version = version.ApiVersion.ToString(),
+            Description = version.IsDeprecated ? $"{DeprecationNotice(version)}\n\n{Description}" : Description,
             Contact = new OpenApiContact
             {
                 Name = ContactName,
@@ -38,4 +43,23 @@ internal sealed class ApiDocumentInfoTransformer : IOpenApiDocumentTransformer
         };
         return Task.CompletedTask;
     }
+
+    private string DeprecationNotice(ApiVersionDescription version)
+    {
+        var current = versions.ApiVersionDescriptions.Where(description => !description.IsDeprecated).MaxBy(description => description.ApiVersion);
+        var notice = $"**Deprecated{On(" since", version.DeprecationPolicy?.Date)}.**";
+        if (version.SunsetPolicy?.Date is { } sunset)
+        {
+            notice += $" This version stops answering after{On("", sunset)}.";
+        }
+        if (current is not null)
+        {
+            notice += $" Use {current.GroupName} instead.";
+        }
+        var link = version.SunsetPolicy?.Links.FirstOrDefault() ?? version.DeprecationPolicy?.Links.FirstOrDefault();
+        return link is null ? notice : $"{notice} What changed and how to move: {link.LinkTarget}";
+    }
+
+    private static string On(string prefix, DateTimeOffset? date) =>
+        date is { } value ? $"{prefix} {value.ToString("d MMMM yyyy", CultureInfo.InvariantCulture)}" : string.Empty;
 }

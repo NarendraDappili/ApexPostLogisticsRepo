@@ -250,8 +250,9 @@ In Development the API describes itself and offers a page for trying it. `dotnet
 
 | URL | What it serves |
 |---|---|
-| `http://localhost:5245/openapi/v1.json` | The OpenAPI document |
-| `http://localhost:5245/swagger` | Swagger UI |
+| `http://localhost:5245/openapi/v2.json` | The OpenAPI document for v2 |
+| `http://localhost:5245/openapi/v1.json` | The OpenAPI document for v1. It is marked deprecated: its description opens with the deprecation and sunset dates, and every operation has `deprecated: true` |
+| `http://localhost:5245/swagger` | Swagger UI. Its document dropdown lists "v2" (opened first) and "v1 (deprecated)" |
 
 **The OpenAPI specification, the built-in .NET generator and Swagger UI are three different things:**
 
@@ -262,8 +263,8 @@ In Development the API describes itself and offers a page for trying it. `dotnet
   - who to contact.
 
   A document written to it (ours is OpenAPI 3.1) is the API's contract. Anyone can read it, and tools can generate a client from it or compare two versions of it without seeing our code.
-- **The built-in .NET generator writes our document.** It is `Microsoft.AspNetCore.OpenApi`, with `AddOpenApi()` and `MapOpenApi()`. At run time it reads the controllers, routes, DTOs and attributes through ASP.NET Core's API explorer and produces `/openapi/v1.json`. A document transformer, [`ApiDocumentInfoTransformer`](src/ApexPost.Api/OpenApi/ApiDocumentInfoTransformer.cs), adds the title "ApexPost Logistics API", the description, the version and the team's contact (fictional). The generator produces JSON only; it has no user interface.
-- **Swagger UI only displays the document.** It is a static HTML and JavaScript page that reads an OpenAPI document and renders it as interactive documentation. Its "Try it out" button sends real requests to the API. We install only the viewer package, `Swashbuckle.AspNetCore.SwaggerUI`, and point it at the built-in document. Swashbuckle's own generator (SwaggerGen) is not installed, so there is one generator and one document; a test checks this.
+- **The built-in .NET generator writes our documents.** It is `Microsoft.AspNetCore.OpenApi`, with `AddOpenApi()` and `MapOpenApi()`. At run time it reads the controllers, routes, DTOs and attributes through ASP.NET Core's API explorer. It produces one document per API version, `/openapi/v1.json` and `/openapi/v2.json`. Each document holds the API Explorer group of the same name, and Asp.Versioning names those groups "v1" and "v2" ([`OpenApiRegistration`](src/ApexPost.Api/OpenApi/OpenApiRegistration.cs)). A document transformer, [`ApiDocumentInfoTransformer`](src/ApexPost.Api/OpenApi/ApiDocumentInfoTransformer.cs), adds the title "ApexPost Logistics API", the description, the version and the team's contact (fictional). For v1 it adds the deprecation notice, taken from the same versioning policy as v1's `Deprecation` and `Sunset` headers. The generator produces JSON only; it has no user interface.
+- **Swagger UI only displays the documents.** It is a static HTML and JavaScript page that reads OpenAPI documents and renders them as interactive documentation. Its "Try it out" button sends real requests to the API. We install only the viewer package, `Swashbuckle.AspNetCore.SwaggerUI`, and point it at the built-in documents, one dropdown entry per API version. Swashbuckle's own generator (SwaggerGen) is not installed, so there is only one generator; a test checks this.
 
 In short: the specification is the format, the generator writes our API's document in that format, and Swagger UI shows that document to people.
 

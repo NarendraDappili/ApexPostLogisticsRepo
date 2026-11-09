@@ -41,17 +41,8 @@ builder.Services.AddApexPostPersistence(connectionString);
 // /api/v1 (deprecated, the Part B contract) and /api/v2. Both versions call the same ShipmentTrackingService; only
 // their response DTOs differ.
 builder.Services.AddApexPostApiVersioning();
-// The built-in generator describes the API as OpenAPI document "v1" (/openapi/v1.json). With versioning, a document
-// holds the API Explorer group of the same name, so this one describes /api/v1.
-builder.Services.AddOpenApi(options =>
-{
-    options.AddDocumentTransformer<ApiDocumentInfoTransformer>();
-    // Make the document describe the HTTP contract where it differs from the CLR types (see ContractTransformers).
-    options.AddSchemaTransformer<EnumSchemaTransformer>();
-    options.AddSchemaTransformer<NumberSchemaTransformer>();
-    options.AddSchemaTransformer<RequiredNotNullSchemaTransformer>();
-    options.AddOperationTransformer<CreatedLocationHeaderTransformer>();
-});
+// The built-in generator describes each version in its own document: /openapi/v1.json and /openapi/v2.json.
+builder.Services.AddApexPostOpenApi();
 
 var app = builder.Build();
 // First, so an exception anywhere later in the pipeline becomes ProblemDetails through ApiExceptionHandler.
@@ -67,22 +58,27 @@ app.UseRouting();
 // A probe for the hosting platform, not part of the client contract, so it stays out of the OpenAPI document (and
 // out of the generated client). It still answers everyone.
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).ExcludeFromDescription();
-// The document and the Swagger UI page are served in Development only. Not publishing them elsewhere is a choice
+// Mapped before the Swagger UI below asks which API versions the controllers describe.
+app.MapControllers();
+// The documents and the Swagger UI page are served in Development only. Not publishing them elsewhere is a choice
 // about what to publish, not a security control: every endpoint answers the same with or without them.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-    // Swagger UI is only a viewer: it renders the built-in document above and generates nothing itself.
+    // Swagger UI is only a viewer: it renders the built-in documents above and generates nothing itself. Its
+    // document dropdown lists every API version, newest (and so the default) first: "v2", "v1 (deprecated)".
     app.UseSwaggerUI(options =>
     {
-        options.SwaggerEndpoint("/openapi/v1.json", "v1");
+        foreach (var version in app.DescribeApiVersions().OrderByDescending(description => description.ApiVersion))
+        {
+            options.SwaggerEndpoint($"/openapi/{version.GroupName}.json", version.IsDeprecated ? $"{version.GroupName} (deprecated)" : version.GroupName);
+        }
         options.RoutePrefix = "swagger";
         options.DocumentTitle = ApiDocumentInfoTransformer.Title;
         // Shows each operationId (the action's route name, and the method name in a generated client).
         options.DisplayOperationId();
     });
 }
-app.MapControllers();
 app.Run();
 
 /// <summary>The API host. Public so the integration tests can start it with WebApplicationFactory.</summary>

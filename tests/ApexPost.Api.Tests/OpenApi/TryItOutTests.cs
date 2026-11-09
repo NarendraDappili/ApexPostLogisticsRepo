@@ -8,7 +8,7 @@ using ApexPost.Api.Tests.Hosting;
 namespace ApexPost.Api.Tests.OpenApi;
 
 /// <summary>
-/// C3 "Try it out", automated: every operation is called the way Swagger UI calls it, with a body built only from the
+/// C3 "Try it out", automated, for both versions: every operation is called the way Swagger UI calls it, with a body built only from the
 /// document's own examples, against a real database. Each answer must be a status the operation documents, and a
 /// success body must have exactly the fields its documented schema lists. Only the tracking numbers and scan IDs
 /// are fresh, so the examples can be sent more than once.
@@ -18,10 +18,12 @@ public sealed class TryItOutTests(SqlApiFactory factory)
 {
     private readonly HttpClient _client = factory.CreateClient();
 
-    [Fact]
-    public async Task Every_operation_answers_its_documented_examples_with_documented_statuses_and_shapes()
+    [Theory]
+    [InlineData("v1")]
+    [InlineData("v2")]
+    public async Task Every_operation_answers_its_documented_examples_with_documented_statuses_and_shapes(string version)
     {
-        var document = await DocumentAsync();
+        var document = await DocumentAsync(version);
         var number = SqlApiFactory.NextTrackingNumber();
         var deletable = SqlApiFactory.NextTrackingNumber();
         var unknown = SqlApiFactory.NextTrackingNumber();
@@ -31,31 +33,33 @@ public sealed class TryItOutTests(SqlApiFactory factory)
         var upload = Example(document, "ScanUploadRequest");
 
         // The successes, in the order a user trying the API would go.
-        await Expect(document, "POST /api/v1/shipments", null, With(create, "trackingNumber", number), 201);
-        await Expect(document, "POST /api/v1/shipments", null, With(create, "trackingNumber", deletable), 201);
-        await Expect(document, "GET /api/v1/shipments/{trackingNumber}", number, null, 200);
-        await Expect(document, "GET /api/v1/shipments", null, null, 200, "?page=1&pageSize=20&status=Created&city=Portside");
-        await Expect(document, "PUT /api/v1/shipments/{trackingNumber}", number, update, 200);
-        await Expect(document, "PATCH /api/v1/shipments/{trackingNumber}/status", number, status, 200);
-        await Expect(document, "POST /api/v1/shipments/{trackingNumber}/scans", number, WithFreshScanIds(upload), 200);
-        await Expect(document, "GET /api/v1/shipments/{trackingNumber}/scans", number, null, 200);
-        await Expect(document, "DELETE /api/v1/shipments/{trackingNumber}", deletable, null, 204);
+        await Expect(document, $"POST /api/{version}/shipments", null, With(create, "trackingNumber", number), 201);
+        await Expect(document, $"POST /api/{version}/shipments", null, With(create, "trackingNumber", deletable), 201);
+        await Expect(document, $"GET /api/{version}/shipments/{{trackingNumber}}", number, null, 200);
+        await Expect(document, $"GET /api/{version}/shipments", null, null, 200, "?page=1&pageSize=20&status=Created&city=Portside");
+        await Expect(document, $"PUT /api/{version}/shipments/{{trackingNumber}}", number, update, 200);
+        await Expect(document, $"PATCH /api/{version}/shipments/{{trackingNumber}}/status", number, status, 200);
+        await Expect(document, $"POST /api/{version}/shipments/{{trackingNumber}}/scans", number, WithFreshScanIds(upload), 200);
+        await Expect(document, $"GET /api/{version}/shipments/{{trackingNumber}}/scans", number, null, 200);
+        // Now with a scan, so v2's latestScan is checked against its schema too.
+        await Expect(document, $"GET /api/{version}/shipments/{{trackingNumber}}", number, null, 200);
+        await Expect(document, $"DELETE /api/{version}/shipments/{{trackingNumber}}", deletable, null, 204);
 
         // At least one failure each.
-        await Expect(document, "GET /api/v1/shipments", null, null, 400, "?pageSize=0");
-        await Expect(document, "GET /api/v1/shipments/{trackingNumber}", unknown, null, 404);
-        await Expect(document, "POST /api/v1/shipments", null, With(create, "trackingNumber", number), 409);
-        await Expect(document, "POST /api/v1/shipments", null, new JsonObject(), 400);
-        await Expect(document, "PUT /api/v1/shipments/{trackingNumber}", unknown, update, 404);
-        await Expect(document, "PATCH /api/v1/shipments/{trackingNumber}/status", number, status, 409);
-        await Expect(document, "DELETE /api/v1/shipments/{trackingNumber}", number, null, 409);
-        await Expect(document, "GET /api/v1/shipments/{trackingNumber}/scans", unknown, null, 404);
-        await Expect(document, "POST /api/v1/shipments/{trackingNumber}/scans", number, new JsonObject { ["scans"] = new JsonArray() }, 400);
+        await Expect(document, $"GET /api/{version}/shipments", null, null, 400, "?pageSize=0");
+        await Expect(document, $"GET /api/{version}/shipments/{{trackingNumber}}", unknown, null, 404);
+        await Expect(document, $"POST /api/{version}/shipments", null, With(create, "trackingNumber", number), 409);
+        await Expect(document, $"POST /api/{version}/shipments", null, new JsonObject(), 400);
+        await Expect(document, $"PUT /api/{version}/shipments/{{trackingNumber}}", unknown, update, 404);
+        await Expect(document, $"PATCH /api/{version}/shipments/{{trackingNumber}}/status", number, status, 409);
+        await Expect(document, $"DELETE /api/{version}/shipments/{{trackingNumber}}", number, null, 409);
+        await Expect(document, $"GET /api/{version}/shipments/{{trackingNumber}}/scans", unknown, null, 404);
+        await Expect(document, $"POST /api/{version}/shipments/{{trackingNumber}}/scans", number, new JsonObject { ["scans"] = new JsonArray() }, 400);
 
         // 415: the body as text/plain.
-        using var wrongType = await _client.PostAsync("/api/v1/shipments", new StringContent(With(create, "trackingNumber", unknown).ToJsonString(), Encoding.UTF8, "text/plain"));
+        using var wrongType = await _client.PostAsync($"/api/{version}/shipments", new StringContent(With(create, "trackingNumber", unknown).ToJsonString(), Encoding.UTF8, "text/plain"));
         Assert.Equal(415, (int)wrongType.StatusCode);
-        Assert.Contains("415", Declared(OpenApiMetadataTests.Operation(document, "POST /api/v1/shipments")));
+        Assert.Contains("415", Declared(OpenApiMetadataTests.Operation(document, $"POST /api/{version}/shipments")));
     }
 
     private async Task Expect(JsonElement document, string route, string? trackingNumber, JsonObject? body, int expected, string query = "")
@@ -104,10 +108,13 @@ public sealed class TryItOutTests(SqlApiFactory factory)
         }
     }
 
+    // A $ref is looked up; a nullable reference (oneOf: [null, $ref]) is checked against its non-null option.
     private static JsonElement Resolve(JsonElement document, JsonElement schema) =>
         schema.TryGetProperty("$ref", out var reference)
             ? OpenApiMetadataTests.Schema(document, reference.GetString()!["#/components/schemas/".Length..])
-            : schema;
+            : schema.TryGetProperty("oneOf", out var oneOf)
+                ? Resolve(document, oneOf.EnumerateArray().Single(option => option.TryGetProperty("$ref", out _)))
+                : schema;
 
     private static List<string> Declared(JsonElement operation) => [.. operation.GetProperty("responses").EnumerateObject().Select(response => response.Name)];
 
@@ -140,9 +147,9 @@ public sealed class TryItOutTests(SqlApiFactory factory)
         return copy;
     }
 
-    private async Task<JsonElement> DocumentAsync()
+    private async Task<JsonElement> DocumentAsync(string version)
     {
-        using var response = await _client.GetAsync("/openapi/v1.json");
+        using var response = await _client.GetAsync($"/openapi/{version}.json");
         response.EnsureSuccessStatusCode();
         return await response.JsonAsync();
     }
