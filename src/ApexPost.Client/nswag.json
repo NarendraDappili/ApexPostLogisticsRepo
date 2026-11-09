@@ -1,0 +1,47 @@
+{
+  "runtime": "Net100",
+  "defaultVariables": null,
+  "documentGenerator": {
+    "fromDocument": {
+      "url": "../../contracts/v2.json",
+      "output": null,
+      "newLineBehavior": "LF"
+    }
+  },
+  "codeGenerators": {
+    "openApiToCSharpClient": {
+      "namespace": "ApexPost.Client",
+      "className": "ApexPostClient",
+      "operationGenerationMode": "SingleClientFromOperationId",
+      "generateClientClasses": true,
+      "generateClientInterfaces": true,
+      "generateDtoTypes": true,
+      "generateExceptionClasses": true,
+      "exceptionClass": "ApexPostApiException",
+      "wrapDtoExceptions": true,
+      "injectHttpClient": true,
+      "disposeHttpClient": false,
+      "useBaseUrl": false,
+      "generateBaseUrlProperty": false,
+      "generateOptionalParameters": true,
+      "generateSyncMethods": false,
+      "generateUpdateJsonSerializerSettingsMethod": true,
+      "jsonLibrary": "SystemTextJson",
+      "jsonLibraryVersion": 8.0,
+      "classStyle": "Poco",
+      "generateDataAnnotations": true,
+      "generateNullableReferenceTypes": true,
+      "generateOptionalPropertiesAsNullable": true,
+      "requiredPropertiesMustBeDefined": true,
+      "dateType": "System.DateTimeOffset",
+      "dateTimeType": "System.DateTimeOffset",
+      "arrayType": "System.Collections.Generic.ICollection",
+      "arrayInstanceType": "System.Collections.ObjectModel.Collection",
+      "responseArrayType": "System.Collections.Generic.ICollection",
+      "clientClassAccessModifier": "public",
+      "typeAccessModifier": "public",
+      "output": "Generated/ApexPostClient.g.cs",
+      "newLineBehavior": "LF"
+    }
+  }
+}

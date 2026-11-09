@@ -30,13 +30,13 @@ public sealed class ErrorHandlingTests
         await using var factory = Host(environment, new InvalidOperationException(SecretMessage), logs);
         using var client = factory.CreateClient();
 
-        using var response = await client.GetAsync("/api/shipments");
+        using var response = await client.GetAsync("/api/v1/shipments");
         var text = await response.Content.ReadAsStringAsync();
         var problem = JsonDocument.Parse(text).RootElement;
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType!.MediaType);
-        Assert.Equal(("An unexpected server error occurred.", "The error has been logged. Quote the traceId when you report it.", "GET /api/shipments"),
+        Assert.Equal(("An unexpected server error occurred.", "The error has been logged. Quote the traceId when you report it.", "GET /api/v1/shipments"),
             (problem.GetProperty("title").GetString(), problem.GetProperty("detail").GetString(), problem.GetProperty("instance").GetString()));
         Assert.True(problem.TryGetProperty("traceId", out _));
         Assert.False(problem.TryGetProperty("exception", out _));
@@ -55,7 +55,7 @@ public sealed class ErrorHandlingTests
         await using var factory = Host("Development", new InvalidOperationException(SecretMessage));
         using var client = factory.CreateClient();
 
-        using var response = await client.GetAsync("/api/shipments");
+        using var response = await client.GetAsync("/api/v1/shipments");
         var exception = (await response.JsonAsync()).GetProperty("exception");
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
@@ -75,7 +75,7 @@ public sealed class ErrorHandlingTests
         await using var factory = Host("Production", failure);
         using var client = factory.CreateClient();
 
-        using var response = await client.GetAsync("/api/shipments");
+        using var response = await client.GetAsync("/api/v1/shipments");
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.DoesNotContain("sql-prod-01", await response.Content.ReadAsStringAsync());
@@ -87,21 +87,21 @@ public sealed class ErrorHandlingTests
         await using var factory = Host("Production", new InvalidOperationException(SecretMessage));
         using var client = factory.CreateClient();
 
-        using var response = await client.GetAsync("/api/shipments/APX-24000001");
+        using var response = await client.GetAsync("/api/v1/shipments/APX-24000001");
         var problem = await response.JsonAsync();
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType!.MediaType);
-        Assert.Equal(("No shipment has the tracking number APX-24000001.", "GET /api/shipments/APX-24000001"),
+        Assert.Equal(("No shipment has the tracking number APX-24000001.", "GET /api/v1/shipments/APX-24000001"),
             (problem.GetProperty("detail").GetString(), problem.GetProperty("instance").GetString()));
     }
 
     [Theory]
     [InlineData("GET", "/api/no-such-route", null, HttpStatusCode.NotFound)]
-    [InlineData("GET", "/api/shipments/APX-123", null, HttpStatusCode.NotFound)]
-    [InlineData("DELETE", "/api/shipments", null, HttpStatusCode.MethodNotAllowed)]
-    [InlineData("POST", "/api/shipments", "text/plain", HttpStatusCode.UnsupportedMediaType)]
-    [InlineData("POST", "/api/shipments", "application/json", HttpStatusCode.BadRequest)]
+    [InlineData("GET", "/api/v1/shipments/APX-123", null, HttpStatusCode.NotFound)]
+    [InlineData("DELETE", "/api/v1/shipments", null, HttpStatusCode.MethodNotAllowed)]
+    [InlineData("POST", "/api/v1/shipments", "text/plain", HttpStatusCode.UnsupportedMediaType)]
+    [InlineData("POST", "/api/v1/shipments", "application/json", HttpStatusCode.BadRequest)]
     public async Task Errors_the_framework_answers_are_problem_details_too(string method, string path, string? contentType, HttpStatusCode expected)
     {
         await using var factory = Host("Production", new InvalidOperationException(SecretMessage));

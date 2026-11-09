@@ -1,30 +1,43 @@
 # ApexPost tracking API
 
-`ApexPost.Api` (Week 4, Part B) exposes tracked shipments and their courier scans over REST. It reuses the Week 3 SQL Server database and data layer through dependency injection. Every request in this file is in [`src/ApexPost.Api/ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http), with one success and at least one failure per endpoint.
+`ApexPost.Api` (Week 4, Parts B and C) exposes tracked shipments and their courier scans over REST. It reuses the Week 3 SQL Server database and data layer through dependency injection. Every request in this file is in [`src/ApexPost.Api/ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http), with one success and at least one failure per endpoint for both API versions.
 
 ```powershell
 dotnet ef database update --project src/ApexPost.Infrastructure      # adds the TrackedShipments and TrackingScans tables
 dotnet run --project src/ApexPost.Api --launch-profile http          # http://localhost:5245 (https profile: https://localhost:7245)
 ```
 
-The API reads the same `ConnectionStrings:ApexPostDb` user-secret as ApexPost.Web, so no extra setup is needed. Part C adds versioning (`/api/v1`, `/api/v2`) and OpenAPI; Part D adds authentication.
+The API reads the same `ConnectionStrings:ApexPostDb` user-secret as ApexPost.Web, so no extra setup is needed. In Development, the OpenAPI documents are at `/openapi/v1.json` and `/openapi/v2.json`, and Swagger UI is at `/swagger`. Part D adds authentication.
+
+## Versions
+
+The version is the URL segment after `/api`: `/api/v2/shipments` (current) and `/api/v1/shipments` (deprecated). Both versions have the same eight endpoints, take the same requests and call the same service. Only their responses differ:
+
+| | v1 (deprecated, the Part B contract) | v2 |
+|---|---|---|
+| Recipient | `recipientName`, `recipientPhone`, `recipientAddress`, `city` at the top level | One `recipient { name, phone, address, city }` object |
+| Latest scan | Not included | `latestScan { scanType, location, scannedAtUtc }`, or `null` before the first scan |
+| Enums (`status`, `scanType`, `shipmentStatus`) | Numbers: `"status": 2` | Names: `"status": "InTransit"` |
+| Headers | `api-supported-versions: 2.0`, `api-deprecated-versions: 1.0`. Successful responses also carry `Deprecation`, `Sunset` and two `Link` headers to the versioning policy | `api-supported-versions: 2.0`, `api-deprecated-versions: 1.0` |
+
+The unversioned Part B URLs (`/api/shipments…`) answer as v1 until v1's sunset on 31 May 2027. **[VERSIONING.md](VERSIONING.md)** lists every change, says whether each one breaks clients, and gives v1's retirement plan.
 
 ## Endpoints
 
-`{trackingNumber}` is `APX-` followed by eight digits, in any letter case. Anything else does not match the route (404), so a malformed value never reaches an action.
+`{version}` is `1` or `2`. `{trackingNumber}` is `APX-` followed by eight digits, in any letter case. Anything else does not match the route (404), so a malformed value never reaches an action.
 
 | Verb | Route | Success | Errors | Description |
 |---|---|---|---|---|
-| GET | `/api/shipments?page=&pageSize=&status=&city=` | **200** a page | 400 bad page, page size, status or city | Paged list ordered by tracking number. `page` defaults to 1 and `pageSize` to 20 (maximum 50). `status` is a name or number. `city` ignores case. |
-| GET | `/api/shipments/{trackingNumber}` | **200** the shipment | 404 unknown | One shipment |
-| POST | `/api/shipments` | **201** the shipment, `Location: /api/shipments/{trackingNumber}` | 400 invalid body; **409** tracking number in use; 415 not JSON | Creates a shipment in status Created |
-| PUT | `/api/shipments/{trackingNumber}` | **200** the shipment | 400; 404; **409** shipment Delivered or Failed; 415 | Replaces the recipient and weight; every field is sent |
-| PATCH | `/api/shipments/{trackingNumber}/status` | **200** the shipment | 400 unknown status; 404; **409** not the next status; 415 | Changes the status only |
-| DELETE | `/api/shipments/{trackingNumber}` | **204** no body | 404; **409** not in Created status | Deletes a shipment no courier has handled yet |
-| POST | `/api/shipments/{trackingNumber}/scans` | **200** the upload result | 400 malformed scans; 404; **409** a parallel upload won (send again); 415 | Bulk upload of a courier's offline scans (Part A); idempotent |
-| GET | `/api/shipments/{trackingNumber}/scans` | **200** the scans, oldest first | 404 unknown | Scan history |
+| GET | `/api/v{version}/shipments?page=&pageSize=&status=&city=` | **200** a page | 400 bad page, page size, status or city | Paged list ordered by tracking number. `page` defaults to 1 and `pageSize` to 20 (maximum 50). `status` is a name or number. `city` ignores case. |
+| GET | `/api/v{version}/shipments/{trackingNumber}` | **200** the shipment | 404 unknown | One shipment |
+| POST | `/api/v{version}/shipments` | **201** the shipment, `Location: /api/v{version}/shipments/{trackingNumber}` | 400 invalid body; **409** tracking number in use; 415 not JSON | Creates a shipment in status Created |
+| PUT | `/api/v{version}/shipments/{trackingNumber}` | **200** the shipment | 400; 404; **409** shipment Delivered or Failed; 415 | Replaces the recipient and weight; every field is sent |
+| PATCH | `/api/v{version}/shipments/{trackingNumber}/status` | **200** the shipment | 400 unknown status; 404; **409** not the next status; 415 | Changes the status only |
+| DELETE | `/api/v{version}/shipments/{trackingNumber}` | **204** no body | 404; **409** not in Created status | Deletes a shipment no courier has handled yet |
+| POST | `/api/v{version}/shipments/{trackingNumber}/scans` | **200** the upload result | 400 malformed scans; 404; **409** a parallel upload won (send again); 415 | Bulk upload of a courier's offline scans (Part A); idempotent |
+| GET | `/api/v{version}/shipments/{trackingNumber}/scans` | **200** the scans, oldest first | 404 unknown | Scan history |
 
-Any endpoint can also return **500** for a failure that is not the caller's (see [Errors](#errors)). A route that does not exist is a 404, and a wrong method a 405.
+Any endpoint can also return **500** for a failure that is not the caller's (see [Errors](#errors)). A route that does not exist, or a version that does not exist (`/api/v3/…`), is a 404, and a wrong method a 405.
 
 ### Status codes
 
@@ -34,8 +47,8 @@ Any endpoint can also return **500** for a failure that is not the caller's (see
 | 201 Created | A shipment was created; `Location` gives its URL (`CreatedAtAction`) |
 | 204 No Content | A shipment was deleted |
 | 400 Bad Request | Validation failure: `ValidationProblemDetails`, with errors keyed by the JSON field |
-| 404 Not Found | Unknown tracking number, malformed tracking number, unknown route |
-| 405 Method Not Allowed | A known route with a verb it does not support, for example `DELETE /api/shipments` |
+| 404 Not Found | Unknown tracking number, malformed tracking number, unknown route, unknown API version |
+| 405 Method Not Allowed | A known route with a verb it does not support, for example `DELETE /api/v2/shipments` |
 | 409 Conflict | Duplicate tracking number; a status move that is not allowed; deleting a shipment that is not Created; changing a finished shipment; a concurrent change won |
 | 415 Unsupported Media Type | A body that is not `application/json` |
 | 500 Internal Server Error | Any unexpected failure, through the global exception handler |
@@ -91,7 +104,7 @@ Every error response is **ProblemDetails** (`application/problem+json`), with `t
   "title": "The request conflicts with the current data.",
   "status": 409,
   "detail": "Only a shipment in Created status can be deleted; this one is InTransit.",
-  "instance": "DELETE /api/shipments/APX-24100001",
+  "instance": "DELETE /api/v2/shipments/APX-24200001",
   "traceId": "00-7c94b1f1a3049f36ed6f8c4be0ebce36-61cfbb396044b0dc-00"
 }
 ```
@@ -115,18 +128,20 @@ This differs from Week 3's web application, which reads stack traces to tell a d
 A courier's device saves scans offline with its own IDs (`scan::{Guid}`, Part A), then uploads them for one shipment:
 
 ```json
-POST /api/shipments/APX-24100001/scans
-{ "scans": [ { "scanId": "scan::0199a001-0000-7000-8000-000000000001", "scanType": "Pickup",
+POST /api/v2/shipments/APX-24200001/scans
+{ "scans": [ { "scanId": "scan::0199a002-0000-7000-8000-000000000001", "scanType": "Pickup",
                "location": "Riverside Depot", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T08:00:00Z" } ] }
 ```
 
 ```json
 200 OK
 { "accepted": 2, "duplicatesSkipped": 0, "rejected": 1,
-  "rejections": [ { "scanId": "scan::0199a001-0000-7000-8000-000000000003",
+  "rejections": [ { "scanId": "scan::0199a002-0000-7000-8000-000000000003",
                     "reason": "A Delivered scan cannot be recorded: a shipment cannot move from InTransit to Delivered; the next status can only be OutForDelivery." } ],
-  "shipmentStatus": 2 }
+  "shipmentStatus": "InTransit" }
 ```
+
+v1 returns the same counts, with `"shipmentStatus": 2`.
 
 Each scan is counted exactly once:
 - **Duplicate.** The scan ID is already stored for this shipment. Re-sending an upload (after a timeout or a lost response) stores nothing twice; it only reports the scans again as `duplicatesSkipped`.
@@ -147,8 +162,9 @@ The loser gets a **409** saying *"Send the upload again"*, and the retry reports
 
 ## Design notes
 
-- **Thin controllers.** `ShipmentsController` and `ScansController` bind the request, call `ShipmentTrackingService` once and return `Ok`, `CreatedAtAction` or `NoContent`. They catch nothing. A test checks that the service is their only dependency.
+- **Thin controllers.** `ShipmentsController` and `ScansController`, once per version (`Controllers/V1`, `Controllers/V2`), bind the request, call `ShipmentTrackingService` once and return `Ok`, `CreatedAtAction` or `NoContent`. They catch nothing. Tests check that the service is their only dependency, and that v1 and v2 have the same routes, operation IDs and requests.
 - **Separate tracking model.** `TrackedShipment` is separate from the counter's Week 3 `Shipment`, which is priced and billed at a branch, has no recipient or status, and caps weight at 30 kg. The migration `AddShipmentTracking` only adds tables ([ADR 0025](docs/adr/0025-tracked-shipments-beside-counter-shipments.md)).
 - **Audit and least privilege.** API changes are recorded in the Week 3 `DataChanges` history, with the request's trace ID as the correlation ID. [`database/security/apexpost-api-role.sql`](database/security/apexpost-api-role.sql) is the API's least-privilege role: the two tracking tables and the audit table only.
-- **Enums are written as numbers** (`"status": 1`), and accepted as names or numbers. Part C's v2 changes the response to names, which is a breaking change, so it needs a new version.
+- **Enums.** Requests accept enums as names or numbers in both versions. v1 responses write numbers (`"status": 1`) and v2 responses write names (`"status": "PickedUp"`). Changing a response's type breaks clients, which is why v2 is a new version ([VERSIONING.md](VERSIONING.md)).
+- **Documented contract.** The OpenAPI documents are generated from the controllers and the XML comments. They are committed as [`contracts/v1.json`](contracts/v1.json) and [`contracts/v2.json`](contracts/v2.json), and a test fails when the API no longer matches them. The typed C# client [`ApexPost.Client`](src/ApexPost.Client) is generated from `contracts/v2.json` ([ADR 0028](docs/adr/0028-openapi-contracts-and-generated-client.md)).
 - **Fictional data only.** No secret is in a committed file.

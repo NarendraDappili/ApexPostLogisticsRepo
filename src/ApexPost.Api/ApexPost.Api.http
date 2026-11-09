@@ -1,22 +1,44 @@
-# ApexPost tracking API (Week 4, Part B): one success and at least one failure request per endpoint.
-# Open in Visual Studio or VS Code (REST Client) and send the requests top to bottom; later requests use the
-# shipments the earlier ones create. Start the API first: dotnet run --project src/ApexPost.Api --launch-profile http
-# The tracking numbers below must not exist yet. On a database that already has them, change the two variables.
+# ApexPost tracking API (Week 4, Parts B and C): one success and at least one failure request per endpoint, for both
+# API versions. Open in Visual Studio or VS Code (REST Client) and send the requests top to bottom; later requests use
+# the shipments the earlier ones create. Start the API first: dotnet run --project src/ApexPost.Api --launch-profile http
+# The tracking numbers below must not exist yet. On a database that already has them, change the four variables.
 # All data is fictional.
+#
+# v2 is the current version. v1 is deprecated: each successful v1 response carries Deprecation, Sunset and Link
+# headers (see VERSIONING.md). Every response reports api-supported-versions: 2.0 and api-deprecated-versions: 1.0.
 
 @host = http://localhost:5245
-@trackingNumber = APX-24100001
-@deletableNumber = APX-24100002
+@v2Number = APX-24200001
+@v2Deletable = APX-24200002
+@v1Number = APX-24100001
+@v1Deletable = APX-24100002
 
 ### Health check -> 200
 GET {{host}}/health
 
-### 1. POST /api/shipments: create -> 201 Created, Location: /api/shipments/APX-24100001
-POST {{host}}/api/shipments
+# --------------------------------------------------------------------------------------------------------------
+# Documents and versions
+# --------------------------------------------------------------------------------------------------------------
+
+### The v2 OpenAPI document (Development only) -> 200
+GET {{host}}/openapi/v2.json
+
+### The v1 OpenAPI document, marked deprecated -> 200
+GET {{host}}/openapi/v1.json
+
+### A version that does not exist -> 404 ProblemDetails
+GET {{host}}/api/v3/shipments
+
+# --------------------------------------------------------------------------------------------------------------
+# Version 2 (current): nested recipient, latestScan, enums by name
+# --------------------------------------------------------------------------------------------------------------
+
+### v2 1. POST /api/v2/shipments: create -> 201 Created, Location: /api/v2/shipments/APX-24200001, latestScan null
+POST {{host}}/api/v2/shipments
 Content-Type: application/json
 
 {
-  "trackingNumber": "{{trackingNumber}}",
+  "trackingNumber": "{{v2Number}}",
   "recipientName": "Ama Mensah",
   "recipientPhone": "+44 20 7946 0000",
   "recipientAddress": "12 Harbour Road",
@@ -24,12 +46,12 @@ Content-Type: application/json
   "weightKg": 4.25
 }
 
-### 1. POST /api/shipments: the same tracking number again -> 409 Conflict
-POST {{host}}/api/shipments
+### v2 1. POST /api/v2/shipments: the same tracking number again -> 409 Conflict
+POST {{host}}/api/v2/shipments
 Content-Type: application/json
 
 {
-  "trackingNumber": "{{trackingNumber}}",
+  "trackingNumber": "{{v2Number}}",
   "recipientName": "Ama Mensah",
   "recipientPhone": "+44 20 7946 0000",
   "recipientAddress": "12 Harbour Road",
@@ -37,8 +59,8 @@ Content-Type: application/json
   "weightKg": 4.25
 }
 
-### 1. POST /api/shipments: invalid values -> 400 ValidationProblemDetails (tracking number, phone, weight, missing city)
-POST {{host}}/api/shipments
+### v2 1. POST /api/v2/shipments: invalid values -> 400 ValidationProblemDetails (tracking number, phone, weight, missing city)
+POST {{host}}/api/v2/shipments
 Content-Type: application/json
 
 {
@@ -49,29 +71,26 @@ Content-Type: application/json
   "weightKg": 70.5
 }
 
-### 1. POST /api/shipments: not JSON -> 415 Unsupported Media Type
-POST {{host}}/api/shipments
+### v2 1. POST /api/v2/shipments: not JSON -> 415 Unsupported Media Type
+POST {{host}}/api/v2/shipments
 Content-Type: text/plain
 
-trackingNumber=APX-24100009
+trackingNumber=APX-24200009
 
-### 2. GET /api/shipments/{trackingNumber} -> 200 OK
-GET {{host}}/api/shipments/{{trackingNumber}}
+### v2 2. GET /api/v2/shipments/{trackingNumber} -> 200 OK, "status": "Created", "recipient": { ... }
+GET {{host}}/api/v2/shipments/{{v2Number}}
 
-### 2. GET /api/shipments/{trackingNumber}: unknown -> 404 Not Found
-GET {{host}}/api/shipments/APX-99999999
+### v2 2. GET /api/v2/shipments/{trackingNumber}: unknown -> 404 Not Found
+GET {{host}}/api/v2/shipments/APX-99999999
 
-### 2. GET /api/shipments/{trackingNumber}: not a tracking number -> 404 (the route constraint never matches)
-GET {{host}}/api/shipments/12345
+### v2 3. GET /api/v2/shipments: page 1, 20 per page, filtered by status and city -> 200 OK
+GET {{host}}/api/v2/shipments?page=1&pageSize=20&status=Created&city=Portside
 
-### 3. GET /api/shipments: page 1, 20 per page, filtered by status and city -> 200 OK
-GET {{host}}/api/shipments?page=1&pageSize=20&status=Created&city=Portside
+### v2 3. GET /api/v2/shipments: pageSize above 50 -> 400
+GET {{host}}/api/v2/shipments?pageSize=51
 
-### 3. GET /api/shipments: pageSize above 50 -> 400
-GET {{host}}/api/shipments?pageSize=51
-
-### 4. PUT /api/shipments/{trackingNumber}: replace the editable details -> 200 OK
-PUT {{host}}/api/shipments/{{trackingNumber}}
+### v2 4. PUT /api/v2/shipments/{trackingNumber}: replace the editable details -> 200 OK
+PUT {{host}}/api/v2/shipments/{{v2Number}}
 Content-Type: application/json
 
 {
@@ -82,8 +101,8 @@ Content-Type: application/json
   "weightKg": 4.5
 }
 
-### 4. PUT /api/shipments/{trackingNumber}: invalid phone and weight -> 400
-PUT {{host}}/api/shipments/{{trackingNumber}}
+### v2 4. PUT /api/v2/shipments/{trackingNumber}: invalid phone and weight -> 400
+PUT {{host}}/api/v2/shipments/{{v2Number}}
 Content-Type: application/json
 
 {
@@ -94,8 +113,8 @@ Content-Type: application/json
   "weightKg": 0
 }
 
-### 4. PUT /api/shipments/{trackingNumber}: unknown -> 404
-PUT {{host}}/api/shipments/APX-99999999
+### v2 4. PUT /api/v2/shipments/{trackingNumber}: unknown -> 404
+PUT {{host}}/api/v2/shipments/APX-99999999
 Content-Type: application/json
 
 {
@@ -106,83 +125,86 @@ Content-Type: application/json
   "weightKg": 4.5
 }
 
-### 5. PATCH /api/shipments/{trackingNumber}/status: Created -> PickedUp -> 200 OK
-PATCH {{host}}/api/shipments/{{trackingNumber}}/status
+### v2 5. PATCH /api/v2/shipments/{trackingNumber}/status: Created -> PickedUp -> 200 OK
+PATCH {{host}}/api/v2/shipments/{{v2Number}}/status
 Content-Type: application/json
 
 { "status": "PickedUp" }
 
-### 5. PATCH /api/shipments/{trackingNumber}/status: skipping to Delivered -> 409 Conflict (names the allowed next status)
-PATCH {{host}}/api/shipments/{{trackingNumber}}/status
+### v2 5. PATCH /api/v2/shipments/{trackingNumber}/status: skipping to Delivered -> 409 Conflict (names the allowed next status)
+PATCH {{host}}/api/v2/shipments/{{v2Number}}/status
 Content-Type: application/json
 
 { "status": "Delivered" }
 
-### 5. PATCH /api/shipments/{trackingNumber}/status: unknown status -> 400
-PATCH {{host}}/api/shipments/{{trackingNumber}}/status
+### v2 5. PATCH /api/v2/shipments/{trackingNumber}/status: unknown status -> 400
+PATCH {{host}}/api/v2/shipments/{{v2Number}}/status
 Content-Type: application/json
 
 { "status": "Lost" }
 
-### 6. POST /api/shipments/{trackingNumber}/scans: offline scans -> 200 OK, accepted 2 (status moves to InTransit), rejected 1 with the reason
-POST {{host}}/api/shipments/{{trackingNumber}}/scans
+### v2 6. POST /api/v2/shipments/{trackingNumber}/scans: offline scans -> 200 OK, accepted 2, rejected 1, "shipmentStatus": "InTransit"
+POST {{host}}/api/v2/shipments/{{v2Number}}/scans
 Content-Type: application/json
 
 {
   "scans": [
-    { "scanId": "scan::0199a001-0000-7000-8000-000000000001", "scanType": "Pickup", "location": "Riverside Depot", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T08:00:00Z", "notes": "Collected from front desk" },
-    { "scanId": "scan::0199a001-0000-7000-8000-000000000002", "scanType": "InTransit", "location": "Central Sorting, Belt 4", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T11:30:00Z" },
-    { "scanId": "scan::0199a001-0000-7000-8000-000000000003", "scanType": "Delivered", "location": "12 Harbour Road", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T15:00:00Z" }
+    { "scanId": "scan::0199a002-0000-7000-8000-000000000001", "scanType": "Pickup", "location": "Riverside Depot", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T08:00:00Z", "notes": "Collected from front desk" },
+    { "scanId": "scan::0199a002-0000-7000-8000-000000000002", "scanType": "InTransit", "location": "Central Sorting, Belt 4", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T11:30:00Z" },
+    { "scanId": "scan::0199a002-0000-7000-8000-000000000003", "scanType": "Delivered", "location": "12 Harbour Road", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T15:00:00Z" }
   ]
 }
 
-### 6. POST /api/shipments/{trackingNumber}/scans: the same upload again -> 200 OK, accepted 0, duplicatesSkipped 2 (idempotent)
-POST {{host}}/api/shipments/{{trackingNumber}}/scans
+### v2 6. POST /api/v2/shipments/{trackingNumber}/scans: the same upload again -> 200 OK, accepted 0, duplicatesSkipped 2 (idempotent)
+POST {{host}}/api/v2/shipments/{{v2Number}}/scans
 Content-Type: application/json
 
 {
   "scans": [
-    { "scanId": "scan::0199a001-0000-7000-8000-000000000001", "scanType": "Pickup", "location": "Riverside Depot", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T08:00:00Z", "notes": "Collected from front desk" },
-    { "scanId": "scan::0199a001-0000-7000-8000-000000000002", "scanType": "InTransit", "location": "Central Sorting, Belt 4", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T11:30:00Z" },
-    { "scanId": "scan::0199a001-0000-7000-8000-000000000003", "scanType": "Delivered", "location": "12 Harbour Road", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T15:00:00Z" }
+    { "scanId": "scan::0199a002-0000-7000-8000-000000000001", "scanType": "Pickup", "location": "Riverside Depot", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T08:00:00Z", "notes": "Collected from front desk" },
+    { "scanId": "scan::0199a002-0000-7000-8000-000000000002", "scanType": "InTransit", "location": "Central Sorting, Belt 4", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T11:30:00Z" },
+    { "scanId": "scan::0199a002-0000-7000-8000-000000000003", "scanType": "Delivered", "location": "12 Harbour Road", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T15:00:00Z" }
   ]
 }
 
-### 6. POST /api/shipments/{trackingNumber}/scans: a scan time in the future -> 400 (custom rule, key scans[0].scannedAtUtc)
-POST {{host}}/api/shipments/{{trackingNumber}}/scans
+### v2 6. POST /api/v2/shipments/{trackingNumber}/scans: a scan time in the future -> 400 (custom rule, key scans[0].scannedAtUtc)
+POST {{host}}/api/v2/shipments/{{v2Number}}/scans
 Content-Type: application/json
 
 {
   "scans": [
-    { "scanId": "scan::0199a001-0000-7000-8000-000000000004", "scanType": "Delivered", "location": "12 Harbour Road", "courierId": "CR-001", "scannedAtUtc": "2099-01-01T08:00:00Z" }
+    { "scanId": "scan::0199a002-0000-7000-8000-000000000004", "scanType": "Delivered", "location": "12 Harbour Road", "courierId": "CR-001", "scannedAtUtc": "2099-01-01T08:00:00Z" }
   ]
 }
 
-### 6. POST /api/shipments/{trackingNumber}/scans: unknown shipment -> 404
-POST {{host}}/api/shipments/APX-99999999/scans
+### v2 6. POST /api/v2/shipments/{trackingNumber}/scans: unknown shipment -> 404
+POST {{host}}/api/v2/shipments/APX-99999999/scans
 Content-Type: application/json
 
 {
   "scans": [
-    { "scanId": "scan::0199a001-0000-7000-8000-000000000005", "scanType": "Pickup", "location": "Riverside Depot", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T08:00:00Z" }
+    { "scanId": "scan::0199a002-0000-7000-8000-000000000005", "scanType": "Pickup", "location": "Riverside Depot", "courierId": "CR-001", "scannedAtUtc": "2026-11-01T08:00:00Z" }
   ]
 }
 
-### 7. GET /api/shipments/{trackingNumber}/scans: history, oldest first -> 200 OK
-GET {{host}}/api/shipments/{{trackingNumber}}/scans
+### v2 2. GET /api/v2/shipments/{trackingNumber}: after the scans -> 200 OK, "latestScan": { "scanType": "InTransit", ... }
+GET {{host}}/api/v2/shipments/{{v2Number}}
 
-### 7. GET /api/shipments/{trackingNumber}/scans: unknown shipment -> 404
-GET {{host}}/api/shipments/APX-99999999/scans
+### v2 7. GET /api/v2/shipments/{trackingNumber}/scans: history, oldest first, scan types by name -> 200 OK
+GET {{host}}/api/v2/shipments/{{v2Number}}/scans
 
-### 8. DELETE /api/shipments/{trackingNumber}: already InTransit -> 409 Conflict
-DELETE {{host}}/api/shipments/{{trackingNumber}}
+### v2 7. GET /api/v2/shipments/{trackingNumber}/scans: unknown shipment -> 404
+GET {{host}}/api/v2/shipments/APX-99999999/scans
 
-### 8. DELETE: create a second shipment to delete -> 201
-POST {{host}}/api/shipments
+### v2 8. DELETE /api/v2/shipments/{trackingNumber}: already InTransit -> 409 Conflict
+DELETE {{host}}/api/v2/shipments/{{v2Number}}
+
+### v2 8. DELETE: create a second shipment to delete -> 201
+POST {{host}}/api/v2/shipments
 Content-Type: application/json
 
 {
-  "trackingNumber": "{{deletableNumber}}",
+  "trackingNumber": "{{v2Deletable}}",
   "recipientName": "Esi Owusu",
   "recipientPhone": "0207946002",
   "recipientAddress": "7 Mill Lane",
@@ -190,8 +212,155 @@ Content-Type: application/json
   "weightKg": 0.8
 }
 
-### 8. DELETE /api/shipments/{trackingNumber}: still Created -> 204 No Content
-DELETE {{host}}/api/shipments/{{deletableNumber}}
+### v2 8. DELETE /api/v2/shipments/{trackingNumber}: still Created -> 204 No Content
+DELETE {{host}}/api/v2/shipments/{{v2Deletable}}
 
-### 8. DELETE /api/shipments/{trackingNumber}: already deleted -> 404
-DELETE {{host}}/api/shipments/{{deletableNumber}}
+### v2 8. DELETE /api/v2/shipments/{trackingNumber}: already deleted -> 404
+DELETE {{host}}/api/v2/shipments/{{v2Deletable}}
+
+# --------------------------------------------------------------------------------------------------------------
+# Version 1 (deprecated): the Part B contract. Flat recipient fields, enums as numbers.
+# Successful responses carry Deprecation: @1794182400, Sunset: Mon, 31 May 2027 00:00:00 GMT and Link headers.
+# --------------------------------------------------------------------------------------------------------------
+
+### v1 1. POST /api/v1/shipments: create -> 201 Created, Location: /api/v1/shipments/APX-24100001, "status": 0
+POST {{host}}/api/v1/shipments
+Content-Type: application/json
+
+{
+  "trackingNumber": "{{v1Number}}",
+  "recipientName": "Yaw Asante",
+  "recipientPhone": "+44 20 7946 0100",
+  "recipientAddress": "21 Dock Road",
+  "city": "Portside",
+  "weightKg": 2.5
+}
+
+### v1 1. POST /api/v1/shipments: the same tracking number again -> 409 Conflict
+POST {{host}}/api/v1/shipments
+Content-Type: application/json
+
+{
+  "trackingNumber": "{{v1Number}}",
+  "recipientName": "Yaw Asante",
+  "recipientPhone": "+44 20 7946 0100",
+  "recipientAddress": "21 Dock Road",
+  "city": "Portside",
+  "weightKg": 2.5
+}
+
+### v1 1. POST /api/v1/shipments: missing fields -> 400 ValidationProblemDetails
+POST {{host}}/api/v1/shipments
+Content-Type: application/json
+
+{ "trackingNumber": "{{v1Number}}" }
+
+### v1 1. POST /api/v1/shipments: not JSON -> 415 Unsupported Media Type
+POST {{host}}/api/v1/shipments
+Content-Type: text/plain
+
+trackingNumber=APX-24100009
+
+### v1 2. GET /api/v1/shipments/{trackingNumber} -> 200 OK, flat recipient fields, "status": 0
+GET {{host}}/api/v1/shipments/{{v1Number}}
+
+### v1 2. GET /api/v1/shipments/{trackingNumber}: not a tracking number -> 404 (the route constraint never matches)
+GET {{host}}/api/v1/shipments/12345
+
+### v1 3. GET /api/v1/shipments: filtered by status number and city -> 200 OK
+GET {{host}}/api/v1/shipments?status=0&city=Portside
+
+### v1 3. GET /api/v1/shipments: page 0 -> 400
+GET {{host}}/api/v1/shipments?page=0
+
+### v1 4. PUT /api/v1/shipments/{trackingNumber}: replace the editable details -> 200 OK
+PUT {{host}}/api/v1/shipments/{{v1Number}}
+Content-Type: application/json
+
+{
+  "recipientName": "Yaw Asante",
+  "recipientPhone": "+44 20 7946 0101",
+  "recipientAddress": "23 Dock Road",
+  "city": "Portside",
+  "weightKg": 2.75
+}
+
+### v1 4. PUT /api/v1/shipments/{trackingNumber}: unknown -> 404
+PUT {{host}}/api/v1/shipments/APX-99999999
+Content-Type: application/json
+
+{
+  "recipientName": "Yaw Asante",
+  "recipientPhone": "+44 20 7946 0101",
+  "recipientAddress": "23 Dock Road",
+  "city": "Portside",
+  "weightKg": 2.75
+}
+
+### v1 5. PATCH /api/v1/shipments/{trackingNumber}/status: by number, 1 = PickedUp -> 200 OK
+PATCH {{host}}/api/v1/shipments/{{v1Number}}/status
+Content-Type: application/json
+
+{ "status": 1 }
+
+### v1 5. PATCH /api/v1/shipments/{trackingNumber}/status: back to Created -> 409 Conflict
+PATCH {{host}}/api/v1/shipments/{{v1Number}}/status
+Content-Type: application/json
+
+{ "status": "Created" }
+
+### v1 6. POST /api/v1/shipments/{trackingNumber}/scans: offline scans -> 200 OK, accepted 1, "shipmentStatus": 2
+POST {{host}}/api/v1/shipments/{{v1Number}}/scans
+Content-Type: application/json
+
+{
+  "scans": [
+    { "scanId": "scan::0199a001-0000-7000-8000-000000000011", "scanType": "InTransit", "location": "Central Sorting, Belt 2", "courierId": "CR-002", "scannedAtUtc": "2026-11-02T09:15:00Z" }
+  ]
+}
+
+### v1 6. POST /api/v1/shipments/{trackingNumber}/scans: the same scan ID twice in one upload -> 400
+POST {{host}}/api/v1/shipments/{{v1Number}}/scans
+Content-Type: application/json
+
+{
+  "scans": [
+    { "scanId": "scan::0199a001-0000-7000-8000-000000000012", "scanType": "InTransit", "location": "Central Sorting, Belt 2", "courierId": "CR-002", "scannedAtUtc": "2026-11-02T09:15:00Z" },
+    { "scanId": "scan::0199a001-0000-7000-8000-000000000012", "scanType": "InTransit", "location": "Central Sorting, Belt 2", "courierId": "CR-002", "scannedAtUtc": "2026-11-02T09:15:00Z" }
+  ]
+}
+
+### v1 7. GET /api/v1/shipments/{trackingNumber}/scans: history, scan types as numbers -> 200 OK
+GET {{host}}/api/v1/shipments/{{v1Number}}/scans
+
+### v1 7. GET /api/v1/shipments/{trackingNumber}/scans: unknown shipment -> 404
+GET {{host}}/api/v1/shipments/APX-99999999/scans
+
+### v1 8. DELETE: create a second shipment to delete -> 201
+POST {{host}}/api/v1/shipments
+Content-Type: application/json
+
+{
+  "trackingNumber": "{{v1Deletable}}",
+  "recipientName": "Abena Darko",
+  "recipientPhone": "0207946003",
+  "recipientAddress": "4 Ferry Lane",
+  "city": "Rivermouth",
+  "weightKg": 1.2
+}
+
+### v1 8. DELETE /api/v1/shipments/{trackingNumber}: still Created -> 204 No Content
+DELETE {{host}}/api/v1/shipments/{{v1Deletable}}
+
+### v1 8. DELETE /api/v1/shipments/{trackingNumber}: already InTransit -> 409 Conflict
+DELETE {{host}}/api/v1/shipments/{{v1Number}}
+
+# --------------------------------------------------------------------------------------------------------------
+# The Part B URLs without a version: an alias of v1 until v1's sunset (VERSIONING.md)
+# --------------------------------------------------------------------------------------------------------------
+
+### GET /api/shipments/{trackingNumber}: answers as v1, with v1's deprecation headers -> 200 OK
+GET {{host}}/api/shipments/{{v1Number}}
+
+### Both versions read the same shipment: the v1 one in v2's shape -> 200 OK
+GET {{host}}/api/v2/shipments/{{v1Number}}

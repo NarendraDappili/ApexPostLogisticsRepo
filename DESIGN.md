@@ -600,8 +600,10 @@ A guard refuses to run tests against any database whose name is not a test datab
 | [0024](docs/adr/0024-complete-audit-trail-and-audit-log-screen.md) | A complete audit trail (data changes, security events, `ApexPost.Audit` log) and an Audit log screen by role | Accepted |
 | [0025](docs/adr/0025-tracked-shipments-beside-counter-shipments.md) | Tracked shipments (tracking API) as a new aggregate beside the counter's `Shipment`; additive migration only | Accepted |
 | [0026](docs/adr/0026-api-errors-by-exception-type.md) | The tracking API maps errors to 400/404/409/500 by exception type only | Accepted |
+| [0027](docs/adr/0027-url-segment-api-versioning-with-sunset.md) | The tracking API is versioned by URL segment (v1 deprecated with a published sunset, v2 current); both versions share one service | Accepted |
+| [0028](docs/adr/0028-openapi-contracts-and-generated-client.md) | One built-in OpenAPI generator; the documents are committed contracts checked by a test; the C# client is generated from `contracts/v2.json` by NSwag | Accepted |
 
-Week 3 added thirteen ADRs (0011–0023). The seven the brief requires are in bold. ADR 0024 answers the final review's remark that auditing was not visible anywhere. Week 4 added ADRs 0025 and 0026 for the tracking API ([API-NOTES.md](API-NOTES.md)).
+Week 3 added thirteen ADRs (0011–0023). The seven the brief requires are in bold. ADR 0024 answers the final review's remark that auditing was not visible anywhere. Week 4 added ADRs 0025 and 0026 for the tracking API ([API-NOTES.md](API-NOTES.md)), and 0027 and 0028 for its versions, documentation and generated client ([VERSIONING.md](VERSIONING.md)).
 
 ## Known limitations
 

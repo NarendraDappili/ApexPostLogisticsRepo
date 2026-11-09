@@ -11,18 +11,23 @@ namespace ApexPost.Api.Validation;
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter, AllowMultiple = false)]
 public sealed class NotInFutureAttribute : ValidationAttribute
 {
+    /// <summary>How far ahead of the server clock a scan time may be: 5 minutes.</summary>
     public const int DefaultAllowedClockSkewMinutes = 5;
 
+    /// <summary>The rule with the default 5 minutes of allowed clock drift.</summary>
     public NotInFutureAttribute()
         : base("{0} cannot be in the future; it is more than {1} minutes ahead of the server clock.")
     {
     }
 
+    /// <summary>How many minutes ahead of the server clock a time may be and still pass.</summary>
     public int AllowedClockSkewMinutes { get; init; } = DefaultAllowedClockSkewMinutes;
 
+    /// <inheritdoc/>
     public override string FormatErrorMessage(string name) =>
         string.Format(System.Globalization.CultureInfo.CurrentCulture, ErrorMessageString, name, AllowedClockSkewMinutes);
 
+    /// <inheritdoc/>
     protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
     {
         var time = value switch
