@@ -1,7 +1,11 @@
 using System.Net;
 using System.Text.Json;
 using ApexPost.Application.Abstractions;
+using ApexPost.Application.Repositories;
+using ApexPost.Application.Tracking;
 using ApexPost.Infrastructure.Persistence;
+using ApexPost.Infrastructure.Queries;
+using ApexPost.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -44,6 +48,17 @@ public sealed class ApiCompositionTests
         Assert.Collection(interceptors,
             first => Assert.IsType<DataChangeAuditInterceptor>(first),
             second => Assert.IsType<AuditColumnsInterceptor>(second));
+    }
+
+    [Fact]
+    public async Task The_tracking_service_and_its_repository_share_the_request_dbcontext()
+    {
+        await using var factory = new OfflineApiFactory();
+        await using var scope = factory.Services.CreateAsyncScope();
+
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<ShipmentTrackingService>());
+        Assert.IsType<EfTrackedShipmentRepository>(scope.ServiceProvider.GetRequiredService<ITrackedShipmentRepository>());
+        Assert.IsType<EfTrackingQueries>(scope.ServiceProvider.GetRequiredService<ITrackingQueries>());
     }
 
     [Fact]
