@@ -1,6 +1,6 @@
 # ApexPost tracking API security
 
-This file describes how `ApexPost.Api` decides who may call it. The Week 3 counter application's security is in [docs/security.md](docs/security.md).
+This file describes how `ApexPost.Api` decides who may call it: couriers and the back office with JWT bearer tokens and roles, partner companies with API keys. The Week 3 counter application's security is in [docs/security.md](docs/security.md).
 
 ## Authentication: JWT bearer tokens
 
@@ -39,7 +39,8 @@ The values come from configuration, never from code:
 A **fallback authorization policy** requires an authenticated caller for every endpoint that does not say otherwise. A new endpoint is therefore protected without anyone remembering to protect it. Only these are open:
 - `/health`, the hosting platform's probe;
 - the OpenAPI documents and Swagger UI, which exist in Development only;
-- `POST /dev/token`, also Development only.
+- `POST /dev/token`, also Development only;
+- the partner route, which needs no token because it needs a partner API key instead ([Partner API keys](#partner-api-keys)).
 
 Without a token, even a path that does not exist answers 401, not 404, so an anonymous caller cannot discover which routes exist.
 
@@ -82,6 +83,45 @@ A valid token that may not do what it asks gets a **403 ProblemDetails** with th
 
 Naming the missing role gives nothing away: the OpenAPI documents say the same.
 
+## Partner API keys
+
+Partner companies (fictional ones here, such as "Northwind Freight") follow parcels through one read-only route, in v2 only:
+
+```http
+GET /api/v2/partner/shipments/APX-24000001
+X-Api-Key: <the key ApexPost issued to the partner>
+```
+
+It answers the status, the delivery city and what happened at the latest scan, and when. It does not return the recipient's name, phone or address, or any scan location, because a delivery scan's location is the delivery address. A partner needs to know where the parcel is in its journey, not who receives it.
+
+**How the key is checked.**
+- **An endpoint filter, not a token.** The action is `[AllowAnonymous]`, which lifts the bearer requirement, and `[RequirePartnerApiKey]`, which attaches the filter (`PartnerApiKeyFilter`) to that action only. A test checks that an action never has one attribute without the other. A bearer token does not open the route, and a partner key opens no other route.
+- **Before anything else.** The filter runs before the action, so a request without a valid key learns nothing, not even whether the shipment exists.
+- **The header only.** A key in the query string is ignored: URLs end up in server logs, proxies and browser histories. Two `X-Api-Key` headers are refused rather than guessed between.
+- **Hashed and compared in constant time.** At start-up each configured key is hashed with SHA-256, and only the hashes are kept. A presented key is hashed and compared with every stored hash using `CryptographicOperations.FixedTimeEquals`, without stopping at the first match. Neither the time taken nor an early exit shows how close a guess was.
+- **Never logged.** The log says which partner called, or that a request was refused because the key was missing or invalid. It never contains a presented or a stored key, and a test checks that.
+
+**A missing or invalid key is a 401 ProblemDetails**, with the title "A partner API key is required." and `WWW-Authenticate: ApiKey header="X-Api-Key"`:
+
+| Key | `detail` |
+|---|---|
+| None | Send your partner API key in the X-Api-Key header. |
+| Not a partner's key | The API key in the X-Api-Key header is not valid. Check it with ApexPost partner support. |
+
+**Where the keys live.** In the `PartnerApi:Keys` configuration section, never in the repository. In Development they go in user-secrets:
+
+```powershell
+# A key is random, never a word: 32 random bytes in Base64.
+$bytes = New-Object byte[] 32; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes); $key = [Convert]::ToBase64String($bytes)
+dotnet user-secrets set "PartnerApi:Keys:0:Partner" "Northwind Freight" --project src/ApexPost.Api
+dotnet user-secrets set "PartnerApi:Keys:0:Key" $key --project src/ApexPost.Api
+$env:APEXPOST_PARTNER_API_KEY = $key        # for ApexPost.Api.http, which reads it with {{$processEnv ...}}
+```
+
+Elsewhere they come from the deployment's secret store, for example a key vault or environment variables (`PartnerApi__Keys__0__Key`).
+- **Checked at start-up.** The API refuses to start if an entry has no partner name, a key shorter than 32 characters, or the same key as another entry. The message names the setting but never shows the key. With no keys at all it starts, logs a warning, and refuses every partner request.
+- **Rotation.** A partner may have two entries at once. Add the new key, give it to the partner, and remove the old one once they have switched.
+
 ## Getting a token in Development
 
 There are two ways; both sign with the same key, for the same issuer and audience.
@@ -117,7 +157,7 @@ Content-Type: application/json
 
 - **[`ApexPost.Client`](src/ApexPost.Client):** `AddApexPostClient(baseAddress).WithBearerToken(...)` adds a handler that sets `Authorization: Bearer` on every request. The token is fetched per request, so a renewed token takes effect at once. The handler never logs or stores it.
 - **The console consumer:** uses `--ApexPostApi:AccessToken=<token>` (or the environment variable `ApexPostApi__AccessToken`). Without one, it asks a Development API's `/dev/token` and keeps the token in memory only.
-- **[`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http):** gets a token from `/dev/token` in its first request and sends it with every other request.
+- **[`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http):** gets a token from `/dev/token` in its first request and sends it with every other request. The partner requests read the key from the environment variable `APEXPOST_PARTNER_API_KEY`, so it is never written into the file.
 
 ## Using a real identity provider
 

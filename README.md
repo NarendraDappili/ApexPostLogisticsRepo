@@ -213,7 +213,7 @@ With single-field indexes, the first two queries used their index but still sort
 |---|---|
 | [`ApexPost.Api`](src/ApexPost.Api) | `Program.cs`. `Controllers/V1` and `Controllers/V2`: `ShipmentsController`, `ScansController`. `Contracts`: request DTOs and v1's response DTOs; `Contracts/V2`: v2's response DTOs. `Validation`: the custom rules. `Errors/ApiExceptionHandler`. `Routing`: the `{trackingNumber:trackingNumber}` constraint. `OpenApi` and `Versioning` (Part C). [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) |
 | Week 3 projects (additions only) | Domain: `TrackedShipment`, `TrackingScan`, `TrackingStatusRules`, `TrackingNumber`, `TrackingScanId`, `Recipient`. Application: `ShipmentTrackingService`, `ITrackedShipmentRepository`, `ITrackingQueries`. Infrastructure: their EF Core configuration, repository and queries, plus the migration `AddShipmentTracking` |
-| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 292 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles and the courierId rule |
+| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 314 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles, the courierId rule and partner API keys |
 
 **Run it:**
 
@@ -225,7 +225,7 @@ dotnet run --project src/ApexPost.Api --launch-profile http          # http://lo
 
 It reads the same `ConnectionStrings:ApexPostDb` user-secret as the web application. **Every API request needs a bearer token** ([SECURITY.md](SECURITY.md)): use the one `dotnet user-jwts` prints, or get one from the Development-only `POST /dev/token`.
 
-Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) from Visual Studio or VS Code (REST Client), top to bottom. The first request gets a token for the rest. Each endpoint has one success and at least one failure, for both versions, plus the 401 and 403 cases. All 59 requests were run against a fresh database and returned the codes in their titles.
+Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) from Visual Studio or VS Code (REST Client), top to bottom. The first request gets a token for the rest. Each endpoint has one success and at least one failure, for both versions, plus the 401, 403 and partner API key cases. All 64 requests were run against a fresh database and returned the codes in their titles. The partner requests need a partner key, set once in user-secrets and in the environment variable `APEXPOST_PARTNER_API_KEY` ([SECURITY.md](SECURITY.md#partner-api-keys)); without it, the valid-key requests answer 401.
 
 **Endpoints** (`{version}` is `2`, or `1` for the deprecated Part B contract; see [Versions](#api-documentation-openapi-and-swagger-ui-week-4-part-c)):
 
@@ -239,6 +239,7 @@ Then send the requests in [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.ht
 | DELETE | `/api/v{version}/shipments/{trackingNumber}` | 204, only while Created |
 | POST | `/api/v{version}/shipments/{trackingNumber}/scans` | 200 with `accepted`, `duplicatesSkipped` and `rejected` (with reasons) |
 | GET | `/api/v{version}/shipments/{trackingNumber}/scans` | 200, oldest first |
+| GET | `/api/v2/partner/shipments/{trackingNumber}` | 200; v2 only, for partners, with an `X-Api-Key` header instead of a token |
 
 **Errors and validation:**
 - **Every error is ProblemDetails:** 400, 404, 405, 409, 415 and 500.
@@ -358,7 +359,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 996 tests passing and a zero-warning build:
+**Results:** the latest run had 1018 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -368,7 +369,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Web integration | 110 |
 | Courier offline | 128 |
 | Courier app (Part D) | 16 |
-| API (with the OpenAPI, versioning, contract, generated-client and authentication and authorization tests) | 292 |
+| API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key tests) | 314 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 

@@ -110,6 +110,8 @@ public sealed class AuthorizationTests
         ["DeleteShipment"] = ApiRoles.Admin,
         ["GetScanHistory"] = null,
         ["UploadScans"] = ApiRoles.Courier,
+        // v2 only, with a partner API key instead of a token.
+        ["GetPartnerShipment"] = null,
     };
 
     [Fact]
@@ -120,7 +122,7 @@ public sealed class AuthorizationTests
             .SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
             .ToList();
 
-        Assert.Equal(RoleByAction.Count * 2, actions.Count);
+        Assert.Equal((RoleByAction.Count - 1) * 2 + 1, actions.Count);
         Assert.All(actions, action =>
         {
             var role = RoleByAction[action.Name];
@@ -128,7 +130,8 @@ public sealed class AuthorizationTests
             Assert.Equal(role, action.GetCustomAttribute<AuthorizeAttribute>()?.Roles);
             Assert.True(declares403 == (role is not null), $"{action.DeclaringType!.FullName}.{action.Name}");
             Assert.Equal(action.Name == "UploadScans", action.GetCustomAttribute<RequireOwnCourierIdAttribute>() is not null);
-            Assert.Null(action.GetCustomAttribute<AllowAnonymousAttribute>());
+            // Only an action that checks a partner key instead may skip the token, and it must check one.
+            Assert.Equal(action.GetCustomAttribute<RequirePartnerApiKeyAttribute>() is not null, action.GetCustomAttribute<AllowAnonymousAttribute>() is not null);
         });
     }
 

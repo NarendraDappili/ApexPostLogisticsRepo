@@ -22,6 +22,9 @@
 # One role each, for the 403 requests.
 @courierToken = {{courierLogin.response.body.$.accessToken}}
 @adminToken = {{adminLogin.response.body.$.accessToken}}
+# A partner API key is a secret, so it is never written here. Configure one in the API's user-secrets and put the same
+# value in the environment variable APEXPOST_PARTNER_API_KEY before opening the editor (SECURITY.md).
+@partnerKey = {{$processEnv APEXPOST_PARTNER_API_KEY}}
 
 ### Health check, no token needed -> 200
 GET {{host}}/health
@@ -315,6 +318,29 @@ Authorization: Bearer {{token}}
 ### v2 8. DELETE /api/v2/shipments/{trackingNumber}: already deleted -> 404
 DELETE {{host}}/api/v2/shipments/{{v2Deletable}}
 Authorization: Bearer {{token}}
+
+# --------------------------------------------------------------------------------------------------------------
+# Partner route (v2 only): read-only, with an X-Api-Key header instead of a bearer token
+# --------------------------------------------------------------------------------------------------------------
+
+### Partner: no API key -> 401 ProblemDetails, WWW-Authenticate: ApiKey header="X-Api-Key"
+GET {{host}}/api/v2/partner/shipments/{{v2Number}}
+
+### Partner: an invalid API key -> 401 ProblemDetails
+GET {{host}}/api/v2/partner/shipments/{{v2Number}}
+X-Api-Key: not-a-valid-partner-key-but-long-enough-to-try
+
+### Partner: a bearer token is not a partner key -> 401
+GET {{host}}/api/v2/partner/shipments/{{v2Number}}
+Authorization: Bearer {{token}}
+
+### Partner: a valid API key -> 200 with status, city and latestScan; no recipient name, phone or address
+GET {{host}}/api/v2/partner/shipments/{{v2Number}}
+X-Api-Key: {{partnerKey}}
+
+### Partner: a valid API key, unknown tracking number -> 404
+GET {{host}}/api/v2/partner/shipments/APX-99999999
+X-Api-Key: {{partnerKey}}
 
 # --------------------------------------------------------------------------------------------------------------
 # Version 1 (deprecated): the Part B contract. Flat recipient fields, enums as numbers.

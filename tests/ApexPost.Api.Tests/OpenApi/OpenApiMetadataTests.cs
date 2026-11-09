@@ -46,6 +46,8 @@ public sealed class OpenApiMetadataTests
                     data.Add(version, route.Replace(" /", $" /api/{version}/", StringComparison.Ordinal), operationId, tag, statusCodes);
                 }
             }
+            // The partner route (D3) is in v2 only; it takes an API key, so it has no 403.
+            data.Add("v2", "GET /api/v2/partner/shipments/{trackingNumber}", "GetPartnerShipment", "Partner", [200, 401, 404, 500]);
             return data;
         }
     }
@@ -69,7 +71,7 @@ public sealed class OpenApiMetadataTests
     {
         var ids = AllOperations(await DocumentAsync(version)).Select(operation => operation.Value.GetProperty("operationId").GetString()).ToList();
 
-        Assert.Equal(8, ids.Count);
+        Assert.Equal(version == "v1" ? 8 : 9, ids.Count);
         Assert.Equal(ids.Count, ids.Distinct(StringComparer.Ordinal).Count());
     }
 

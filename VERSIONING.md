@@ -52,6 +52,7 @@ A new response field counts as non-breaking because clients are expected to igno
 | 5 | A shipment gains `latestScan { scanType, location, scannedAtUtc }`, which is `null` until the first scan | Non-breaking on its own | A new field that clients ignore if they do not know it. It came with v2 because it belongs to v2's new shipment shape; on its own it could have been added to v1. |
 | 6 | The requests do not change: create, replace, status change and scan upload take the same bodies and query parameters, with enums as names or numbers | Non-breaking (no change) | A v1 client's requests work unchanged against v2. Only its reading of responses has to change. |
 | 7 | Errors do not change: the same status codes and the same ProblemDetails bodies | Non-breaking (no change) | |
+| 8 | v2 adds a read-only partner route, `GET /api/v2/partner/shipments/{trackingNumber}`, which takes an `X-Api-Key` header (Part D) | Non-breaking | A new operation; nothing a v1 client calls changes. It is not added to v1, because v1 is deprecated and gets no new features. |
 
 ### Changes inside v1 since Part B
 

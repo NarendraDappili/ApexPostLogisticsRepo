@@ -47,8 +47,12 @@ builder.Services.AddApexPostOpenApi();
 // JWT bearer tokens (issuer, audience, lifetime, signature) from Authentication:Schemes:Bearer; every endpoint needs
 // an authenticated caller unless it allows anonymous ones (SECURITY.md).
 builder.Services.AddApexPostAuthentication(builder.Configuration);
+// The partner route takes an API key instead (PartnerApi:Keys, user-secrets in Development; SECURITY.md).
+builder.Services.AddPartnerApiKeys(builder.Configuration);
 
 var app = builder.Build();
+// Read the partner keys now, so a malformed key stops the start rather than the first partner request.
+_ = app.Services.GetRequiredService<PartnerApiKeys>();
 // First, so an exception anywhere later in the pipeline becomes ProblemDetails through ApiExceptionHandler.
 app.UseExceptionHandler();
 // Errors that end without a body (no route matches: 404; wrong method: 405) get a ProblemDetails body as well.
@@ -64,8 +68,9 @@ app.UseRouting();
 // A probe for the hosting platform, not part of the client contract, so it stays out of the OpenAPI document (and
 // out of the generated client). It answers everyone, without a token.
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).ExcludeFromDescription().AllowAnonymous();
-// Mapped before the Swagger UI below asks which API versions the controllers describe.
-app.MapControllers();
+// Mapped before the Swagger UI below asks which API versions the controllers describe. The actions marked
+// [RequirePartnerApiKey] get the endpoint filter that checks X-Api-Key.
+app.MapControllers().RequirePartnerApiKeysWhereMarked();
 // The documents and the Swagger UI page are served in Development only. Not publishing them elsewhere is a choice
 // about what to publish, not a security control: every endpoint answers the same with or without them.
 if (app.Environment.IsDevelopment())

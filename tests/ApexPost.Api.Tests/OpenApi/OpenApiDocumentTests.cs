@@ -82,7 +82,8 @@ public sealed class OpenApiDocumentTests
     {
         var operations = OpenApiMetadataTests.AllOperations(await OpenApiMetadataTests.DocumentAsync(version)).ToList();
 
-        Assert.Equal(8, operations.Count);
+        // v2 also has the partner route (D3).
+        Assert.Equal(version == "v1" ? 8 : 9, operations.Count);
         Assert.All(operations, operation => Assert.Equal(deprecated, operation.Value.TryGetProperty("deprecated", out var flag) && flag.GetBoolean()));
     }
 
@@ -93,7 +94,7 @@ public sealed class OpenApiDocumentTests
         var operations = OpenApiMetadataTests.AllOperations(await OpenApiMetadataTests.DocumentAsync(version)).Select(operation => operation.Route).Order(StringComparer.Ordinal);
 
         // The eight Part B endpoints. /health is a hosting probe, not part of the contract.
-        Assert.Equal(
+        string[] expected =
         [
             $"DELETE /api/{version}/shipments/{{trackingNumber}}",
             $"GET /api/{version}/shipments",
@@ -103,7 +104,10 @@ public sealed class OpenApiDocumentTests
             $"POST /api/{version}/shipments",
             $"POST /api/{version}/shipments/{{trackingNumber}}/scans",
             $"PUT /api/{version}/shipments/{{trackingNumber}}",
-        ], operations);
+            // v2 adds the read-only partner route (D3).
+            .. version == "v2" ? ["GET /api/v2/partner/shipments/{trackingNumber}"] : Array.Empty<string>(),
+        ];
+        Assert.Equal(expected.Order(StringComparer.Ordinal), operations);
     }
 
     [Theory]
