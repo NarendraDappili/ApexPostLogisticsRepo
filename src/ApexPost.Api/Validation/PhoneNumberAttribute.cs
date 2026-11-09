@@ -12,5 +12,6 @@ namespace ApexPost.Api.Validation;
 [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Parameter, AllowMultiple = false)]
 public sealed class PhoneNumberAttribute() : ValidationAttribute("{0} must have 7 to 15 digits and may contain only a leading +, spaces, hyphens and brackets.")
 {
+    /// <inheritdoc/>
     public override bool IsValid(object? value) => value is null || (value is string phone && (string.IsNullOrWhiteSpace(phone) || Recipient.IsValidPhone(phone)));
 }

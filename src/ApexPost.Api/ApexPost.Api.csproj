@@ -19,6 +19,12 @@
     <LangVersion>14.0</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- The XML comments on actions and DTOs become the summaries and descriptions in the OpenAPI document. A public
+         member without one is a build warning (CS1591), so the document never silently loses a description. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- CS1573 asks for a <param> on every parameter once one is documented. An action's CancellationToken is not
+         part of the HTTP contract, and the .NET 10 generator put its <param> text on the request body. -->
+    <NoWarn>$(NoWarn);CS1573</NoWarn>
     <!-- The UserSecretsId of ApexPost.Web: the API works on the same database, so both read the one
          ConnectionStrings:ApexPostDb secret (as the design-time DbContext factory already does). -->
     <UserSecretsId>c64b2003-9f07-4be4-801b-323af9da40c8</UserSecretsId>
