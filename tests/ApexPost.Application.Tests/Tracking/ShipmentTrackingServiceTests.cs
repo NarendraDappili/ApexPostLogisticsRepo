@@ -38,7 +38,7 @@ public sealed class ShipmentTrackingServiceTests
     public async Task Create_turns_a_duplicate_key_race_into_the_same_conflict()
     {
         var unitOfWork = new SpyUnitOfWork { FailWith = new DuplicateKeyException("duplicate") };
-        var service = new ShipmentTrackingService(_store, _store, unitOfWork);
+        var service = new ShipmentTrackingService(_store, _store, unitOfWork, TimeProvider.System);
 
         var exception = await Assert.ThrowsAsync<TrackingNumberInUseException>(() => service.CreateAsync(NewShipment("APX-24000001")));
 
@@ -249,12 +249,13 @@ public sealed class ShipmentTrackingServiceTests
     [Fact]
     public void The_constructor_refuses_missing_dependencies()
     {
-        Assert.Throws<ArgumentNullException>(() => new ShipmentTrackingService(null!, _store, _unitOfWork));
-        Assert.Throws<ArgumentNullException>(() => new ShipmentTrackingService(_store, null!, _unitOfWork));
-        Assert.Throws<ArgumentNullException>(() => new ShipmentTrackingService(_store, _store, null!));
+        Assert.Throws<ArgumentNullException>(() => new ShipmentTrackingService(null!, _store, _unitOfWork, TimeProvider.System));
+        Assert.Throws<ArgumentNullException>(() => new ShipmentTrackingService(_store, null!, _unitOfWork, TimeProvider.System));
+        Assert.Throws<ArgumentNullException>(() => new ShipmentTrackingService(_store, _store, null!, TimeProvider.System));
+        Assert.Throws<ArgumentNullException>(() => new ShipmentTrackingService(_store, _store, _unitOfWork, null!));
     }
 
-    private ShipmentTrackingService Service() => new(_store, _store, _unitOfWork);
+    private ShipmentTrackingService Service() => new(_store, _store, _unitOfWork, TimeProvider.System);
 
     private static NewTrackedShipment NewShipment(string trackingNumber) =>
         new(trackingNumber, "Ama Mensah", "+44 20 7946 0000", "12 Harbour Road", "Portside", 5m);
@@ -298,6 +299,13 @@ internal sealed class InMemoryTrackingStore : ITrackedShipmentRepository, ITrack
     public void Add(TrackedShipment shipment) => _shipments.Add(shipment);
 
     public void Remove(TrackedShipment shipment) => _shipments.Remove(shipment);
+
+    public List<TrackingScan> Scans { get; } = [];
+
+    public Task<IReadOnlyDictionary<TrackingScanId, TrackingNumber>> FindScanOwnersAsync(IReadOnlyCollection<TrackingScanId> scanIds, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyDictionary<TrackingScanId, TrackingNumber>>(Scans.Where(scan => scanIds.Contains(scan.Id)).ToDictionary(scan => scan.Id, scan => scan.TrackingNumber));
+
+    public void AddScan(TrackingScan scan) => Scans.Add(scan);
 
     public Task<PagedResult<TrackedShipmentView>> ListAsync(TrackingListQuery query, CancellationToken cancellationToken = default)
     {

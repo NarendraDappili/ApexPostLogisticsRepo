@@ -168,6 +168,34 @@ public sealed class TrackingPersistenceTests(SqlServerTestDatabase database)
     }
 
     [Fact]
+    public async Task Scan_owners_are_found_in_one_statement_for_known_ids_only()
+    {
+        var first = NextNumber();
+        var second = NextNumber();
+        var (a, b, unknown) = (ScanId(), ScanId(), ScanId());
+        await SaveAsync(db =>
+        {
+            var one = Shipment(first);
+            var two = Shipment(second);
+            var repository = new EfTrackedShipmentRepository(db);
+            repository.Add(one);
+            repository.Add(two);
+            repository.AddScan(one.RecordScan(a, TrackingScanType.Pickup, "Depot 4", "CR-001", ScanTime, null, ScanTime));
+            repository.AddScan(two.RecordScan(b, TrackingScanType.Pickup, "Depot 4", "CR-001", ScanTime, null, ScanTime));
+        });
+        var log = new SqlCommandLog();
+
+        await using var db = database.CreateContext(null, null, log);
+        var owners = await new EfTrackedShipmentRepository(db).FindScanOwnersAsync([a, b, unknown, a]);
+
+        Assert.Equal(2, owners.Count);
+        Assert.Equal((first, second), (owners[a].Value, owners[b].Value));
+        Assert.Single(log.Commands);
+        Assert.Empty(await new EfTrackedShipmentRepository(db).FindScanOwnersAsync([]));
+        Assert.Single(log.Commands);
+    }
+
+    [Fact]
     public async Task The_list_filters_by_status_and_city_and_pages_in_tracking_number_order()
     {
         var city = "City " + Guid.NewGuid().ToString("N")[..8];

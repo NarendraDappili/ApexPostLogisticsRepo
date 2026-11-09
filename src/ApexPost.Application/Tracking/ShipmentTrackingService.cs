@@ -23,15 +23,18 @@ public sealed partial class ShipmentTrackingService
     private readonly ITrackedShipmentRepository _shipments;
     private readonly ITrackingQueries _queries;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly TimeProvider _timeProvider;
 
-    public ShipmentTrackingService(ITrackedShipmentRepository shipments, ITrackingQueries queries, IUnitOfWork unitOfWork)
+    public ShipmentTrackingService(ITrackedShipmentRepository shipments, ITrackingQueries queries, IUnitOfWork unitOfWork, TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(shipments);
         ArgumentNullException.ThrowIfNull(queries);
         ArgumentNullException.ThrowIfNull(unitOfWork);
+        ArgumentNullException.ThrowIfNull(timeProvider);
         _shipments = shipments;
         _queries = queries;
         _unitOfWork = unitOfWork;
+        _timeProvider = timeProvider;
     }
 
     public async Task<TrackedShipmentView> CreateAsync(NewTrackedShipment request, CancellationToken cancellationToken = default)
@@ -123,6 +126,88 @@ public sealed partial class ShipmentTrackingService
             ?? throw new TrackedShipmentNotFoundException(number.Value);
     }
 
+    /// <summary>
+    /// Records a courier's offline scans for one shipment. Idempotent: the device's scan ID is the key, so sending the
+    /// same scans again (after a timeout, or a lost response) stores nothing twice and reports them as duplicates.
+    /// <list type="bullet">
+    /// <item>New scans are applied oldest first, so a pickup and a later in-transit scan uploaded together move the
+    /// shipment in the order they happened. Each one goes through <see cref="TrackedShipment.EvaluateScan"/>: it moves
+    /// the status, is kept as history, or is rejected with the reason.</item>
+    /// <item>A scan ID already stored for this shipment is a duplicate; for a different shipment it is rejected, and the
+    /// other shipment is not named.</item>
+    /// <item>Everything accepted is saved in one commit. If another request changed the shipment or stored one of these
+    /// scans meanwhile, nothing is saved and <see cref="ScanUploadConflictException"/> says to send the upload again.</item>
+    /// </list>
+    /// </summary>
+    public async Task<ScanUploadResult> UploadScansAsync(string trackingNumber, IReadOnlyList<UploadedScan> scans, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(scans);
+        if (scans.Count == 0) throw new RequestValidationException(["scans: At least one scan is required."]);
+        var shipment = await LoadAsync(trackingNumber, cancellationToken).ConfigureAwait(false);
+
+        var rejected = new List<(int Order, ScanRejection Rejection)>();
+        var candidates = new List<(int Order, TrackingScanId Id, UploadedScan Scan)>();
+        for (var order = 0; order < scans.Count; order++)
+        {
+            var scan = scans[order];
+            if (!TrackingScanId.TryParse(scan.ScanId, out var scanId)) rejected.Add((order, new(scan.ScanId ?? string.Empty, "The scan ID must be scan:: followed by a GUID.")));
+            else if (!Enum.IsDefined(scan.ScanType)) rejected.Add((order, new(scanId!.Value, "The scan type is not a known scan type.")));
+            else candidates.Add((order, scanId!, scan));
+        }
+
+        var owners = await _shipments.FindScanOwnersAsync([.. candidates.Select(candidate => candidate.Id)], cancellationToken).ConfigureAwait(false);
+        var receivedAtUtc = _timeProvider.GetUtcNow();
+        var seen = new HashSet<TrackingScanId>();
+        var accepted = 0;
+        var duplicates = 0;
+        foreach (var (order, scanId, scan) in candidates.OrderBy(candidate => candidate.Scan.ScannedAtUtc).ThenBy(candidate => candidate.Order))
+        {
+            if (!seen.Add(scanId) || owners.GetValueOrDefault(scanId) == shipment.TrackingNumber)
+            {
+                duplicates++;
+                continue;
+            }
+
+            if (owners.ContainsKey(scanId))
+            {
+                rejected.Add((order, new(scanId.Value, "This scan ID is already recorded for a different shipment.")));
+                continue;
+            }
+
+            var decision = shipment.EvaluateScan(scan.ScanType);
+            if (!decision.Accepted)
+            {
+                rejected.Add((order, new(scanId.Value, decision.RefusalReason!)));
+                continue;
+            }
+
+            try
+            {
+                // The scan is built before the status changes, so a scan with a bad value leaves the shipment as it was.
+                _shipments.AddScan(shipment.RecordScan(scanId, scan.ScanType, scan.Location, scan.CourierId, scan.ScannedAtUtc, scan.Notes, receivedAtUtc));
+                accepted++;
+            }
+            catch (ArgumentException exception)
+            {
+                rejected.Add((order, new(scanId.Value, Describe(exception))));
+            }
+        }
+
+        if (accepted > 0)
+        {
+            try
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (ConflictException exception) when (exception is ConcurrencyConflictException or DuplicateKeyException)
+            {
+                throw new ScanUploadConflictException(shipment.TrackingNumber.Value, exception);
+            }
+        }
+
+        return new ScanUploadResult(accepted, duplicates, [.. rejected.OrderBy(rejection => rejection.Order).Select(rejection => rejection.Rejection)], shipment.Status);
+    }
+
     private static readonly string WeightError = $"weightKg: The weight must be between {TrackedShipment.MinimumWeightKg} and {TrackedShipment.MaximumWeightKg} kg.";
 
     private async Task<TrackedShipment> LoadAsync(string trackingNumber, CancellationToken cancellationToken)
@@ -159,10 +244,16 @@ public sealed partial class ShipmentTrackingService
         }
         catch (ArgumentException exception) when (exception is not RequestValidationException)
         {
-            var message = ParameterSuffix().Replace(exception.Message, string.Empty);
-            var field = exception.ParamName is { Length: > 0 } name ? FieldNames.GetValueOrDefault(name, name) : null;
-            throw new RequestValidationException([field is null ? message : $"{field}: {message}"]);
+            throw new RequestValidationException([Describe(exception)]);
         }
+    }
+
+    // "field: message", without the .NET "(Parameter 'x')" suffix.
+    private static string Describe(ArgumentException exception)
+    {
+        var message = ParameterSuffix().Replace(exception.Message, string.Empty);
+        var field = exception.ParamName is { Length: > 0 } name ? FieldNames.GetValueOrDefault(name, name) : null;
+        return field is null ? message : $"{field}: {message}";
     }
 
     // "The weight must be between 0.1 and 70 kg. (Parameter 'weightKg')\nActual value was 80." -> "The weight must be ..."

@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 using ApexPost.Api.Validation;
+using ApexPost.Application.Tracking;
 using ApexPost.Domain.Entities;
 using ApexPost.Domain.Enums;
 
@@ -36,9 +37,12 @@ public sealed class ScanUploadRequest : IValidatableObject
             .ToList();
         if (repeated.Count > 0)
         {
-            yield return new ValidationResult($"Each scan ID can appear only once in an upload; repeated: {string.Join(", ", repeated)}.", [nameof(Scans)]);
+            // MVC keys an object-level result by the member name exactly as given, so give the JSON name.
+            yield return new ValidationResult($"Each scan ID can appear only once in an upload; repeated: {string.Join(", ", repeated)}.", ["scans"]);
         }
     }
+
+    internal IReadOnlyList<UploadedScan> ToApplication() => [.. Scans!.Select(scan => scan.ToApplication())];
 }
 
 /// <summary>One scan exactly as the courier's device recorded it.</summary>
@@ -72,4 +76,6 @@ public sealed class ScanUploadItem
     public string? Notes { get; init; }
 
     internal const string ScanIdPattern = "^scan::[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+
+    internal UploadedScan ToApplication() => new(ScanId!, ScanType!.Value, Location!, CourierId!, ScannedAtUtc!.Value, Notes);
 }

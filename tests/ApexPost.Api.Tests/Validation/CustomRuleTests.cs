@@ -94,7 +94,7 @@ public sealed class CustomRuleTests
         var result = Assert.Single(request.Validate(new ValidationContext(request)));
 
         Assert.Equal($"Each scan ID can appear only once in an upload; repeated: {scan.ScanId}.", result.ErrorMessage);
-        Assert.Equal([nameof(ScanUploadRequest.Scans)], result.MemberNames);
+        Assert.Equal(["scans"], result.MemberNames);
     }
 
     [Fact]
