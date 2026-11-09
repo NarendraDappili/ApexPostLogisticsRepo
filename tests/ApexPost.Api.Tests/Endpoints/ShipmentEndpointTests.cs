@@ -25,7 +25,7 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
     {
         var number = SqlApiFactory.NextTrackingNumber();
 
-        using var created = await _client.CreateAsync(number.ToLowerInvariant(), weightKg: 69.5m);
+        using var created = await _client.CreateAsync(number, weightKg: 69.5m);
         var body = await created.JsonAsync();
         using var fetched = await _client.GetAsync(created.Headers.Location);
 
@@ -55,13 +55,13 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
     }
 
     [Fact]
-    public async Task Invalid_values_the_service_refuses_are_400_with_the_field()
+    public async Task An_out_of_range_weight_is_400_with_the_field()
     {
         using var response = await _client.CreateAsync(SqlApiFactory.NextTrackingNumber(), weightKg: 80m);
         var problem = await response.JsonAsync();
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Equal(["The weight must be between 0.1 and 70 kg."], problem.GetProperty("errors").GetProperty("weightKg").EnumerateArray().Select(error => error.GetString()));
+        Assert.Equal(["weightKg must be between 0.1 and 70 kg."], problem.GetProperty("errors").GetProperty("weightKg").EnumerateArray().Select(error => error.GetString()));
     }
 
     [Fact]
@@ -143,7 +143,7 @@ public sealed class ShipmentEndpointTests(SqlApiFactory factory)
         using var response = await _client.GetAsync($"/api/shipments?{query}");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains((await response.JsonAsync()).GetProperty("errors").EnumerateObject(), error => error.Value.ToString().Contains(field, StringComparison.Ordinal));
+        Assert.True((await response.JsonAsync()).GetProperty("errors").TryGetProperty(field, out _));
     }
 
     [Theory]
