@@ -19,10 +19,16 @@ if (string.IsNullOrWhiteSpace(connectionString))
 // Validation errors are keyed and worded by the JSON names a client sends (recipientPhone, scans[0].scannedAtUtc),
 // the same names the service uses for the errors it finds.
 builder.Services.AddControllers(options =>
-{
-    options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider());
-    options.ModelMetadataDetailsProviders.Add(new JsonDisplayNameProvider());
-});
+    {
+        options.ModelMetadataDetailsProviders.Add(new SystemTextJsonValidationMetadataProvider());
+        options.ModelMetadataDetailsProviders.Add(new JsonDisplayNameProvider());
+        // Every DTO field states [Required] itself. The implicit rule would only add "The request field is required."
+        // to every unreadable body, next to the error that says what is actually wrong.
+        options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
+    })
+    // A body that is not valid JSON, or a value of the wrong type, is reported against its JSON path ("$.status") as
+    // "The input was not valid." The serializer's own text names internal types such as ApexPost.Domain.Enums.
+    .AddJsonOptions(options => options.AllowInputFormatterExceptionMessages = false);
 // Every error response is ProblemDetails (application/problem+json) with the traceId and the request it answers.
 builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
     context.ProblemDetails.Instance ??= $"{context.HttpContext.Request.Method} {context.HttpContext.Request.Path}");

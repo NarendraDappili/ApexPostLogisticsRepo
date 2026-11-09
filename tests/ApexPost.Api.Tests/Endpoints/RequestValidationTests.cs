@@ -161,6 +161,36 @@ public sealed class RequestValidationTests(SqlApiFactory factory)
         Assert.Single(Errors(problem, field));
     }
 
+    [Theory]
+    [InlineData("/api/shipments/APX-00000001/status", "PATCH", """{ "status": "Lost" }""", "$.status")]
+    [InlineData("/api/shipments", "POST", """{ "trackingNumber": """, "$.trackingNumber")]
+    [InlineData("/api/shipments", "POST", """{ "weightKg": "heavy" }""", "$.weightKg")]
+    public async Task Unreadable_json_names_the_path_without_internal_type_names(string path, string method, string json, string key)
+    {
+        using var response = await _client.SendAsync(new HttpRequestMessage(new HttpMethod(method), path) { Content = ApiClient.RawJson(json) });
+        var text = await response.Content.ReadAsStringAsync();
+        var errors = JsonDocument.Parse(text).RootElement.GetProperty("errors");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal([key], errors.EnumerateObject().Select(error => error.Name));
+        Assert.Equal(["The input was not valid."], Errors(JsonDocument.Parse(text).RootElement, key));
+        Assert.DoesNotContain("ApexPost.", text);
+        Assert.DoesNotContain("System.", text);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("null")]
+    public async Task An_empty_body_is_one_error_not_two(string body)
+    {
+        using var response = await _client.PostAsync("/api/shipments", ApiClient.RawJson(body));
+        var errors = (await response.JsonAsync()).GetProperty("errors");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Single(errors.EnumerateObject());
+        Assert.False(errors.TryGetProperty("request", out _));
+    }
+
     [Fact]
     public async Task A_refused_create_stores_nothing()
     {
