@@ -477,15 +477,34 @@ flowchart TD
     HTTPS --> Routing[Endpoint routing]
     Routing --> Maintenance[Maintenance mode; /health bypass]
     Maintenance --> CORS[Partner widget CORS]
-    CORS --> ApiKey[Integration API key]
-    ApiKey --> Limits[Login and integration rate limits]
-    Limits --> IP[IP allowlist for admin screens and integration]
+    CORS --> Limits[Rate limits: login per IP; integration per verified partner, wrong keys per IP]
+    Limits --> ApiKey[Integration API key]
+    ApiKey --> IP[IP allowlist for admin screens and integration]
     IP --> Cookie[Cookie authentication, staff re-checked against the database]
     Cookie --> Authz[Role and same-branch policies]
     Authz --> Mvc[MVC: AuditResourceFilter, ValidationActionFilter, PerformanceActionFilter, action]
 ```
 
-The order is security-significant; [ADR 0004](docs/adr/0004-order-security-middleware-before-endpoints.md) explains it. Authentication and the other controls are described in [docs/security.md](docs/security.md):
+The order is security-significant ([ADR 0004](docs/adr/0004-order-security-middleware-before-endpoints.md)). Each position, and why it is there:
+
+| # | Component | Why here |
+|---|---|---|
+| 1 | Correlation ID | First, so every later log line, error body and audit row carries the ID. An incoming `X-Correlation-Id` is reused only if it is short and safe; otherwise a new one is generated |
+| 2 | Request timing and logging | Wraps the exception boundary, so failed requests are timed and logged too |
+| 3 | Problem Details exception boundary | Before anything that can throw, so no stack trace or framework message reaches a client. A client that hangs up is logged as 499, with no response body |
+| 4 | Security headers | Registered before any middleware that can short-circuit, so 401, 403, 429 and 503 responses carry them as well |
+| 5 | HSTS and HTTPS redirect | Before routing, so no endpoint ever runs over plain HTTP outside Development |
+| 6 | Routing | The controls after it read endpoint metadata (`[RequireIntegrationApiKey]`, `[RequireIpAllowlist]`, `[EnableRateLimiting]`, `[EnableCors]`), which exists only once an endpoint is selected |
+| 7 | Maintenance mode | Turns everything away with 503 and `Retry-After` before any work, except `/health`, which the hosting platform still needs |
+| 8 | CORS | Answers the partner widget's preflight before the key check: a browser never sends the key on a preflight |
+| 9 | Rate limits | Before the key check, so key guessing is limited. The integration budget belongs to the partner its key proves, never to a header the caller chooses (`X-Partner-Id`). A missing or wrong key spends a small budget for its client IP (10 a minute), not the partner's (60 a minute). Sign-in allows 5 posts a minute per IP |
+| 10 | Integration API key | Before the IP allowlist and authentication, because the partner is authenticated by its key, not by a cookie. Compared in constant time; the key is never logged |
+| 11 | IP allowlist | For the admin screens and the integration endpoint. It uses the direct connection address; behind a proxy, trusted forwarded headers come first |
+| 12 | Cookie authentication | Re-checks the staff member against the database on every request, so a deactivated or moved staff member loses access at once |
+| 13 | Authorization | Role and same-branch policies. The services still check every business rule; the policies only reduce what reaches them |
+| 14 | MVC filters, then the action | Audit, validation and timing around the action (below) |
+
+Authentication and the other controls are described in [docs/security.md](docs/security.md):
 - PBKDF2 passwords on staff rows;
 - cookie claims re-validated against the `Staff` table on every request;
 - `BranchManagerOnly` and `SameBranchOnly` policies;
@@ -501,6 +520,31 @@ The order is security-significant; [ADR 0004](docs/adr/0004-order-security-middl
 | `AuditResourceFilter` | Resource filter, outermost (-2000) | One safe audit record per MVC request, with the status the client received |
 | `ValidationActionFilter` | Action filter (-1000) | Invalid model: re-render the MVC view with the bound model, or `400 ValidationProblemDetails` for `[InvalidModelResponse]` actions and API controllers |
 | `PerformanceActionFilter` | Action filter (1000) | Warns when an action exceeds `ApexPost:Performance:WarningThresholdMilliseconds` |
+
+**Why each concern is a filter or a middleware:**
+
+| Concern | Built as | Why |
+|---|---|---|
+| Audit of each MVC action, with its outcome | Resource filter | Only a filter knows the controller, action, route values and the result. As a resource filter it sees the final status, after redirects, `Forbid` and mapped exceptions |
+| Invalid-model response | Action filter | It must choose between re-rendering the MVC view with the bound model and a `400 ValidationProblemDetails`. Middleware has neither the model state nor the view |
+| Slow-action warning | Action filter | It measures the action itself and names it. The whole request's time is the logging middleware's job |
+| Correlation ID, security headers, HTTPS, exception boundary | Middleware | They apply to every request: static files, `/health`, the integration endpoint and requests that never reach MVC |
+| Maintenance, CORS, rate limits, API key, IP allowlist | Middleware | They must stop a request before model binding or any action code runs, and they read only endpoint metadata |
+| Authentication and authorization | Middleware (built-in) | The principal must exist before any filter or action reads it |
+
+### Threats and mitigations
+
+| Threat | Mitigation | What remains |
+|---|---|---|
+| Password guessing | PBKDF2-SHA256 hash per staff row; the same cost for an unknown staff ID; one generic message; 5 sign-in posts a minute per IP, then 429 (recorded as a security event) | No account lockout or MFA |
+| API key guessing or leak | Key in user-secrets; constant-time comparison; never logged or audited; wrong keys limited to 10 a minute per IP, without spending the partner's budget | One long-lived shared key; no rotation |
+| Price, fee or verification tampering | The basket carries identifiers only; prices, fees and verification outcomes are decided on the server ([ADR 0009](docs/adr/0009-server-side-pricing-and-separate-identity-verification.md)) | The identity verifier is simulated |
+| Cross-branch or cross-role access | Cookie claims re-checked against the `Staff` table on every request; role and same-branch policies; the services check the branch again (for example, the shipping label) | No distributed session revocation |
+| Over-posting | View models and request DTOs; nothing binds to an entity (two tests) | — |
+| SQL injection | EF Core parameters; procedures with static SQL only | — |
+| Sensitive data in logs or audit | Masked identity documents; the audit filter keeps allow-listed route IDs only; passwords show as `(hidden)` in the data history | The audit tables are append-only for the app's role, but a DBA can still change them |
+| Error details leaking | Problem Details with a generic message for 500; security headers on every response | Behind a proxy, forwarded headers must be configured |
+| Lost or conflicting writes | `rowversion` optimistic concurrency and one transaction per use case ([ADR 0017](docs/adr/0017-optimistic-concurrency-for-stock-and-transactions.md)) | — |
 
 ## User interface
 

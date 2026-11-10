@@ -201,9 +201,11 @@ With single-field indexes, the first two queries used their index but still sort
 
 **Outbox.** `OutboxService.SyncPendingAsync()` uploads the Pending scans, oldest first, in batches of 20 through `IShipmentUploader`. The server's answer marks each scan: accepted or duplicate becomes Synced, rejected becomes Failed with the reason. A failed upload leaves the remaining scans Pending, and runs never overlap. In Part D, the real API client replaces `FakeShipmentUploader`.
 
-**Screenshots** (taken from the harness) are in [`docs/screenshots/week4-partA`](docs/screenshots/week4-partA):
+**Screenshots** from the harness are in [`docs/screenshots/week4-partA`](docs/screenshots/week4-partA/README.md):
 - the query results: one parcel's history, the pending list, and the per-type counts in the header;
-- the listener log after adding, syncing and deleting scans.
+- the listener log after adding, syncing and deleting scans;
+- the outbox offline and online, including a rejected scan marked Failed;
+- a second process refused.
 
 ## Tracking API (Week 4, Part B)
 
@@ -213,7 +215,7 @@ With single-field indexes, the first two queries used their index but still sort
 |---|---|
 | [`ApexPost.Api`](src/ApexPost.Api) | `Program.cs`. `Controllers/V1` and `Controllers/V2`: `ShipmentsController`, `ScansController`. `Contracts`: request DTOs and v1's response DTOs; `Contracts/V2`: v2's response DTOs. `Validation`: the custom rules. `Errors/ApiExceptionHandler`. `Routing`: the `{trackingNumber:trackingNumber}` constraint. `OpenApi` and `Versioning` (Part C). [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) |
 | Week 3 projects (additions only) | Domain: `TrackedShipment`, `TrackingScan`, `TrackingStatusRules`, `TrackingNumber`, `TrackingScanId`, `Recipient`. Application: `ShipmentTrackingService`, `ITrackedShipmentRepository`, `ITrackingQueries`. Infrastructure: their EF Core configuration, repository and queries, plus the migration `AddShipmentTracking` |
-| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 327 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles, the courierId rule, partner API keys, HTTPS redirection and HSTS |
+| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 329 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles, the courierId rule, partner API keys, HTTPS redirection and HSTS |
 
 **Run it:**
 
@@ -330,7 +332,13 @@ Start the API, then run `dotnet run --project src/ApexPost.Client.Consumer` (the
 - **[VERSIONING.md](VERSIONING.md)** lists each change between v1 and v2, whether it is breaking and why, and v1's deprecation and sunset plan.
 - [ADR 0027](docs/adr/0027-url-segment-api-versioning-with-sunset.md) and [ADR 0028](docs/adr/0028-openapi-contracts-and-generated-client.md) record the decisions.
 
-**Screenshots:** [docs/screenshots/week4-partC/README.md](docs/screenshots/week4-partC/README.md) lists the ones to take: Swagger UI with v1 and v2, a 400, a 409, and a 201 with `Location`.
+**Screenshots:** [`docs/screenshots/week4-partC`](docs/screenshots/week4-partC/README.md) has:
+- Swagger UI with v1 and v2;
+- a 400, a 409, and a 201 with `Location`;
+- v1's deprecation headers and one operation's metadata;
+- the consumer, the regenerated client and the contract tests.
+
+[`docs/screenshots/week4-partB`](docs/screenshots/week4-partB/README.md) has every other Part B status code: paging and filtering, 404, PUT, PATCH and its 409, both DELETE answers, the idempotent scan upload, the custom rule's 400, and 415.
 
 **Development only.** Outside Development, both URLs return 404. This decides what we publish; it is not security. Hiding the description protects no endpoint, and every endpoint answers the same either way, and access is controlled by tokens and keys ([SECURITY.md](SECURITY.md)). `/health` is left out of the document because it is a probe for the hosting platform, not part of the client contract.
 
@@ -390,7 +398,12 @@ Every retry and circuit change is logged. **[RESILIENCE.md](RESILIENCE.md)** giv
 - **No server internals:** a 5xx shows only the reference (`traceId`) to quote, never the server's details.
 - **Two error types:** every failure is one of two exceptions with that message: `ApexApiException` (the server answered with an error) or `ApiUnavailableException` (no network, timeout, or open circuit).
 
-**Demo video and screenshots:** [docs/screenshots/week4-partD/README.md](docs/screenshots/week4-partD/README.md) is a step-by-step script for the 3–5 minute video: login, scans in airplane mode, automatic sync, 401 and 403, and the circuit breaker opening and recovering.
+**Screenshots and demo video:** [`docs/screenshots/week4-partD`](docs/screenshots/week4-partD/README.md) has:
+- the Swagger UI Authorize dialog, 401 and 403, and the partner key (401 and 200);
+- the HTTPS redirect;
+- a whole courier-app session: login, scans saved while the API is down, retries and the circuit opening, recovery with automatic sync, a delivery, and a 401 back to Login.
+
+Its README is also a step-by-step script for the 3–5 minute video: login, scans in airplane mode, automatic sync, 401 and 403, and the circuit breaker opening and recovering. [docs/screenshots/README.md](docs/screenshots/README.md) maps every Week 4 requirement to its picture.
 
 ## Tests
 
@@ -408,21 +421,21 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1144 tests passing and a zero-warning build:
+**Results:** the latest run had 1148 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
 | Domain | 153 |
 | Application | 152 |
 | Infrastructure | 145 |
-| Web integration | 110 |
+| Web integration | 112 |
 | Courier offline | 129 |
 | Courier app (Part D) | 128 |
-| API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 327 |
+| API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 329 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 
-**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors, checks that every model change has a migration, starts a throwaway SQL Server container with a random password, and runs every test on each push and pull request to `master`, then reruns the error-handling tests with full JIT optimization. Every run on GitHub Actions so far has passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
+**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors, checks that every model change has a migration, starts a throwaway SQL Server container with a random password, and runs every test on each push and pull request to `master`, then reruns the error-handling tests with full JIT optimization. Of the 52 runs on GitHub Actions up to 10 November 2026, 51 passed. The other (the push of `2a3ce1a` to `master`) failed inside GitHub before any job started, and the next push to `master` passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
 
 ## Database artifacts
 
@@ -471,7 +484,8 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - [PERFORMANCE.md](PERFORMANCE.md): execution plans, before/after measurements, index trade-offs, generated SQL.
 - [sql/README.md](sql/README.md): reporting queries, the atomic T-SQL sale, the blocking demo, deadlock avoidance.
 - [docs/security.md](docs/security.md), [docs/testing.md](docs/testing.md), [docs/business-rules.md](docs/business-rules.md), [docs/architecture/README.md](docs/architecture/README.md).
-- [AUDIT-SAMPLE.json](AUDIT-SAMPLE.json): the shape of an audit record.
+- [AUDIT-SAMPLE.json](AUDIT-SAMPLE.json): the shape of the three audit tables (requests, data changes, security events).
+- [docs/screenshots/README.md](docs/screenshots/README.md): the Week 4 screenshots, one or more per requirement.
 
 ## Known limitations
 

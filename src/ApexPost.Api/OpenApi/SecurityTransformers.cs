@@ -23,7 +23,7 @@ internal sealed class BearerSecuritySchemeTransformer : IOpenApiDocumentTransfor
             Type = SecuritySchemeType.Http,
             Scheme = "bearer",
             BearerFormat = "JWT",
-            Description = "A JWT access token with the Courier or Admin role, sent as Authorization: Bearer <token>. "
+            Description = "A JWT access token with the Courier or Admin role, sent as `Authorization: Bearer <token>`. "
                 + "In Development, get one from dotnet user-jwts or POST /dev/token (SECURITY.md).",
         };
         document.Security = [new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference(SchemeName, document)] = [] }];
@@ -52,7 +52,7 @@ internal sealed class PartnerApiKeySecurityTransformer : IOpenApiOperationTransf
             Type = SecuritySchemeType.ApiKey,
             In = ParameterLocation.Header,
             Name = PartnerApiKeyFilter.HeaderName,
-            Description = "The API key ApexPost issued to your company, sent as X-Api-Key: <key>. Partner routes only (SECURITY.md).",
+            Description = "The API key ApexPost issued to your company, sent as `X-Api-Key: <key>`. Partner routes only (SECURITY.md).",
         };
         operation.Security = [new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference(SchemeName, document)] = [] }];
         return Task.CompletedTask;

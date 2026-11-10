@@ -28,6 +28,7 @@ using ApexPost.Web.Filters;
 using ApexPost.Application.Auditing;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -54,6 +55,9 @@ builder.Services.AddCors(options => options.AddPolicy("PartnerTrackingWidget", p
 }));
 var loginPermitLimit = builder.Configuration.GetValue<int?>("ApexPost:RateLimiting:LoginPermitLimit") ?? 5;
 var integrationPermitLimit = builder.Configuration.GetValue<int?>("ApexPost:RateLimiting:IntegrationPermitLimit") ?? 60;
+var integrationFailedKeyPermitLimit = builder.Configuration.GetValue<int?>("ApexPost:RateLimiting:IntegrationFailedKeyPermitLimit") ?? 10;
+static FixedWindowRateLimiterOptions PerMinute(int permitLimit) =>
+    new() { PermitLimit = Math.Max(1, permitLimit), Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true };
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -61,9 +65,16 @@ builder.Services.AddRateLimiter(options =>
     options.OnRejected = (context, _) => new ValueTask(SecurityEventRecorder.RecordAsync(context.HttpContext, ApexPost.Application.Auditing.SecurityEventType.RateLimited, StatusCodes.Status429TooManyRequests,
         $"Rate limit '{context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName ?? "unknown"}' exceeded"));
     options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
-        context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(1, loginPermitLimit), Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
-    options.AddPolicy("partner-integration", context => RateLimitPartition.GetFixedWindowLimiter(
-        "partner-integration", _ => new FixedWindowRateLimiterOptions { PermitLimit = Math.Max(1, integrationPermitLimit), Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true }));
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => PerMinute(loginPermitLimit)));
+    // One budget per verified partner (identified by its key, never by a header it chooses). A missing or wrong key
+    // gets a small budget per client IP instead, so guessing keys is limited and never spends a partner's budget.
+    options.AddPolicy("partner-integration", context =>
+    {
+        var partner = IntegrationPartner.Resolve(context, context.RequestServices.GetRequiredService<IOptionsMonitor<IntegrationSecurityOptions>>().CurrentValue);
+        return partner is not null
+            ? RateLimitPartition.GetFixedWindowLimiter(partner, _ => PerMinute(integrationPermitLimit))
+            : RateLimitPartition.GetFixedWindowLimiter("unverified:" + (context.Connection.RemoteIpAddress?.ToString() ?? "unknown"), _ => PerMinute(integrationFailedKeyPermitLimit));
+    });
 });
 // Outside Development the sign-in and antiforgery cookies are only ever sent over HTTPS, even if a request arrives
 // over plain HTTP before the HTTPS redirect. Development keeps SameAsRequest so tests and http://localhost work.
@@ -198,8 +209,10 @@ app.UseHttpsRedirection();
 app.UseRouting();
 app.UseMiddleware<MaintenanceModeMiddleware>();
 app.UseCors();
-app.UseMiddleware<IntegrationApiKeyMiddleware>();
+// The limiter comes before the key check: it partitions by the verified partner, and a wrong key spends only its
+// caller's small per-IP budget, so key guessing gets 429 (ADR 0004).
 app.UseRateLimiter();
+app.UseMiddleware<IntegrationApiKeyMiddleware>();
 app.UseMiddleware<IpAllowlistMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();

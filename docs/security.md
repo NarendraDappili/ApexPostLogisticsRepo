@@ -110,7 +110,10 @@ A full document number is accepted only as transient request input on the verifi
     - A test scans every `.cshtml` file and the rendered layout, so adding an inline script or style attribute fails the build instead of silently breaking the page.
     - **The UI shell keeps to the same policy** ([ADR 0023](adr/0023-application-shell-and-theme-under-the-strict-csp.md)). The theme is one same-origin stylesheet, the icons are an inline SVG sprite (markup, not script or style), and the logo watermark is a same-origin image (`img-src 'self'`). The policy did not need widening, and no CDN or font origin was added.
     - **The menu and branch picker are not a security boundary.** They only stop offering what the server would refuse; `[Authorize]`, `SameBranchOnly` and `BranchManagerOnly` still decide every request.
-- **Rate limits:** a fixed-window limit per IP on sign-in. Integration requests must pass the API key before they consume the shared integration limit, which ignores the caller-supplied `X-Partner-Id`.
+- **Rate limits** (fixed one-minute windows, 429 when exceeded, each one recorded as a security event):
+  - **Sign-in:** 5 posts a minute per IP.
+  - **Integration, per partner:** 60 requests a minute for the partner its `X-Api-Key` proves. The partition is a fingerprint of the configured key; the caller-supplied `X-Partner-Id` is ignored.
+  - **Wrong or missing keys:** 10 a minute per client IP, so guessing a key is limited and never spends a partner's budget ([ADR 0004](adr/0004-order-security-middleware-before-endpoints.md)).
 - **IP allowlist:** it applies to the admin screens and the integration endpoint. It is loopback-only in Development and empty (deny) elsewhere.
   - It uses the direct connection address.
   - Behind a reverse proxy, configure forwarded-header processing with explicit trusted proxies before relying on it. Accepting arbitrary `X-Forwarded-For` would let callers spoof their address.
