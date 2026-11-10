@@ -162,13 +162,17 @@ public sealed class SecurityPipelineTests
     }
 
     [Fact]
-    public async Task Integration_rate_limit_requires_api_key_and_is_shared_across_untrusted_partner_ids()
+    public async Task Integration_rate_limit_is_per_verified_partner_and_wrong_keys_do_not_spend_it()
     {
         await using var factory = new SecurityWebApplicationFactory(integrationPermitLimit: 60);
-        Assert.Equal(60, factory.Services.GetRequiredService<IConfiguration>().GetValue<int>("ApexPost:RateLimiting:IntegrationPermitLimit"));
+        var configuration = factory.Services.GetRequiredService<IConfiguration>();
+        Assert.Equal(60, configuration.GetValue<int>("ApexPost:RateLimiting:IntegrationPermitLimit"));
+        var failedKeyLimit = configuration.GetValue<int>("ApexPost:RateLimiting:IntegrationFailedKeyPermitLimit");
+        Assert.InRange(failedKeyLimit, 1, 59);
         using var client = factory.CreateClient();
 
-        for (var attempt = 1; attempt <= 60; attempt++)
+        // Wrong keys first, as many as their own budget allows: they are refused with 401 and spend none of the partner's.
+        for (var attempt = 1; attempt <= failedKeyLimit; attempt++)
         {
             using var invalidRequest = new HttpRequestMessage(HttpMethod.Get, "/integration/parcel-status?shipmentId=SHP-1");
             invalidRequest.Headers.Add("X-Partner-Id", $"invalid-partner-{attempt}");
@@ -177,6 +181,7 @@ public sealed class SecurityPipelineTests
             Assert.Equal(System.Net.HttpStatusCode.Unauthorized, invalidResponse.StatusCode);
         }
 
+        // The partner's 60 requests all pass, whatever X-Partner-Id they claim: the partition is the verified key.
         for (var attempt = 1; attempt <= 60; attempt++)
         {
             using var permittedRequest = new HttpRequestMessage(HttpMethod.Get, "/integration/parcel-status?shipmentId=SHP-1");
@@ -192,6 +197,39 @@ public sealed class SecurityPipelineTests
         using var rejectedResponse = await client.SendAsync(rejectedRequest);
 
         Assert.Equal((System.Net.HttpStatusCode)429, rejectedResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Guessing_integration_keys_is_rate_limited_without_blocking_the_partner()
+    {
+        await using var factory = new SecurityWebApplicationFactory();
+        var failedKeyLimit = factory.Services.GetRequiredService<IConfiguration>().GetValue<int>("ApexPost:RateLimiting:IntegrationFailedKeyPermitLimit");
+        Assert.True(failedKeyLimit > 0);
+        using var client = factory.CreateClient();
+
+        for (var attempt = 1; attempt <= failedKeyLimit; attempt++)
+        {
+            using var guess = new HttpRequestMessage(HttpMethod.Get, "/integration/parcel-status?shipmentId=SHP-1");
+            guess.Headers.Add("X-Api-Key", $"guess-{attempt}");
+            Assert.Equal(System.Net.HttpStatusCode.Unauthorized, (await client.SendAsync(guess)).StatusCode);
+        }
+        using var nextGuess = new HttpRequestMessage(HttpMethod.Get, "/integration/parcel-status?shipmentId=SHP-1");
+        nextGuess.Headers.Add("X-Api-Key", "guess-next");
+        Assert.Equal((System.Net.HttpStatusCode)429, (await client.SendAsync(nextGuess)).StatusCode);
+        // A missing key shares the guesser's budget.
+        Assert.Equal((System.Net.HttpStatusCode)429, (await client.GetAsync("/integration/parcel-status?shipmentId=SHP-1")).StatusCode);
+
+        using var partner = new HttpRequestMessage(HttpMethod.Get, "/integration/parcel-status?shipmentId=SHP-1");
+        partner.Headers.Add("X-Api-Key", "test-integration-key");
+        Assert.NotEqual((System.Net.HttpStatusCode)429, (await client.SendAsync(partner)).StatusCode);
+    }
+
+    [Fact]
+    public void The_committed_login_limit_is_strict()
+    {
+        using var settings = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "appsettings.json"));
+        var configuration = new ConfigurationBuilder().AddJsonStream(settings).Build();
+        Assert.InRange(configuration.GetValue<int>("ApexPost:RateLimiting:LoginPermitLimit"), 1, 5);
     }
 
     [Fact]

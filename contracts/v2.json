@@ -1464,13 +1464,13 @@
     "securitySchemes": {
       "PartnerApiKey": {
         "type": "apiKey",
-        "description": "The API key ApexPost issued to your company, sent as X-Api-Key: <key>. Partner routes only (SECURITY.md).",
+        "description": "The API key ApexPost issued to your company, sent as `X-Api-Key: <key>`. Partner routes only (SECURITY.md).",
         "name": "X-Api-Key",
         "in": "header"
       },
       "Bearer": {
         "type": "http",
-        "description": "A JWT access token with the Courier or Admin role, sent as Authorization: Bearer <token>. In Development, get one from dotnet user-jwts or POST /dev/token (SECURITY.md).",
+        "description": "A JWT access token with the Courier or Admin role, sent as `Authorization: Bearer <token>`. In Development, get one from dotnet user-jwts or POST /dev/token (SECURITY.md).",
         "scheme": "bearer",
         "bearerFormat": "JWT"
       }

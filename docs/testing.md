@@ -7,11 +7,11 @@ dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build
 ```
 
-The latest run had **1144 tests passing, 0 failing, 0 skipped**, with a zero-warning build:
-- 428 for Week 3;
+The latest run (10 November 2026) had **1148 tests passing, 0 failing, 0 skipped**, with a zero-warning build:
+- 430 for Weeks 2 and 3;
 - 129 for the Week 4 courier offline store (Part A);
 - 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model;
-- 95 for Part C, all in the API project: the OpenAPI documents, Swagger UI, versioning, the committed contracts and the generated client;
+- 97 for Part C, all in the API project: the OpenAPI documents, Swagger UI, versioning, the committed contracts and the generated client;
 - 218 for Part D: 90 in the API project (authentication, roles, the courierId rule, partner API keys, HTTPS and HSTS) and 128 for the courier console app (ApexPost.Courier.Tests).
 
 The Week 3 error-handling tests also pass with `DOTNET_TieredCompilation=0` (55 tests).
@@ -47,7 +47,7 @@ The Week 4 courier offline projects, measured on 5 November 2026 with the same c
 4. runs every test, including the SQL Server tests;
 5. reruns the error-handling tests with `DOTNET_TieredCompilation=0`, so they also run on fully optimized, inlined code (ADR 0018).
 
-Every run of the workflow on GitHub has passed: 18 runs as of 2 November 2026. The [list of runs](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/workflows/ci.yml) is always current; the table below is a snapshot.
+Up to 10 November 2026 the workflow ran 52 times on GitHub, and 51 runs passed. The other one, [42671711996](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/42671711996) (the push of `2a3ce1a`, the Part D merge, to `master`), failed inside GitHub before any job started: it has no jobs and no log. The next push to `master`, `e0fd6ba`, passed ([42683856112](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/42683856112)). The [list of runs](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/workflows/ci.yml) is always current; the table below is a snapshot.
 
 | Run | Trigger | Commit |
 |---|---|---|
@@ -74,9 +74,9 @@ The other five runs are the pushes to `master` that merged #22–#26.
 | `ApexPost.Domain.Tests` | 153 (81 Week 3, 72 tracking) | No |
 | `ApexPost.Application.Tests` | 152 (109 Week 3, 43 tracking) | No |
 | `ApexPost.Infrastructure.Tests` | 145 (128 Week 3, 17 tracking) | SQL Server (except the model, migration, simulation, design-time factory and password-hasher tests) |
-| `ApexPost.Web.IntegrationTests` | 110 | SQL Server (except the CSV, display and demo-seed guard tests) |
+| `ApexPost.Web.IntegrationTests` | 112 | SQL Server (except the CSV, display and demo-seed guard tests) |
 | `ApexPost.Courier.Offline.Tests` | 129 | No: each test opens its own Couchbase Lite database in a temporary folder |
-| `ApexPost.Api.Tests` | 327 (142 Part B, 95 Part C, 90 Part D) | SQL Server for the endpoint, versioning, "Try it out" and generated-client tests (one disposable database per run). The composition, routing, error-handling, custom-rule, OpenAPI, Swagger UI, contract and most security tests use a connection string that is never opened. |
+| `ApexPost.Api.Tests` | 329 (142 Part B, 97 Part C, 90 Part D) | SQL Server for the endpoint, versioning, "Try it out" and generated-client tests (one disposable database per run). The composition, routing, error-handling, custom-rule, OpenAPI, Swagger UI, contract and most security tests use a connection string that is never opened. |
 | `ApexPost.Courier.Tests` | 128 | No: each test has its own Couchbase Lite folder, an in-memory fake of the API and a fake network, so no test reaches a real server |
 
 The final-review round added 136 tests:
@@ -84,7 +84,7 @@ The final-review round added 136 tests:
 - 15 audit-schema tests appended to `ApexPostModelTests`;
 - 4 branch-check tests appended to `AuthenticationTests`.
 
-No existing Week 3 test was changed or removed: since `1b2a090`, `git diff --numstat -- tests` shows additions only. The one exception is in Week 4 Part B: `DesignTimeFactoryTests` checks the name of the newest migration, which is now `AddShipmentTracking` rather than `AddAuditTrail`.
+No existing Week 3 test was changed or removed: since `1b2a090`, `git diff --numstat -- tests` shows additions only. The one exception is in Week 4 Part B: `DesignTimeFactoryTests` checks the name of the newest migration, which is now `AddShipmentTracking` rather than `AddAuditTrail`. The Week 4 review (10 November 2026) replaced one Week 2 test, because the behaviour it pinned was changed on purpose ([ADR 0004](adr/0004-order-security-middleware-before-endpoints.md)): `Integration_rate_limit_requires_api_key_and_is_shared_across_untrusted_partner_ids` became `Integration_rate_limit_is_per_verified_partner_and_wrong_keys_do_not_spend_it`. Two tests were added beside it: key guessing gets 429 without blocking the partner, and the committed sign-in limit is at most 5 a minute.
 
 Week 4 Part C changed the Part B API tests in two ways, without weakening any assertion:
 - they call the API at its versioned URLs (`/api/v1/…` instead of `/api/shipments…`), which shows the Part B contract unchanged at its new address;
@@ -201,7 +201,7 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
   - Stored values (counters, products, zones) are offered as dropdowns.
   - Opening hours picked as times are stored as text ("Mon-Fri 08:30-17:30; Sat 09:00-12:30") and shown in the pickers again when editing. Closing before opening is refused on the form.
 - **Workflows:** a several-line basket; shipments and verified money orders billed in the basket; weight limits and verification errors shown; manager stock adjustment through the procedure; administrator price revision; staff and branch administration.
-- **Security pipeline:** sign-in with hashed passwords; inactive staff rejected and existing cookies invalidated; cross-branch denial; security headers and correlation ID; a CSP with no `unsafe-inline`, with every view scanned for inline script or style; Secure-only sign-in and antiforgery cookies outside Development; maintenance mode; API key; IP allowlist; shared integration rate limit; login rate limit; CORS; no exception details in Problem Details or logs; a client abort is not a 500.
+- **Security pipeline:** sign-in with hashed passwords; inactive staff rejected and existing cookies invalidated; cross-branch denial; security headers and correlation ID; a CSP with no `unsafe-inline`, with every view scanned for inline script or style; Secure-only sign-in and antiforgery cookies outside Development; maintenance mode; API key; IP allowlist; integration rate limit per verified partner, and key guessing limited per IP; login rate limit; CORS; no exception details in Problem Details or logs; a client abort is not a 500.
 - **Audit:**
   - safe fields only;
   - no password, document number or API key in records or logs;

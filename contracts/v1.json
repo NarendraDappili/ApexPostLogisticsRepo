@@ -1322,7 +1322,7 @@
     "securitySchemes": {
       "Bearer": {
         "type": "http",
-        "description": "A JWT access token with the Courier or Admin role, sent as Authorization: Bearer <token>. In Development, get one from dotnet user-jwts or POST /dev/token (SECURITY.md).",
+        "description": "A JWT access token with the Courier or Admin role, sent as `Authorization: Bearer <token>`. In Development, get one from dotnet user-jwts or POST /dev/token (SECURITY.md).",
         "scheme": "bearer",
         "bearerFormat": "JWT"
       }

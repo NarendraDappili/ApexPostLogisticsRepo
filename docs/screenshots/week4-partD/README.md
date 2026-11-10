@@ -59,11 +59,24 @@ dotnet run --project src/ApexPost.Courier -- --Courier:DataDirectory=.\courier-d
 
 The API on the same PC stays reachable through `localhost` either way: it is the app's own network check that makes it wait. The app counts a network as up only if an adapter has a default gateway. If "Network lost" does not appear, check with `Get-NetAdapter` which adapter is still up.
 
-## Screenshots (optional, for the report)
+## Screenshots
 
-| File | What it shows |
-|---|---|
-| `01-swagger-authorize.png` | Swagger UI's **Authorize** dialog with the **Bearer** and **PartnerApiKey** schemes (v2) |
-| `02-courier-offline-banner.png` | The courier app's header with `*** Server unavailable – working offline ***` and Sync Status showing the open circuit |
-| `03-courier-auto-sync.png` | The log lines `Network is back …` and `Auto-sync (network back): 2 synced …` |
-| `04-http-401-403.png` | A 401 and a 403 ProblemDetails in the `.http` response pane |
+Taken on 10 November 2026 from real runs (see [the index](../README.md) for how). Pictures 01–06 come from Swagger UI and 13 from `curl.exe`. Pictures 07–12 are one courier-app session, started as in "Set-up for the recording" above, while the API was stopped and started around it.
+
+| File | What it shows | How to take it again |
+|---|---|---|
+| [`01-swagger-authorize.png`](01-swagger-authorize.png) | Swagger UI's **Authorize** dialog with the **PartnerApiKey** and **Bearer** schemes (v2) | Click **Authorize** |
+| [`02-401-no-token.png`](02-401-no-token.png) | **401** ProblemDetails with `WWW-Authenticate: Bearer`, without a token | GetShipment before authorizing |
+| [`03-403-courier-cannot-delete.png`](03-403-courier-cannot-delete.png) | **403** ProblemDetails naming the missing Admin role | Authorize with a Courier-only token (`dotnet user-jwts create --project src/ApexPost.Api --role Courier --claim courierId=CR-1042`), then DeleteShipment |
+| [`04-403-other-courier-id.png`](04-403-other-courier-id.png) | **403**: courier CR-1042 cannot upload scans under CR-2000 | Same token, UploadScans with `"courierId": "CR-2000"` |
+| [`05-partner-401-invalid-key.png`](05-partner-401-invalid-key.png) | **401** for a wrong partner key, with `WWW-Authenticate: ApiKey header="X-Api-Key"` | **Logout** of Bearer; authorize **PartnerApiKey** with any wrong value; GetPartnerShipment |
+| [`06-partner-200-valid-key.png`](06-partner-200-valid-key.png) | **200** for a valid partner key, without the recipient's details | Authorize **PartnerApiKey** with the key from user-secrets |
+| [`07-courier-login.png`](07-courier-login.png) | **Login**: courier ID, Enter for a token from the server; the header shows `Uploads: on until …` | Scene 1 |
+| [`08-courier-scans-saved-while-api-down.png`](08-courier-scans-saved-while-api-down.png) | With the API stopped: two **New Scans** saved on the device as Pending, the live count at 2, and **Pending Scans** listing them | Stop the API (Ctrl+C), then New Scan twice and Pending Scans |
+| [`09-courier-retries-circuit-open.png`](09-courier-retries-circuit-open.png) | **Sync Now**: each retry logged with its delay, the circuit opening, the `*** Server unavailable – working offline ***` banner, the scans still Pending, and **Sync Status** with the open circuit and the failures | Sync Now, then Sync Status |
+| [`10-courier-recovery-auto-sync.png`](10-courier-recovery-auto-sync.png) | The API is back: circuit half-open, then closed; **automatic sync** uploads both scans without a key press; Sync Status shows the circuit closed | Start the API again and wait up to 15 s; then Sync Status |
+| [`11-courier-out-for-delivery-and-delivered.png`](11-courier-out-for-delivery-and-delivered.png) | **Out for Delivery**, then the Delivered scan, synced | Scene 5, with the API running |
+| [`12-courier-401-back-to-login.png`](12-courier-401-back-to-login.png) | The API restarted with a new signing key: the upload gets **401**, the token is cleared, the courier is back at **Login**, and after signing in again the Pending scan is uploaded | Restart the API with a new key (`dotnet user-jwts key --project src/ApexPost.Api --reset --force`), then New Scan and Sync Now |
+| [`13-http-redirects-to-https.png`](13-http-redirects-to-https.png) | Plain HTTP is redirected to HTTPS (307 in Development; 308 and HSTS outside it, as `TransportSecurityTests` checks) | `curl.exe -s -i http://localhost:5245/api/v2/shipments/APX-24000011` |
+
+The **network lost** and **network is back** messages (scenes 2 and 3) are not in a picture: turning this PC's network off would also have cut the session that took them. Record them in the video.

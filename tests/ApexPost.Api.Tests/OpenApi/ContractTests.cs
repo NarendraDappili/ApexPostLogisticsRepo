@@ -44,6 +44,31 @@ public sealed class ContractTests
         Assert.False(JsonNode.DeepEquals(v1["components"]!["schemas"]!["ShipmentResponse"], v2["components"]!["schemas"]!["ShipmentResponse"]));
     }
 
+    [Theory]
+    [InlineData("v1")]
+    [InlineData("v2")]
+    public async Task No_description_has_a_placeholder_swagger_ui_would_drop_as_html(string version)
+    {
+        // Descriptions are Markdown. Swagger UI drops <token> or <key> as an unknown HTML tag, so a placeholder in
+        // angle brackets must sit inside a `code span`, where it is shown as written.
+        var document = JsonNode.Parse(await File.ReadAllTextAsync(RepositoryFiles.PathOf("contracts", $"{version}.json")))!;
+        var offenders = Descriptions(document)
+            .Where(description => System.Text.RegularExpressions.Regex.IsMatch(
+                System.Text.RegularExpressions.Regex.Replace(description, "`[^`]*`", string.Empty), "<[A-Za-z/!]"))
+            .ToList();
+
+        Assert.True(offenders.Count == 0, string.Join(Environment.NewLine, offenders));
+    }
+
+    private static IEnumerable<string> Descriptions(JsonNode? node) => node switch
+    {
+        JsonObject obj => obj.SelectMany(property => property.Key == "description" && property.Value is JsonValue value && value.TryGetValue<string>(out var text)
+            ? [text]
+            : Descriptions(property.Value)),
+        JsonArray array => array.SelectMany(Descriptions),
+        _ => [],
+    };
+
     // The export script writes line breaks inside descriptions as \n, so the files are the same on every operating
     // system; a Windows checkout of the XML comments yields \r\n. The file itself may also be checked out with CRLF.
     private static string Normalised(string json) => json.Replace(@"\r\n", @"\n", StringComparison.Ordinal);

@@ -1,28 +1,72 @@
-[
-  {
-    "occurredAt": "2026-10-24T09:15:42.123+00:00",
-    "staffId": "STF-DEMO-CLERK-01",
-    "role": "CounterClerk",
-    "branchCode": "BR-NORTH",
-    "controller": "CounterTransactions",
-    "action": "New",
-    "routeValues": {},
-    "statusCode": 302,
-    "durationMilliseconds": 18,
-    "correlationId": "sample-checkout-001",
-    "outcome": "Succeeded"
-  },
-  {
-    "occurredAt": "2026-10-24T09:17:08.450+00:00",
-    "staffId": "STF-DEMO-MANAGER-01",
-    "role": "BranchManager",
-    "branchCode": "BR-NORTH",
-    "controller": "CounterTransactions",
-    "action": "Refund",
-    "routeValues": {},
-    "statusCode": 400,
-    "durationMilliseconds": 4,
-    "correlationId": "sample-refund-002",
-    "outcome": "Failed"
-  }
-]
+{
+  "_comment": "The shape of the three audit tables (ADR 0024), as the Audit log screen and its CSV export show them. One stock adjustment by STF-MANAGER-01 at BR-NORTH, so all rows share one correlation ID. Fictional data. No password, document number, API key or request body is ever stored.",
+  "auditEntries": [
+    {
+      "occurredAtUtc": "2026-11-09T07:58:21.402Z",
+      "staffId": "STF-MANAGER-01",
+      "role": "BranchManager",
+      "branchCode": "BR-NORTH",
+      "controller": "Catalogue",
+      "action": "AdjustStock",
+      "routeValues": {},
+      "statusCode": 302,
+      "durationMilliseconds": 37,
+      "correlationId": "6f1d2a9c4b7e4c1fa3d58e0b2c9a7f41",
+      "outcome": "Succeeded"
+    }
+  ],
+  "dataChanges": [
+    {
+      "occurredAtUtc": "2026-11-09T07:58:21.389Z",
+      "staffId": "STF-MANAGER-01",
+      "branchCode": "BR-NORTH",
+      "tableName": "BranchStock",
+      "recordKey": "BranchCode=BR-NORTH, ProductCode=PRD-001",
+      "operation": "Update",
+      "changes": [ { "column": "Quantity", "old": "100", "new": "95" } ],
+      "correlationId": "6f1d2a9c4b7e4c1fa3d58e0b2c9a7f41"
+    },
+    {
+      "occurredAtUtc": "2026-11-09T07:58:21.389Z",
+      "staffId": "STF-MANAGER-01",
+      "branchCode": "BR-NORTH",
+      "tableName": "StockAdjustments",
+      "recordKey": "BranchCode=BR-NORTH, ProductCode=PRD-001",
+      "operation": "Insert",
+      "changes": [
+        { "column": "Delta", "old": null, "new": "-5" },
+        { "column": "Reason", "old": null, "new": "Damaged in transit" },
+        { "column": "ChangedByStaffCode", "old": null, "new": "STF-MANAGER-01" }
+      ],
+      "correlationId": "6f1d2a9c4b7e4c1fa3d58e0b2c9a7f41"
+    }
+  ],
+  "securityEvents": [
+    {
+      "occurredAtUtc": "2026-11-09T07:57:40.115Z",
+      "eventType": "SignInSucceeded",
+      "staffId": "STF-MANAGER-01",
+      "role": "BranchManager",
+      "branchCode": "BR-NORTH",
+      "httpMethod": "POST",
+      "path": "/Account/Login",
+      "statusCode": 302,
+      "remoteIpAddress": "::1",
+      "detail": null,
+      "correlationId": "0b8e5d3f2a6c4e9d8f1a7c2b5e4d3a10"
+    },
+    {
+      "occurredAtUtc": "2026-11-09T08:02:11.870Z",
+      "eventType": "SignInFailed",
+      "staffId": "STF-CLERK-01-A",
+      "role": null,
+      "branchCode": null,
+      "httpMethod": "POST",
+      "path": "/Account/Login",
+      "statusCode": 200,
+      "remoteIpAddress": "::1",
+      "detail": "WrongPassword",
+      "correlationId": "c41a7e2d9b5f4a3e8d6c1b0a9f8e7d62"
+    }
+  ]
+}
