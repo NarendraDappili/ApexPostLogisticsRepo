@@ -79,7 +79,7 @@ The brief's examples map to R1 (status transitions), R2 (duplicate tracking numb
 | Integration | ~674 cases (59%) | ~45–50% |
 | BDD | 0 | ~2–3% (about 15–20 scenario cases) |
 
-Measured after step S6: **581 unit tests out of 1275 (45.6%)** and 694 integration tests (54.4%). The unit share reached the target through tests that belong at unit level: boundary tables, Moq interaction tests, the HTTP client suite and the no-network guard. No integration test was cut. BDD follows in S8.
+Measured after step S7: **592 unit tests out of 1287 (46.0%)** and 695 integration tests (54.0%). The unit share reached the target through tests that belong at unit level: boundary tables, Moq interaction tests, the HTTP client suite and the no-network guard. No integration test was cut. BDD follows in S8.
 
 **Why ApexPost's pyramid has a wide middle.** The costliest risks live at *boundaries*:
 - R2: a unique index;
@@ -339,7 +339,7 @@ Steps: **S2** is the courier library extraction; **S3** the project restructure;
 | `ApexApiClientTests` | 13 | component | R6 | Modified (S2) | Typed client from the factory, with the token and address. The "never `new HttpClient()`" source guard now scans `ApexPost.Courier.Core` as well, because the client moved there. Without that change, the guard would have kept passing while no longer looking at the client. The focused unit-level client suite is **added** beside it and does not replace it: this class proves the DI wiring. |
 | `ApiShipmentUploaderTests` | 10 | component | R3, R4 | Modified (S4) | Scan times become fixed instants (far future for the refused case) |
 | `AutoSyncTests` | 5 | component | R4 | Modified (S4) | Fixed scan times; the wait helper uses a `Stopwatch` instead of the system clock |
-| `CourierAppTests` | 19 | component | R4, R7 | Modified (S4) | Whole scripted sessions; the "future time" input becomes a fixed far-future time |
+| `CourierAppTests` | 19 | component | R4, R7 | Modified (S4, S7) | Whole scripted sessions; the "future time" input becomes a fixed far-future time. S7 adds the session that drove the double-scan guard into the app (TDD cycle 2). |
 | `ErrorAndJsonHandlingTests` | 22 | component | R6, R9 | Modified (S4) | ProblemDetails and JSON handling; fixed scan time |
 | `OutForDeliveryTests` | 11 | component | R1 | Kept | The Out for Delivery action |
 | `ResilienceTests` | 23 | component | R6 | Modified (S4) | The Polly pipeline in the real composition; fixed scan time |
@@ -376,7 +376,7 @@ Each Moq class is named `<Unit>InteractionTests`, because interactions are what 
 | `ShipmentTrackingService` | `ITrackedShipmentRepository`, `ITrackingQueries`, `IUnitOfWork` | `ShipmentTrackingServiceInteractionTests` (S6, 7 tests) | A number already stored: `Add` and `SaveChangesAsync` `Times.Never`. A new number typed in lower case is looked up normalised (`It.Is<TrackingNumber>(n => n.Value == "APX-…")`), added once with the expected values (`It.Is<TrackedShipment>`) and saved once, in that order (`Callback`). A race: `SaveChangesAsync` `ThrowsAsync(DuplicateKeyException)`, which becomes `TrackingNumberInUseException` with that cause. A forbidden status move or a delete after pickup is never saved. An unknown number is a 404 with nothing saved. |
 | `ShippingWorkflowService` (Week 3) | `IBranchRepository`, `IShipmentRepository`, `IShippingRateProvider`, `IUnitOfWork` | `ShippingWorkflowServiceInteractionTests` (S6, 5 tests) | A valid shipment is added once with the requested ID, weight and branch, and saved once; the rate comes from `ReturnsAsync` on a `ValueTask`. A stored ID is refused with nothing added. An unknown branch stops before the shipment or the rates are looked up. A weight of 0 or 30.001 kg is refused before any port is called (`VerifyNoOtherCalls`). |
 | `OutboxService` | `IScanRepository`, `IShipmentUploader` | `OutboxServiceInteractionTests` (S6, 5 tests) | Nothing Pending: the server is never called. 45 scans: two batches of 20 and one of 5, never more than 20 (`It.Is<IReadOnlyList<ShipmentScan>>(b => b.Count == 20)`, `Times.Exactly(2)`), and each scan marked Synced once. The server unreachable (`ThrowsAsync(HttpRequestException)`): one attempt, no scan marked, all 45 still Pending. One scan rejected: that scan is Failed with the server's reason and the others are Synced. A second sync during a run returns "already running", and the server is called once. |
-| `ScanRecorder` (the TDD rule) | `IScanRepository` + `FakeTimeProvider` | S7 | A double scan inside the window is not saved; one outside it is |
+| `ScanRecorder` (the TDD rule) | `IScanRepository` + `FakeTimeProvider` | `ScanRecorderTests` (S7, 11 cases, written first; [TDD-LOG.md](TDD-LOG.md)) | A repeat within two minutes (0, 1, 119 and −30 s) returns the earlier scan and `Create` is `Times.Never` called. 120 and 600 s, another type, another courier, or an earlier scan the server refused: `Create` once. A scan without a time is dated by the fake clock. |
 
 **Proof that the mocks catch real defects.** Each production line was broken for a moment, the tests run, and the line restored:
 - removing the "number already in use" pre-check failed `CreateAsync_TrackingNumberAlreadyStored_ThrowsInUseAndNeverAddsOrSaves`;

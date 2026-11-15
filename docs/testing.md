@@ -12,18 +12,18 @@ dotnet test tests/ApexPost.Infrastructure.IntegrationTests -c Release --no-build
 
 In Visual Studio, Test Explorer runs the same tests with no set-up. The solution groups them into **1 Unit** and **2 Integration** folders, the levels of the test pyramid ([TESTING-STRATEGY.md](../TESTING-STRATEGY.md)). The SQL Server tests find a server by themselves (see [The test database](#the-test-database)).
 
-Since Week 5 (15 November 2026) the 1275 tests are organised by level:
-- **Unit:** 581 tests in `ApexPost.UnitTests` (45.6%).
-- **Integration:** 694 tests:
+Since Week 5 (15 November 2026) the 1287 tests are organised by level:
+- **Unit:** 592 tests in `ApexPost.UnitTests` (46.0%).
+- **Integration:** 695 tests:
   - Api 278;
-  - Courier app 124;
+  - Courier app 125;
   - Courier offline 90;
   - Infrastructure 90;
   - Web 112.
 
 The split is described in [Test projects](#test-projects).
 
-The latest run (15 November 2026, step S6) had **1275 tests passing, 0 failing, 0 skipped**, with a zero-warning build. The 124 Week 5 tests so far: 3 pin the injected clock (see [Determinism](#determinism)); 36 isolate units with Moq and a fake HTTP handler, or guard against real network use ([TESTING-STRATEGY.md §7](../TESTING-STRATEGY.md#7-isolation-mocks-fakes-and-real-dependencies)); 85 are boundary tables (the full status and scan-decision tables, the 30 kg counter limit, the exact scan-time limit; [TESTING-STRATEGY.md §4.3](../TESTING-STRATEGY.md#43-conventions-in-every-test-project)). The 1151 before Week 5 were:
+The latest run (15 November 2026, step S7) had **1287 tests passing, 0 failing, 0 skipped**, with a zero-warning build. The 136 Week 5 tests so far: 12 build the courier double-scan guard test-first ([TDD-LOG.md](../TDD-LOG.md)); 3 pin the injected clock (see [Determinism](#determinism)); 36 isolate units with Moq and a fake HTTP handler, or guard against real network use ([TESTING-STRATEGY.md §7](../TESTING-STRATEGY.md#7-isolation-mocks-fakes-and-real-dependencies)); 85 are boundary tables (the full status and scan-decision tables, the 30 kg counter limit, the exact scan-time limit; [TESTING-STRATEGY.md §4.3](../TESTING-STRATEGY.md#43-conventions-in-every-test-project)). The 1151 before Week 5 were:
 - 430 for Weeks 2 and 3;
 - 129 for the Week 4 courier offline store (Part A);
 - 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model;
@@ -93,12 +93,12 @@ Since Week 5 the projects follow the test pyramid ([TESTING-STRATEGY.md §4](../
 
 | Level | Project | Tests | Real dependency |
 |---|---|---|---|
-| Unit | `ApexPost.UnitTests` | 581: Domain 231, Application 167, Infrastructure 55 (model, migration text, simulation, design-time factory, password hasher), API 58 (custom rules, the scan-time limit, route constraint, controller architecture, correlation, the generated client's token handler), courier offline 44 (scan model, IDs, domain independence, the harness's fake uploader, the outbox with Moq), courier core 14 (sync history, contract compatibility, the API client on a fake HTTP handler), guards 12 (no real network in any test) | none: no database, no files written, no sockets |
+| Unit | `ApexPost.UnitTests` | 592: Domain 231, Application 167, Infrastructure 55 (model, migration text, simulation, design-time factory, password hasher), API 58 (custom rules, the scan-time limit, route constraint, controller architecture, correlation, the generated client's token handler), courier offline 55 (scan model, IDs, domain independence, the harness's fake uploader, the outbox with Moq, the double-scan guard built test-first), courier core 14 (sync history, contract compatibility, the API client on a fake HTTP handler), guards 12 (no real network in any test) | none: no database, no files written, no sockets |
 | Integration | `ApexPost.Infrastructure.IntegrationTests` | 90 | SQL Server |
 | Integration | `ApexPost.Api.IntegrationTests` | 278 | The API host (`WebApplicationFactory`) with real JWT validation. SQL Server is used for the endpoint, versioning, "Try it out" and generated-client tests; the other host tests use a connection string that is never opened. |
 | Integration | `ApexPost.Web.IntegrationTests` | 112 | The Web host and SQL Server. The CSV, display and demo-seed guard tests are unit level, but stay here because the unit project does not reference the Web app. |
 | Integration | `ApexPost.Courier.Offline.IntegrationTests` | 90 | Couchbase Lite: each test opens its own database in a temporary folder |
-| Integration | `ApexPost.Courier.IntegrationTests` | 124 | The courier app's real composition, with Couchbase Lite in a temporary folder, an in-memory fake of the API and a fake network. No test reaches a real server. |
+| Integration | `ApexPost.Courier.IntegrationTests` | 125 | The courier app's real composition, with Couchbase Lite in a temporary folder, an in-memory fake of the API and a fake network. No test reaches a real server. |
 
 The move changed no test. The list of test cases before and after it is identical when compared by class, method and arguments.
 

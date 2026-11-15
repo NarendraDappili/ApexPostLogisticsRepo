@@ -82,6 +82,21 @@ public sealed partial class ShipmentScan
 
     public void MarkFailed() => SyncStatus = SyncStatus.Failed;
 
+    /// <summary>
+    /// Whether this scan records the same event as <paramref name="earlier"/>. That means the same parcel, scan type
+    /// and courier, dated less than <paramref name="window"/> either side of it, as when a scanner or a finger
+    /// double-taps. A scan the server refused (Failed) never counts, so the courier can scan again at once.
+    /// </summary>
+    public bool IsRepeatOf(ShipmentScan earlier, TimeSpan window)
+    {
+        ArgumentNullException.ThrowIfNull(earlier);
+        return earlier.SyncStatus != SyncStatus.Failed
+            && earlier.TrackingNumber == TrackingNumber
+            && earlier.ScanType == ScanType
+            && earlier.CourierId == CourierId
+            && (ScannedAtUtc - earlier.ScannedAtUtc).Duration() < window;
+    }
+
     /// <summary>Trims and upper-cases a tracking number and checks it is <c>APX-</c> plus eight digits.</summary>
     public static string NormalizeTrackingNumber(string trackingNumber)
     {
