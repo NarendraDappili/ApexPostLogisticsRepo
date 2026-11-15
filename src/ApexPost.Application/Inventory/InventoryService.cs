@@ -12,16 +12,19 @@ public sealed class InventoryService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IEventPublisher? _events;
     private readonly InventoryServiceOptions _options;
+    private readonly TimeProvider _clock;
 
-    public InventoryService(IInventoryRepository inventory, IUnitOfWork unitOfWork, InventoryServiceOptions options, IEventPublisher? events = null)
+    public InventoryService(IInventoryRepository inventory, IUnitOfWork unitOfWork, InventoryServiceOptions options, TimeProvider clock, IEventPublisher? events = null)
     {
         ArgumentNullException.ThrowIfNull(inventory);
         ArgumentNullException.ThrowIfNull(unitOfWork);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(clock);
         ArgumentOutOfRangeException.ThrowIfNegative(options.LowStockThreshold);
         _inventory = inventory;
         _unitOfWork = unitOfWork;
         _options = options;
+        _clock = clock;
         _events = events;
     }
 
@@ -64,7 +67,7 @@ public sealed class InventoryService
         ArgumentNullException.ThrowIfNull(movement);
         var threshold = _options.LowStockThreshold;
         return movement.Before > threshold && movement.After <= threshold && _events is not null
-            ? _events.PublishAsync(new StockLow(movement.BranchCode, movement.ProductId, movement.After, threshold), cancellationToken)
+            ? _events.PublishAsync(new StockLow(movement.BranchCode, movement.ProductId, movement.After, threshold) { OccurredAtUtc = _clock.GetUtcNow() }, cancellationToken)
             : Task.CompletedTask;
     }
 

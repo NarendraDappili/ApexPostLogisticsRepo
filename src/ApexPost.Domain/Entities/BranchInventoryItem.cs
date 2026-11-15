@@ -47,7 +47,7 @@ public sealed class BranchInventoryItem : IEquatable<BranchInventoryItem>
     /// Applies a manual correction and returns its history entry. The quantity rules of
     /// <see cref="AddStock"/> and <see cref="RemoveStock"/> still apply, so stock can never go negative.
     /// </summary>
-    public StockAdjustment Adjust(int delta, string reason, StaffId changedBy, DateTimeOffset? occurredAtUtc = null)
+    public StockAdjustment Adjust(int delta, string reason, StaffId changedBy, DateTimeOffset occurredAtUtc)
     {
         var adjustment = new StockAdjustment(BranchCode, ProductId, delta, reason, changedBy, occurredAtUtc);
         if (delta > 0) AddStock(delta); else RemoveStock(-delta);

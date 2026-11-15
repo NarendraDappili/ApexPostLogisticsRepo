@@ -23,6 +23,24 @@ public sealed class StockAdjustmentServiceTests
         Assert.Contains(fixture.Events.Published, published => published is StockLow { Quantity: 9 });
     }
 
+    // Week 5 (S4): the adjustment's time comes from the injected clock; the domain no longer reads the system clock.
+    [Fact]
+    public async Task AdjustAsync_ClockMovedOn45Minutes_RecordsTheAdjustmentAndItsAlertAtTheClockTime()
+    {
+        // Arrange
+        var fixture = new Fixture(stock: 12);
+        fixture.Clock.Advance(TimeSpan.FromMinutes(45));
+
+        // Act
+        await fixture.Service.AdjustAsync(new StockAdjustmentRequest("BR-A", "P-1", -3, "Damaged in transit"), fixture.Manager.Id);
+
+        // Assert
+        var applied = Assert.Single(fixture.Procedure.Calls);
+        Assert.Equal(TestTime.Now.AddMinutes(45), applied.Adjustment.OccurredAtUtc);
+        var alert = Assert.Single(fixture.Events.Published.OfType<StockLow>());
+        Assert.Equal(TestTime.Now.AddMinutes(45), alert.OccurredAtUtc);
+    }
+
     [Fact]
     public async Task A_first_delivery_saves_a_new_stock_row_before_the_procedure_inside_the_same_transaction()
     {
@@ -81,13 +99,15 @@ public sealed class StockAdjustmentServiceTests
                 new StaffRepo([Manager, new(new("MGR-B"), "Other Manager", StaffRole.BranchManager, new("BR-B")), new(new("CLERK-A"), "Clerk", StaffRole.CounterClerk, new("BR-A"))]),
                 new ProductRepo(new Product(new("P-1"), "Envelope", new Money(1m), new Sku("SKU-P-1"))),
                 Inventory, Procedure, UnitOfWork,
-                new InventoryService(Inventory, UnitOfWork, new InventoryServiceOptions { LowStockThreshold = 10 }, events));
+                new InventoryService(Inventory, UnitOfWork, new InventoryServiceOptions { LowStockThreshold = 10 }, Clock, events),
+                Clock);
         }
 
         public StaffMember Manager { get; } = new(new("MGR-A"), "Manager", StaffRole.BranchManager, new("BR-A"));
         public InventoryRepo Inventory { get; }
         public RecordingProcedure Procedure { get; }
         public SpyUnitOfWork UnitOfWork { get; } = new();
+        public FakeTimeProvider Clock { get; } = new(TestTime.Now);
         public RecordingObserver Events { get; } = new();
         public StockAdjustmentService Service { get; }
     }

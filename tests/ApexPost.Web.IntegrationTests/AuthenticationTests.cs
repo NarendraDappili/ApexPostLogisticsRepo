@@ -617,9 +617,9 @@ public sealed class AuthenticationTests
 
         using var manager = factory.CreateClient();
         await SignInAsync(manager, "STF-MANAGER-01", AuthWebApplicationFactory.TestPassword);
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var from = today.AddDays(-6).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
-        var to = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var saleDay = await factory.SaleDayAsync("TX-PERIOD-1");
+        var from = saleDay.AddDays(-6).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var to = saleDay.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
         var page = await manager.GetStringAsync($"/Reports?from={from}&to={to}");
         Assert.Contains($"Sales: {from} to {to}", page, StringComparison.Ordinal);
@@ -1099,6 +1099,20 @@ public sealed class AuthWebApplicationFactory : WebApplicationFactory<Program>, 
         using var scope = Services.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<ApexPostDbContext>().CounterTransactions
             .AnyAsync(transaction => transaction.Id == new CounterTransactionId(transactionCode));
+    }
+
+    /// <summary>
+    /// The UTC day a sale was recorded on, as stored. A test anchors its report period on it instead of reading the
+    /// clock, so a run that crosses midnight UTC between the sale and the report cannot fail (TESTING-STRATEGY.md §8).
+    /// </summary>
+    public async Task<DateOnly> SaleDayAsync(string transactionCode)
+    {
+        using var scope = Services.CreateScope();
+        var occurredAtUtc = await scope.ServiceProvider.GetRequiredService<ApexPostDbContext>().CounterTransactions
+            .Where(transaction => transaction.Id == new CounterTransactionId(transactionCode))
+            .Select(transaction => transaction.OccurredAtUtc)
+            .SingleAsync();
+        return DateOnly.FromDateTime(occurredAtUtc.UtcDateTime);
     }
 
     public async Task SeedAsync()

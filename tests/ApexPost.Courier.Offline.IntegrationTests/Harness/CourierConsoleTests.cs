@@ -129,10 +129,10 @@ public sealed class CourierConsoleTests : IDisposable
         var text = new StringWriter();
         var writer = TextWriter.Synchronized(text);
         using var monitor = new ScanChangeMonitor(_temporary.Database, new LineLogger<ScanChangeMonitor>(writer));
-        var server = new FakeShipmentUploader(new FixedTimeProvider(Now));
+        var server = new FakeShipmentUploader(new FakeTimeProvider(Now));
         var outbox = new OutboxService(_repository, server, logger: new LineLogger<OutboxService>(writer));
         var console = new CourierConsole(
-            new StringReader(string.Join(Environment.NewLine, answers)), writer, _repository, monitor, outbox, server, "CR-001", new FixedTimeProvider(Now));
+            new StringReader(string.Join(Environment.NewLine, answers)), writer, _repository, monitor, outbox, server, "CR-001", new FakeTimeProvider(Now));
 
         await console.RunAsync();
         return text.ToString();

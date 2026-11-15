@@ -56,7 +56,7 @@ public class PersistenceReadyDomainTests
         var transaction = new CounterTransaction(
             new("TX-1"), new("BR-1"), new("C-01"), new("STF-1"),
             [new CounterTransactionLine(new ProductId("P-1"), "Envelope", 2, new Money(5m))],
-            new Money(10m), new Money(2m), PaymentMethod.Card);
+            new Money(10m), new Money(2m), PaymentMethod.Card, TestTime.Now);
 
         Assert.Equal(new Payment(PaymentMethod.Card, new Money(12m)), transaction.Payment);
         Assert.Equal(PaymentMethod.Card, transaction.PaymentMethod);
@@ -69,7 +69,7 @@ public class PersistenceReadyDomainTests
         Assert.Throws<ArgumentOutOfRangeException>(() => new CounterTransaction(
             new("TX-FREE"), new("BR-1"), new("C-01"), new("STF-1"),
             [new CounterTransactionLine(new ProductId("P-1"), "Free leaflet", 1, new Money(0m))],
-            new Money(0m), new Money(0m), PaymentMethod.Cash));
+            new Money(0m), new Money(0m), PaymentMethod.Cash, TestTime.Now));
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public class PersistenceReadyDomainTests
     {
         var item = new BranchInventoryItem(new BranchCode("BR-1"), new ProductId("P-1"), 5);
 
-        var adjustment = item.Adjust(-3, " Damaged in transit ", new StaffId("STF-MGR"));
+        var adjustment = item.Adjust(-3, " Damaged in transit ", new StaffId("STF-MGR"), TestTime.Now);
 
         Assert.Equal(2, item.Quantity);
         Assert.Equal((-3, "Damaged in transit", "STF-MGR"), (adjustment.Delta, adjustment.Reason, adjustment.ChangedBy.Value));
@@ -88,10 +88,10 @@ public class PersistenceReadyDomainTests
     {
         var item = new BranchInventoryItem(new BranchCode("BR-1"), new ProductId("P-1"), 2);
 
-        Assert.Throws<InvalidOperationException>(() => item.Adjust(-3, "Count", new StaffId("STF-MGR")));
-        Assert.Throws<ArgumentOutOfRangeException>(() => item.Adjust(0, "Count", new StaffId("STF-MGR")));
-        Assert.Throws<ArgumentException>(() => item.Adjust(1, " ", new StaffId("STF-MGR")));
-        Assert.Throws<ArgumentException>(() => item.Adjust(1, new string('x', StockAdjustment.MaxReasonLength + 1), new StaffId("STF-MGR")));
+        Assert.Throws<InvalidOperationException>(() => item.Adjust(-3, "Count", new StaffId("STF-MGR"), TestTime.Now));
+        Assert.Throws<ArgumentOutOfRangeException>(() => item.Adjust(0, "Count", new StaffId("STF-MGR"), TestTime.Now));
+        Assert.Throws<ArgumentException>(() => item.Adjust(1, " ", new StaffId("STF-MGR"), TestTime.Now));
+        Assert.Throws<ArgumentException>(() => item.Adjust(1, new string('x', StockAdjustment.MaxReasonLength + 1), new StaffId("STF-MGR"), TestTime.Now));
         Assert.Equal(2, item.Quantity);
     }
 

@@ -126,7 +126,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     public async Task Void_transitions_an_open_transaction_without_returning_stock_it_never_took()
     {
         var fixture = new Fixture();
-        var open = new CounterTransaction(new("OPEN-1"), new("BR-A"), new("C-1"), new("CLERK-A"), [new(new ProductId("P-1"), "Envelope", 1, new(10m))], new(10m), new(1m), PaymentMethod.Cash);
+        var open = new CounterTransaction(new("OPEN-1"), new("BR-A"), new("C-1"), new("CLERK-A"), [new(new ProductId("P-1"), "Envelope", 1, new(10m))], new(10m), new(1m), PaymentMethod.Cash, TestTime.Now);
         fixture.Transactions.Add(open);
 
         var voided = await fixture.Service.VoidAsync(open.Id, new("MANAGER-A", "entry correction"));
@@ -176,6 +176,44 @@ public sealed class CounterTransactionWorkflowServiceTests
         Assert.Contains(observer.Events, applicationEvent => applicationEvent is TransactionCompleted);
     }
 
+    // Week 5 (S4): the time of a sale and of its events comes from the injected clock, never the system clock.
+    [Fact]
+    public async Task CheckoutAsync_ClockAtOneSecondToMidnight_RecordsTheSaleAndItsEventsAtThatInstant()
+    {
+        // Arrange
+        var lastSecondOfTheDay = new DateTimeOffset(2026, 11, 3, 23, 59, 59, TimeSpan.Zero);
+        var observer = new RecordingObserver();
+        var fixture = new Fixture(stock: 4) { ExtraObserver = observer };
+        fixture.Clock.SetUtcNow(lastSecondOfTheDay);
+
+        // Act
+        var sale = await fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 2));
+
+        // Assert
+        Assert.Equal(lastSecondOfTheDay, sale.OccurredAtUtc);
+        Assert.Equal(2, observer.Events.Count);
+        Assert.All(observer.Events, applicationEvent => Assert.Equal(lastSecondOfTheDay, applicationEvent.OccurredAtUtc));
+    }
+
+    [Fact]
+    public async Task VoidAsync_TwoHoursAfterTheSale_KeepsTheSaleTimeAndStampsTheVoidEventWithTheLaterTime()
+    {
+        // Arrange
+        var observer = new RecordingObserver();
+        var fixture = new Fixture { ExtraObserver = observer };
+        var open = new CounterTransaction(new("OPEN-TIME"), new("BR-A"), new("C-1"), new("CLERK-A"), [new(new ProductId("P-1"), "Envelope", 1, new(10m))], new(10m), new(1m), PaymentMethod.Cash, TestTime.Now);
+        fixture.Transactions.Add(open);
+        fixture.Clock.Advance(TimeSpan.FromHours(2));
+
+        // Act
+        var voided = await fixture.Service.VoidAsync(open.Id, new("MANAGER-A", "entry correction"));
+
+        // Assert
+        Assert.Equal(TestTime.Now, voided.OccurredAtUtc);
+        var voidEvent = Assert.Single(observer.Events.OfType<TransactionVoided>());
+        Assert.Equal(TestTime.Now.AddHours(2), voidEvent.OccurredAtUtc);
+    }
+
     [Fact]
     public async Task Void_and_refund_emit_simulated_notifications_and_delivery_failure_is_propagated()
     {
@@ -187,7 +225,7 @@ public sealed class CounterTransactionWorkflowServiceTests
         Assert.Contains("Refunded", notifications.Messages[0].Subject, StringComparison.Ordinal);
 
         var failingFixture = new Fixture { Notifications = new FailingNotificationSender() };
-        var open = new CounterTransaction(new("OPEN-NOTIFY"), new("BR-A"), new("C-1"), new("CLERK-A"), [new(new ProductId("P-1"), "Envelope", 1, new(10m))], new(10m), new(1m), PaymentMethod.Cash);
+        var open = new CounterTransaction(new("OPEN-NOTIFY"), new("BR-A"), new("C-1"), new("CLERK-A"), [new(new ProductId("P-1"), "Envelope", 1, new(10m))], new(10m), new(1m), PaymentMethod.Cash, TestTime.Now);
         failingFixture.Transactions.Add(open);
         await Assert.ThrowsAsync<IOException>(() => failingFixture.Service.VoidAsync(open.Id, new("MANAGER-A", "correction")));
         Assert.Equal(CounterTransactionStatus.Voided, (await failingFixture.Transactions.FindByIdAsync(open.Id))!.Status);
@@ -266,6 +304,7 @@ public sealed class CounterTransactionWorkflowServiceTests
         public MemoryMoneyOrderRepository MoneyOrders { get; } = new();
         public MemoryTransactionRepository Transactions { get; set; } = new();
         public SpyUnitOfWork UnitOfWork { get; set; } = new();
+        public FakeTimeProvider Clock { get; } = new(TestTime.Now);
         public INotificationSender? Notifications { get; set; }
         public IEventObserver? ExtraObserver { get; set; }
         public CounterTransactionWorkflowService Service
@@ -275,9 +314,9 @@ public sealed class CounterTransactionWorkflowServiceTests
                 IEventObserver[] observers = [.. new IEventObserver?[] { Notifications is null ? null : new NotificationEventObserver(Notifications, new NotificationRecipients()), ExtraObserver }.OfType<IEventObserver>()];
                 var events = observers.Length == 0 ? null : new EventPublisher(observers);
                 return new(new BranchRepo(Branch), new CounterRepo(Counter), new StaffRepo(() => [Clerk, Manager]), new ProductRepo(new Product(new("P-1"), "Envelope", new(10m))),
-                    new InventoryService(Inventory, UnitOfWork, new InventoryServiceOptions { LowStockThreshold = 2 }, events), Shipments,
+                    new InventoryService(Inventory, UnitOfWork, new InventoryServiceOptions { LowStockThreshold = 2 }, Clock, events), Shipments,
                     new RateProvider([new ShippingRate(ShipmentType.Parcel, ShippingServiceLevel.Standard, new ZoneCode("ZONE-A"), new Money(8m), new ParcelWeight(5m))]),
-                    MoneyOrders, Transactions, new MoneyOrderPolicy(new(100m)), new FixedRateTaxPolicy(.1m), UnitOfWork, events);
+                    MoneyOrders, Transactions, new MoneyOrderPolicy(new(100m)), new FixedRateTaxPolicy(.1m), UnitOfWork, Clock, events);
             }
         }
 

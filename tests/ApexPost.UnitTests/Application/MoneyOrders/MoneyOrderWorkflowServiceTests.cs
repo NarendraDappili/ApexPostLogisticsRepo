@@ -33,7 +33,7 @@ public sealed class MoneyOrderWorkflowServiceTests
     {
         var orders = new InMemoryMoneyOrderRepository();
         var policy = new MoneyOrderPolicy(new Money(1000m), MoneyOrderPolicy.FlatPlusPercentageFee(new Money(2.50m), 0.01m));
-        var service = new MoneyOrderWorkflowService(new InMemoryBranchRepository(new Branch(new("BR-A"), "Branch A")), orders, policy, new StubIdentityVerifier(), new SpyUnitOfWork());
+        var service = new MoneyOrderWorkflowService(new InMemoryBranchRepository(new Branch(new("BR-A"), "Branch A")), orders, policy, new StubIdentityVerifier(), new SpyUnitOfWork(), new FakeTimeProvider(TestTime.Now));
 
         var result = await service.CreateAsync(Request(123.45m));
 
@@ -125,7 +125,7 @@ public sealed class MoneyOrderWorkflowServiceTests
 
     private static MoneyOrderWorkflowService CreateService(InMemoryMoneyOrderRepository orders, decimal threshold, INotificationSender? notifications = null, IIdentityVerifier? verifier = null, SpyUnitOfWork? unitOfWork = null) =>
         new(new InMemoryBranchRepository(new Branch(new("BR-A"), "Branch A"), new Branch(new("BR-B"), "Branch B")), orders,
-            new MoneyOrderPolicy(new Money(threshold), _ => new Money(2m)), verifier ?? new StubIdentityVerifier(), unitOfWork ?? new SpyUnitOfWork(),
+            new MoneyOrderPolicy(new Money(threshold), _ => new Money(2m)), verifier ?? new StubIdentityVerifier(), unitOfWork ?? new SpyUnitOfWork(), new FakeTimeProvider(TestTime.Now),
             notifications is null ? null : new EventPublisher([new NotificationEventObserver(notifications, new NotificationRecipients())]));
 
     private static MoneyOrderCreationRequest Request(decimal amount) =>

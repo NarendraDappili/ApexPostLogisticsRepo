@@ -37,6 +37,18 @@ internal static class TestTokens
     /// <summary>The header every test client sends unless a test says otherwise: both roles, courier CR-1042.</summary>
     public static AuthenticationHeaderValue DefaultHeader() => new("Bearer", Create([ApiRoles.Courier, ApiRoles.Admin], CourierId));
 
+    /// <summary>
+    /// Tokens are valid from 2000 to 2100 by default. These are fixed instants, not times computed from "now", so
+    /// whether a token is accepted never depends on when the tests run (TESTING-STRATEGY.md §8).
+    /// </summary>
+    public static readonly DateTime ValidFrom = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    /// <inheritdoc cref="ValidFrom"/>
+    public static readonly DateTime ValidUntil = new(2100, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+    /// <summary>An expiry in the past for any run, far beyond the API's one-minute clock skew.</summary>
+    public static readonly DateTime LongExpired = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
     /// <summary>A token that the test host accepts, unless one of the optional values is changed to make it invalid.</summary>
     public static string Create(
         IReadOnlyList<string> roles,
@@ -46,16 +58,17 @@ internal static class TestTokens
         string audience = Audience,
         byte[]? signingKey = null)
     {
-        var now = DateTime.UtcNow;
         var claims = new Dictionary<string, object> { [JwtRegisteredClaimNames.Sub] = "test-user", ["role"] = roles.ToArray() };
         if (courierId is not null) claims[ApiRoles.CourierIdClaim] = courierId;
-        var expiry = expires ?? now.AddMinutes(30);
+        var expiry = expires ?? ValidUntil;
+        // A token issued before it expires: from ValidFrom, or ten minutes before an earlier expiry.
+        var issuedAt = expiry.AddMinutes(-10) < ValidFrom ? expiry.AddMinutes(-10) : ValidFrom;
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
         {
             Issuer = issuer,
             Audience = audience,
-            IssuedAt = expiry < now ? expiry.AddMinutes(-10) : now,
-            NotBefore = expiry < now ? expiry.AddMinutes(-10) : now,
+            IssuedAt = issuedAt,
+            NotBefore = issuedAt,
             Expires = expiry,
             Claims = claims,
             SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(signingKey ?? SigningKey), SecurityAlgorithms.HmacSha256),

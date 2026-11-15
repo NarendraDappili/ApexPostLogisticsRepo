@@ -15,7 +15,7 @@ namespace ApexPost.Infrastructure.IntegrationTests.Sql;
 [Collection(SqlServerCollection.Name)]
 public sealed class QueryServiceTests(SqlServerTestDatabase database)
 {
-    private static readonly DateOnly Today = DateOnly.FromDateTime(DateTime.UtcNow);
+    private static readonly DateOnly Today = SqlTestData.Today;
 
     [Fact]
     public async Task Screen_queries_are_single_no_tracking_projections()

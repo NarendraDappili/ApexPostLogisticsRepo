@@ -313,7 +313,7 @@ public sealed class DataChangeAuditTests(SqlServerTestDatabase database)
     {
         var correlation = Correlation();
         var logs = new CapturingLoggerFactory();
-        var record = new SecurityEventRecord(DateTimeOffset.UtcNow, SecurityEventType.SignInFailed, "STF-CLERK-01", null, null, "POST",
+        var record = new SecurityEventRecord(SqlTestData.Now, SecurityEventType.SignInFailed, "STF-CLERK-01", null, null, "POST",
             "/" + new string('a', 400), 200, "127.0.0.1", "WrongPassword", correlation);
 
         await new EfSecurityEventStore(database.CreateOptions(), new AuditTrailLogger(logs)).AppendAsync(record);
@@ -342,7 +342,8 @@ public sealed class DataChangeAuditTests(SqlServerTestDatabase database)
     {
         var unitOfWork = new EfUnitOfWork(db);
         return new StockAdjustmentService(new EfStaffMemberRepository(db), new EfProductRepository(db), new EfInventoryRepository(db), new AuditedStockAdjustments(new EfStockAdjustments(db), db), unitOfWork,
-            new InventoryService(new EfInventoryRepository(db), unitOfWork, new InventoryServiceOptions { LowStockThreshold = 2 }));
+            new InventoryService(new EfInventoryRepository(db), unitOfWork, new InventoryServiceOptions { LowStockThreshold = 2 }, SqlTestData.Clock()),
+            SqlTestData.Clock());
     }
 
     private static string Correlation() => $"corr-{Guid.NewGuid():N}";

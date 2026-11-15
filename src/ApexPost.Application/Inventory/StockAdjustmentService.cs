@@ -35,8 +35,9 @@ public sealed class StockAdjustmentService
     private readonly IStockAdjustments _adjustments;
     private readonly IUnitOfWork _unitOfWork;
     private readonly InventoryService _inventoryService;
+    private readonly TimeProvider _clock;
 
-    public StockAdjustmentService(IStaffMemberRepository staff, IProductRepository products, IInventoryRepository inventory, IStockAdjustments adjustments, IUnitOfWork unitOfWork, InventoryService inventoryService)
+    public StockAdjustmentService(IStaffMemberRepository staff, IProductRepository products, IInventoryRepository inventory, IStockAdjustments adjustments, IUnitOfWork unitOfWork, InventoryService inventoryService, TimeProvider clock)
     {
         _staff = staff ?? throw new ArgumentNullException(nameof(staff));
         _products = products ?? throw new ArgumentNullException(nameof(products));
@@ -44,6 +45,7 @@ public sealed class StockAdjustmentService
         _adjustments = adjustments ?? throw new ArgumentNullException(nameof(adjustments));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         _inventoryService = inventoryService ?? throw new ArgumentNullException(nameof(inventoryService));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
     public async Task<InventoryStockLevel> AdjustAsync(StockAdjustmentRequest request, StaffId managerId, CancellationToken cancellationToken = default)
@@ -54,7 +56,7 @@ public sealed class StockAdjustmentService
         var branchCode = new BranchCode(request.BranchCode);
         var productId = new ProductId(request.ProductId);
         // The domain record validates the change (non-zero, a reason of at most 200 characters) before any database work.
-        var adjustment = new StockAdjustment(branchCode, productId, request.Delta, request.Reason, managerId);
+        var adjustment = new StockAdjustment(branchCode, productId, request.Delta, request.Reason, managerId, _clock.GetUtcNow());
 
         var manager = await _staff.FindByIdAsync(managerId, cancellationToken).ConfigureAwait(false);
         if (manager is null || !manager.IsActive || manager.Role != StaffRole.BranchManager || manager.AssignedBranchCode != branchCode)

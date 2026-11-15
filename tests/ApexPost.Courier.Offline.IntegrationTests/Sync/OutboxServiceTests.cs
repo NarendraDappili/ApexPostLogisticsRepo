@@ -9,7 +9,7 @@ public sealed class OutboxServiceTests : IDisposable
     private static readonly DateTimeOffset Now = new(2026, 11, 5, 12, 0, 0, TimeSpan.Zero);
     private readonly TemporaryCourierDatabase _temporary = new();
     private readonly CouchbaseScanRepository _repository;
-    private readonly FakeShipmentUploader _server = new(new FixedTimeProvider(Now));
+    private readonly FakeShipmentUploader _server = new(new FakeTimeProvider(Now));
     private readonly ScriptedUploader _uploader;
 
     public OutboxServiceTests()

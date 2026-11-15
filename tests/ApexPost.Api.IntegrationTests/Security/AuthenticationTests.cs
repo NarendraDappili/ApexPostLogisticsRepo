@@ -51,7 +51,7 @@ public sealed class AuthenticationTests
     [Fact]
     public async Task An_expired_token_is_a_401_that_says_it_expired()
     {
-        var expired = TestTokens.Create([ApiRoles.Admin], expires: DateTime.UtcNow.AddMinutes(-2));
+        var expired = TestTokens.Create([ApiRoles.Admin], expires: TestTokens.LongExpired);
 
         using var response = await SendAsync("GET", "/api/v2/shipments", expired);
         var problem = await response.JsonAsync();
@@ -186,7 +186,9 @@ public sealed class AuthenticationTests
     {
         Issuer = TestTokens.Issuer,
         Audience = TestTokens.Audience,
-        Expires = DateTime.UtcNow.AddMinutes(30),
+        IssuedAt = TestTokens.ValidFrom,
+        NotBefore = TestTokens.ValidFrom,
+        Expires = TestTokens.ValidUntil,
         Claims = new Dictionary<string, object> { ["role"] = ApiRoles.Admin },
     });
 

@@ -430,11 +430,11 @@ In Visual Studio, open **Test Explorer** and choose **Run All**; no set-up is ne
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1151 tests passing and a zero-warning build:
+**Results:** the latest run had 1154 tests passing and a zero-warning build:
 
 | Level | Project | Tests |
 |---|---|---|
-| Unit | `ApexPost.UnitTests` (Domain 153, Application 152, Infrastructure 55, API 51, courier offline 39, courier core 7) | 457 |
+| Unit | `ApexPost.UnitTests` (Domain 153, Application 155, Infrastructure 55, API 51, courier offline 39, courier core 7) | 460 |
 | Integration | `ApexPost.Infrastructure.IntegrationTests` (SQL Server) | 90 |
 | Integration | `ApexPost.Api.IntegrationTests` (endpoints, OpenAPI, versioning, contracts, generated client, authentication, authorization, partner API keys, HTTPS) | 278 |
 | Integration | `ApexPost.Web.IntegrationTests` | 112 |

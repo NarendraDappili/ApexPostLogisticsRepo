@@ -174,11 +174,11 @@ Steps: **S2** is the courier library extraction; **S3** the project restructure;
 |---|---|---|---|---|
 | `BranchAndCounterTests` | 5 | R10 | Kept (moved) | Branch and counter invariants; pure domain |
 | `CodeValueTests` | 8 | R7 | Kept (moved) | Code format rules with boundary theories |
-| `CounterTransactionTests` | 3 | R10 | Kept (moved) | Transaction invariants; the default time it reads is removed from production in S4 (the tests pass explicit times) |
-| `IdentityAndCodeTests` | 14 | R7 | Kept (moved) | ID and code value objects |
+| `CounterTransactionTests` | 3 | R10 | Modified (S4), moved | Transaction invariants. The constructor now requires the time instead of reading the clock, so the tests pass a fixed instant (`TestTime.Now`). |
+| `IdentityAndCodeTests` | 14 | R7 | Modified (S4), moved | ID and code value objects; its transaction helper passes a fixed instant |
 | `MoneyTests` | 8 | R10 | Kept (moved) | Money arithmetic and currency rules |
 | `ParcelMeasurementTests` | 10 | R7 | Kept (moved) | Counter weight (≤ 30 kg) and dimension boundaries |
-| `PersistenceReadyDomainTests` | 14 | R11 | Kept (moved) | Domain shapes EF Core relies on (constructors, keys) |
+| `PersistenceReadyDomainTests` | 14 | R11 | Modified (S4), moved | Domain shapes EF Core relies on (constructors, keys); transactions and stock adjustments get a fixed instant |
 | `ProductAndInventoryTests` | 6 | R10 | Kept (moved) | Stock invariants |
 | `ShipmentAndMoneyOrderTests` | 4 | R10 | Kept (moved) | Week 3 shipment and money order rules |
 | `StaffMemberTests` | 9 | R12 | Kept (moved) | Staff roles and identity |
@@ -190,20 +190,20 @@ Steps: **S2** is the courier library extraction; **S3** the project restructure;
 | Class | Cases | Risk | Decision | Reason |
 |---|---|---|---|---|
 | `AuditLogServiceTests` | 19 | R11 | Kept (moved) | Audit queries and filters through fakes |
-| `CounterTransactionWorkflowServiceTests` | 17 | R10 | Kept (moved) | Checkout, void and refund workflow |
-| `InventoryServiceTests` | 9 | R10 | Kept (moved) | Stock rules |
+| `CounterTransactionWorkflowServiceTests` | 17 | R10 | Modified (S4), moved | Checkout, void and refund workflow, with a `FakeTimeProvider`. Two new tests show that the sale and its events carry the injected time: one at a second to midnight, one for a void two hours later. |
+| `InventoryServiceTests` | 9 | R10 | Modified (S4), moved | Stock rules; the service now takes a `FakeTimeProvider` for its low-stock event time |
 | `ManagementServiceTests` | 3 | R10 | Kept (moved) | Manager operations |
-| `MoneyOrderWorkflowServiceTests` | 12 | R10 | Kept (moved) | Money order rules and identity checks |
+| `MoneyOrderWorkflowServiceTests` | 12 | R10 | Modified (S4), moved | Money order rules and identity checks; the service now takes a `FakeTimeProvider` for its event time |
 | `ParcelStatusServiceTests` | 4 | R10 | Kept (moved) | Week 3 parcel status lookups |
 | `PriceRevisionServiceTests` | 7 | R10 | Kept (moved) | Price revisions |
 | `RequestValidatorTests` | 2 | R7 | Kept (moved) | The shared validator |
 | `RetailPriceCalculatorTests` | 3 | R10 | Kept (moved) | Retail pricing |
-| `ScanUploadServiceTests` | 12 | R3, R1 | Kept (moved) | Idempotent upload over a stateful in-memory store. Stateful behaviour across calls is clearer with a fake than with mocks; the Moq interaction tests are added beside it. |
+| `ScanUploadServiceTests` | 12 | R3, R1 | Modified (S4), moved | Its home-made `FixedClock` is replaced by `FakeTimeProvider`. Idempotent upload over a stateful in-memory store. Stateful behaviour across calls is clearer with a fake than with mocks; the Moq interaction tests are added beside it. |
 | `ShipmentAcceptanceRuleTests` | 4 | R7 | Kept (moved) | Counter acceptance rules |
 | `ShipmentTrackingServiceTests` | 31 | R1, R2 | Kept (moved) | Tracking use cases with the in-memory store; the Moq tests for the duplicate and race paths are added beside it |
 | `ShippingPriceCalculatorTests` | 8 | R10 | Kept (moved) | Shipping price bands |
 | `ShippingWorkflowServiceTests` | 15 | R10 | Kept (moved) | Week 3 shipping workflow; Moq tests on `IShipmentRepository` are added beside it |
-| `StockAdjustmentServiceTests` | 6 | R10 | Kept (moved) | Stock adjustments; the default time is removed from production in S4 |
+| `StockAdjustmentServiceTests` | 6 | R10 | Modified (S4), moved | Stock adjustments with a `FakeTimeProvider`; a new test shows the adjustment and its alert carry the clock time |
 
 ### 6.3 `ApexPost.Infrastructure.Tests` → `ApexPost.Infrastructure.IntegrationTests`
 
@@ -239,11 +239,11 @@ Steps: **S2** is the courier library extraction; **S3** the project restructure;
 | `TrackingNumberRouteConstraintTests` | 14 | unit | R7 | Kept (moved to UnitTests) | Route constraint; pure |
 | `AccessTokensTests` | 3 | API | R5 | Kept | Token acquisition for the generated client |
 | `ApiCompositionTests` | 7 | API | R5, R9 | Kept | Start-up refuses missing or invalid settings |
-| `AuthenticationTests` | 29 | API | R5 | Kept | 401 cases with real JWT validation. Token lifetimes are relative to the system clock because Microsoft.IdentityModel validates lifetime against it; margins of minutes against a 5-minute skew make the outcome fixed (the documented exception in section 8). |
+| `AuthenticationTests` | 29 | API | R5 | Modified (S4) | 401 cases with real JWT validation. Tokens are valid from 2000 to 2100, and the expired one expired in 2000: fixed instants, so no test computes a time from "now" (section 8). |
 | `AuthorizationTests` | 15 | API | R5 | Modified (S4) | 403 rules and courierId ownership; scan times become fixed instants |
 | `ClientGenerationTests` | 5 | API | R8 | Kept | The NSwag client matches the committed contract |
 | `ContractTests` | 5 | API | R8 | Kept | Drift guard against `contracts/*.json` |
-| `DevelopmentTokenTests` | 3 | API | R5 | Kept | The development token endpoint; lifetime checked against the system clock under the same JWT exception |
+| `DevelopmentTokenTests` | 3 | API | R5 | Modified (S4) | The development token endpoint. The one-hour lifetime is measured against the token's own start, not the clock; the next test shows the token is accepted now. |
 | `ErrorHandlingTests` | 14 | API | R9 | Kept | 500 without internals outside Development |
 | `GeneratedClientTests` | 6 | API | R8 | Kept | The generated client against the real API |
 | `OpenApiDocumentTests` | 14 | API | R8 | Kept | The document transformer and versions |
@@ -278,13 +278,13 @@ Steps: **S2** is the courier library extraction; **S3** the project restructure;
 | Class | Cases | Level | Risk | Decision | Reason |
 |---|---|---|---|---|---|
 | `DomainIndependenceTests` | 3 | guard | guard | Kept (moved to UnitTests) | Domain has no Couchbase types (reflection and source scan) |
-| `FakeShipmentUploaderTests` | 5 | unit | R4 | Kept (moved to UnitTests) | The harness's fake uploader is production code the harness still uses |
+| `FakeShipmentUploaderTests` | 5 | unit | R4 | Modified (S4), moved to UnitTests | The harness's fake uploader is production code the harness still uses; its home-made fixed clock is replaced by `FakeTimeProvider` |
 | `ScanIdTests` | 14 | unit | R3 | Kept (moved to UnitTests) | Version 7 GUID scan IDs sort by time |
 | `ShipmentScanTests` | 17 | unit | R4, R7 | Kept (moved to UnitTests) | Scan model rules |
 | `CouchbaseScanRepositoryTests` | 13 | Couchbase | R4 | Kept | Key-value CRUD on a real store |
-| `CourierConsoleTests` | 10 | Couchbase | R4 | Kept | The Part A harness end to end |
+| `CourierConsoleTests` | 10 | Couchbase | R4 | Modified (S4) | The Part A harness end to end; `FakeTimeProvider` replaces the home-made fixed clock |
 | `CourierDatabaseTests` | 12 | Couchbase | R4 | Kept | Lifecycle, single-process rule, safe close |
-| `OutboxServiceTests` | 13 | Couchbase | R4 | Kept | The outbox with a real store; the Moq unit tests are added beside it and prove interactions, not the store |
+| `OutboxServiceTests` | 13 | Couchbase | R4 | Modified (S4) | `FakeTimeProvider` replaces the home-made fixed clock. The outbox with a real store; the Moq unit tests are added beside it and prove interactions, not the store |
 | `ScanChangeMonitorTests` | 9 | Couchbase | R4 | Modified (S4) | Change listener; one scan time becomes a fixed instant |
 | `ScanDocumentMapperTests` | 13 | Couchbase | R4 | Kept | Builds real Couchbase documents (native engine) |
 | `ScanQueryTests` | 20 | Couchbase | R4 | Kept | Parameterised SQL++ and index use via `Explain()`: a mock cannot prove this |
@@ -306,9 +306,9 @@ Steps: **S2** is the courier library extraction; **S3** the project restructure;
 | `TokenHandlingTests` | 18 | component | R6, R5 | Modified (S4) | Token expiry uses fixed instants (the handler takes `TimeProvider`); the wait helper uses a `Stopwatch` |
 
 **Summary:** 102 classes. No class is removed or replaced. The existing tests protect real risks, and Week 5's additions sit beside them because they prove different things:
-- **Kept unchanged:** 42 classes.
-- **Kept (moved):** 42 classes.
-- **Modified:** 18 classes, for determinism or because their code moved.
+- **Kept unchanged:** 38 classes.
+- **Kept (moved):** 33 classes.
+- **Modified:** 31 classes: in S4 for determinism (a fixed instant or `FakeTimeProvider` instead of the system clock), or because the code they test moved.
 
 Helper classes (fakes, factories, test databases) move with the tests that use them and are not listed.
 
@@ -366,13 +366,24 @@ The retry pipeline stays at component level, because there the registration *is*
 
 | Threat | Rule |
 |---|---|
-| **The system clock** | Production code takes `TimeProvider`; the four places that still read `DateTimeOffset.UtcNow` are changed. Tests use one of two kinds of fixed instant. **`FakeTimeProvider`** is used where the code under test takes a `TimeProvider` and the test is about time arithmetic (boundaries, expiry, windows). **Far-past or far-future constants** are used where the test only needs "clearly valid" or "clearly in the future" through a host. |
-| **The JWT exception** | Microsoft.IdentityModel validates token lifetime against the system clock, so API tests that *send* tokens create them relative to the real clock with margins of minutes against a 5-minute skew. The outcome cannot flip. This is the only accepted clock read, and it is listed in section 6. |
+| **The system clock in production code** | Production code takes `TimeProvider`. In step S4 the four places that still read `DateTimeOffset.UtcNow` were changed: the `CounterTransaction` and `StockAdjustment` constructors now *require* the time, `ApexPostEvent.OccurredAtUtc` is `required`, and `AuditResourceFilter` and the four services that create these objects take the injected clock. No production code reads `UtcNow` any more. |
+| **The system clock in tests** | No test reads it. Tests use one of two kinds of fixed instant. **`FakeTimeProvider`** (or a fixed `Now` passed as an argument) is used where the code under test takes the time, and the test is about time arithmetic: boundaries, expiry, windows, or the time a sale is stamped with. **Fixed instants far from any real "now"** are used where the code under test keeps the real clock: a scan dated before any run, a scan in 2100, a token valid from 2000 to 2100, a token that expired in 2000. |
+| **Hosts that keep the real clock** | Three hosts keep the real clock, by design: the courier app's composition (its retry pipeline and circuit breaker wait in real time), the Web host (its sign-in cookies), and the JWT lifetime check (Microsoft.IdentityModel reads the system clock). Their tests never compute a time from "now". They use the far instants above, or read a time back from what was stored: the Web sales report is anchored on the sale's stored day, so a run that crosses midnight UTC cannot split the sale and the report across two days. |
 | **Waiting** | Polling helpers measure their own deadline with a `Stopwatch`. A deadline only bounds a wait; it never decides the outcome. |
 | **Random values** | Allowed for identity (unique database names, scan IDs); never in theory data or in an expected value |
 | **Test order** | No test depends on another. Tests that share a database use unique tracking numbers. |
 | **Shared mutable state** | No mutable static fields. Reqnroll state goes through context injection. |
 | **Concurrency** | A race test asserts only what holds on *every* interleaving (no double storage, a consistent 409 body). It never asserts that a race happened. |
+
+Evidence from S4:
+- **The whole suite ran twice in a row, green both times.**
+- **No test file reads the system clock.** A search for `UtcNow` and `DateTime.Now` in `tests/` finds none.
+- **Three new tests pin the injected time:**
+  - a sale at one second to midnight;
+  - a void two hours later;
+  - a stock adjustment 45 minutes on.
+
+  Putting `DateTimeOffset.UtcNow` back into the checkout makes the first one fail with the real date, so the test can fail for the right reason.
 
 ---
 

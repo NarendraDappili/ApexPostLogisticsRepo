@@ -124,7 +124,7 @@ public sealed class InventoryServiceTests
     }
 
     private static InventoryService CreateService(InMemoryInventoryRepository repository, INotificationSender? notifications = null, int threshold = 2, SpyUnitOfWork? unitOfWork = null) =>
-        new(repository, unitOfWork ?? new SpyUnitOfWork(), new InventoryServiceOptions { LowStockThreshold = threshold },
+        new(repository, unitOfWork ?? new SpyUnitOfWork(), new InventoryServiceOptions { LowStockThreshold = threshold }, new FakeTimeProvider(TestTime.Now),
             notifications is null ? null : new EventPublisher([new NotificationEventObserver(notifications, new NotificationRecipients { Inventory = "inventory-alerts@example.test" })]));
 
     private sealed class RecordingNotificationSender : INotificationSender

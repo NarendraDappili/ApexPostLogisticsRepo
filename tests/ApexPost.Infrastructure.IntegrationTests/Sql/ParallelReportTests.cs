@@ -7,7 +7,7 @@ namespace ApexPost.Infrastructure.IntegrationTests.Sql;
 [Collection(SqlServerCollection.Name)]
 public sealed class ParallelReportTests(SqlServerTestDatabase database)
 {
-    private static readonly DateOnly Today = DateOnly.FromDateTime(DateTime.UtcNow);
+    private static readonly DateOnly Today = SqlTestData.Today;
 
     [Fact]
     public async Task The_four_reports_run_at_the_same_time_each_on_its_own_context_and_match_the_sequential_reads()

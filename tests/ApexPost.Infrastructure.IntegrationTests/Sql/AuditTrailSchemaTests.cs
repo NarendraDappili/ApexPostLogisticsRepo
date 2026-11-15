@@ -59,7 +59,7 @@ public sealed class AuditTrailSchemaTests(SqlServerTestDatabase database)
 
     private static DataChangeEntity Change(string correlationId, string operation = "Update", string changesJson = """[{"column":"Name","old":"Clerk","new":"Renamed Clerk"}]""") => new()
     {
-        OccurredAtUtc = DateTimeOffset.UtcNow,
+        OccurredAtUtc = SqlTestData.Now,
         StaffId = "STF-ADMIN-01",
         BranchCode = "BR-NORTH",
         TableName = "Staff",
@@ -71,7 +71,7 @@ public sealed class AuditTrailSchemaTests(SqlServerTestDatabase database)
 
     private static SecurityEventEntity Event(string correlationId, string eventType = "SignInFailed", int statusCode = 200) => new()
     {
-        OccurredAtUtc = DateTimeOffset.UtcNow,
+        OccurredAtUtc = SqlTestData.Now,
         EventType = eventType,
         StaffId = "STF-NOBODY",
         HttpMethod = "POST",
