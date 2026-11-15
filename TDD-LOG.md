@@ -142,7 +142,23 @@ The right failure: the real app stored the double tap.
 
 ### GREEN
 
-*Written when the GREEN commit is made.*
+**Commit:** `GREEN: the New Scan screen records through ScanRecorder and says when a scan is already recorded`
+
+The least change that passes:
+- **`NewScanScreen`** takes a `ScanRecorder` instead of an `IScanRepository`, and calls `recorder.Record(…)` where it used to build and save the scan itself.
+- **When the result says `AlreadyRecorded`,** it prints `Already recorded on this device: <id>. Nothing new was saved.` and returns, with no "Saved" line and no wait for a change notification, because nothing changed.
+- **`AddCourierCore()` registers `ScanRecorder`,** so the console app gets it from the shared library, and so will the future MAUI app.
+
+The run:
+
+```text
+NewScan_SameDeliveryEnteredTwice_SaysAlreadyRecordedAndKeepsOneScan   Passed
+Passed!  - Failed:     0, Passed:   125, Total:   125   (ApexPost.Courier.IntegrationTests)
+Passed!  - Failed:     0, Passed:    90, Total:    90   (ApexPost.Courier.Offline.IntegrationTests)
+Passed!  - Failed:     0, Passed:   592, Total:   592   (ApexPost.UnitTests)
+```
+
+Left for REFACTOR: the screen still works out "blank means now" with its own clock. The recorder already does that from the same injected clock, so the screen holds a second copy of the rule and a dependency it no longer needs.
 
 ### REFACTOR
 

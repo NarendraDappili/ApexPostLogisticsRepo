@@ -1,5 +1,6 @@
 using ApexPost.Courier.Api;
 using ApexPost.Courier.Offline.Domain;
+using ApexPost.Courier.Offline.Recording;
 using ApexPost.Courier.Offline.Storage;
 using ApexPost.Courier.Offline.Sync;
 using ApexPost.Courier.Sync;
@@ -61,6 +62,7 @@ public static class CourierCoreServiceCollectionExtensions
             .AddHttpMessageHandler<AuthHeaderHandler>();
 
         services.AddSingleton<CourierSession>();
+        services.AddSingleton<ScanRecorder>();
         return services;
     }
 }

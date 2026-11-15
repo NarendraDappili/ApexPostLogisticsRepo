@@ -1,10 +1,11 @@
 using System.Globalization;
 using ApexPost.Courier.Offline.Domain;
+using ApexPost.Courier.Offline.Recording;
 
 namespace ApexPost.Courier.Screens;
 
 /// <summary>New Scan: records a scan for the signed-in courier and saves it on the device as Pending.</summary>
-internal sealed class NewScanScreen(ConsoleScreen screen, CourierSession session, IScanRepository scans, TimeProvider clock)
+internal sealed class NewScanScreen(ConsoleScreen screen, CourierSession session, ScanRecorder recorder, TimeProvider clock)
 {
     private static readonly ScanType[] ScanTypes = Enum.GetValues<ScanType>();
 
@@ -34,9 +35,15 @@ internal sealed class NewScanScreen(ConsoleScreen screen, CourierSession session
 
         try
         {
-            var scan = ShipmentScan.Record(trackingNumber ?? string.Empty, ScanTypes[typeNumber - 1], session.CourierId!, location ?? string.Empty, scannedAt, notes);
             screen.ExpectChange();
-            scans.Create(scan);
+            var result = recorder.Record(trackingNumber ?? string.Empty, ScanTypes[typeNumber - 1], session.CourierId!, location ?? string.Empty, scannedAt, notes);
+            if (result.AlreadyRecorded)
+            {
+                screen.WriteLine($"Already recorded on this device: {result.Scan.Id}. Nothing new was saved.");
+                return;
+            }
+
+            var scan = result.Scan;
             screen.WriteLine($"Saved on this device as Pending: {scan.Id}");
             await screen.WaitForChangeAsync();
         }
