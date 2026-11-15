@@ -18,7 +18,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="ApexPost.Courier.Tests" />
+    <InternalsVisibleTo Include="ApexPost.Courier.IntegrationTests" />
+    <InternalsVisibleTo Include="ApexPost.UnitTests" />
   </ItemGroup>
 
   <PropertyGroup>

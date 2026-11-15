@@ -605,11 +605,13 @@ Measured on a 200,000-sale data set, the five workload indexes cut the per-branc
 
 ## Tests
 
+Since Week 5 the tests are organised by level of the test pyramid ([TESTING-STRATEGY.md](TESTING-STRATEGY.md)). `ApexPost.UnitTests` holds everything that needs no real dependency: the former Domain and Application test projects and the pure classes from the others. Each integration project boots one real dependency. The Week 2 and 3 projects map as follows:
+
 | Project | Uses | Covers |
 |---|---|---|
-| `ApexPost.Domain.Tests` | No database | Value objects, entities, state transitions (Week 2 tests unchanged) |
-| `ApexPost.Application.Tests` | Fakes + `SpyUnitOfWork` | Workflows commit once, or never on failure; pricing; stock adjustment; price revision |
-| `ApexPost.Infrastructure.Tests` | A disposable SQL Server database per run (`ApexPostDb_Test_<guid>`), built by the migrations | Mapping; rollback; concurrency; procedures; audit store; data-change history and audit-log queries; query shape and N+1; generated SQL; index definitions |
+| `ApexPost.UnitTests` (`Domain/`) | No database | Value objects, entities, state transitions (Week 2 tests unchanged) |
+| `ApexPost.UnitTests` (`Application/`) | Fakes + `SpyUnitOfWork` | Workflows commit once, or never on failure; pricing; stock adjustment; price revision |
+| `ApexPost.Infrastructure.IntegrationTests` | A disposable SQL Server database per run (`ApexPostDb_Test_<guid>`), built by the migrations | Mapping; rollback; concurrency; procedures; audit store; data-change history and audit-log queries; query shape and N+1; generated SQL; index definitions |
 | `ApexPost.Web.IntegrationTests` | `WebApplicationFactory` + a disposable database | Sales persist; voids need a manager; report totals; Problem Details; over-posting; security pipeline; audit statuses; security events; Audit log access by role; role-aware menu and branch picker |
 
 A guard refuses to run tests against any database whose name is not a test database. See [docs/testing.md](docs/testing.md).

@@ -87,7 +87,7 @@ The lines give the method and path, never the request body, the query string or 
 
 ## Tests
 
-[`ResilienceTests`](tests/ApexPost.Courier.Tests/Api/ResilienceTests.cs) run the app's real composition against a stub network:
+[`ResilienceTests`](tests/ApexPost.Courier.IntegrationTests/Api/ResilienceTests.cs) run the app's real composition against a stub network:
 - retries after 5xx, 408 and network errors, each try with the same body and token;
 - exactly four tries in all when the failure lasts;
 - no retry on any other 4xx, or on a POST that is not marked safe;

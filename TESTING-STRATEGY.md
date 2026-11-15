@@ -113,6 +113,11 @@ tests/
 
 The solution file groups them into **Unit**, **Integration** and **Specs** folders, so Test Explorer shows the pyramid.
 
+In place since step S3:
+- **457 tests in the unit project and 694 in the integration projects.** The move changed no test: the list of test cases is identical before and after, compared by class, method and arguments.
+- **The SQL Server projects share one helper** (`tests/Shared/TestSqlServer.cs`), which finds the server as section 9.4 describes.
+- **CI runs the unit tests before SQL Server starts**, then each integration project.
+
 ### 4.2 Why this layout and not a single `ApexPost.IntegrationTests`
 
 The brief allows "your documented equivalent structure". The integration tests are split **by the runtime dependency they boot** because of three facts in the code:

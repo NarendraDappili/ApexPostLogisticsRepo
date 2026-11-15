@@ -21,7 +21,8 @@
 
   <ItemGroup>
     <!-- Tests capture the SQL of the internal query builders with ToQueryString (PERFORMANCE.md). -->
-    <InternalsVisibleTo Include="ApexPost.Infrastructure.Tests" />
+    <InternalsVisibleTo Include="ApexPost.Infrastructure.IntegrationTests" />
+    <InternalsVisibleTo Include="ApexPost.UnitTests" />
   </ItemGroup>
 
   <ItemGroup>

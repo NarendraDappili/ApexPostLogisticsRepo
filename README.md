@@ -160,7 +160,7 @@ Couriers record pickups and deliveries without a network. Each scan is saved fir
 |---|---|
 | [`ApexPost.Courier.Offline`](src/ApexPost.Courier.Offline) | `Domain`: `ShipmentScan`, `ScanId`, `IScanRepository`, `IShipmentUploader`, with no Couchbase types (a test enforces this). `Storage`: `CourierDatabase`, `CouchbaseScanRepository`, `ScanChangeMonitor`, the SQL++ queries. `Sync`: `OutboxService`, `FakeShipmentUploader`. |
 | [`ApexPost.Courier.Offline.Harness`](src/ApexPost.Courier.Offline.Harness) | The console test harness |
-| [`ApexPost.Courier.Offline.Tests`](tests/ApexPost.Courier.Offline.Tests) | 129 tests on real temporary databases; no SQL Server or network needed |
+| [`ApexPost.Courier.Offline.IntegrationTests`](tests/ApexPost.Courier.Offline.IntegrationTests) | 90 tests on real temporary databases; no SQL Server or network needed. The 39 that need no database at all (scan model, IDs, domain independence) are in [`ApexPost.UnitTests`](tests/ApexPost.UnitTests). |
 
 **Run the harness** (no Couchbase Server, Sync Gateway or network needed):
 
@@ -215,7 +215,7 @@ With single-field indexes, the first two queries used their index but still sort
 |---|---|
 | [`ApexPost.Api`](src/ApexPost.Api) | `Program.cs`. `Controllers/V1` and `Controllers/V2`: `ShipmentsController`, `ScansController`. `Contracts`: request DTOs and v1's response DTOs; `Contracts/V2`: v2's response DTOs. `Validation`: the custom rules. `Errors/ApiExceptionHandler`. `Routing`: the `{trackingNumber:trackingNumber}` constraint. `OpenApi` and `Versioning` (Part C). [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) |
 | Week 3 projects (additions only) | Domain: `TrackedShipment`, `TrackingScan`, `TrackingStatusRules`, `TrackingNumber`, `TrackingScanId`, `Recipient`. Application: `ShipmentTrackingService`, `ITrackedShipmentRepository`, `ITrackingQueries`. Infrastructure: their EF Core configuration, repository and queries, plus the migration `AddShipmentTracking` |
-| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 329 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles, the courierId rule, partner API keys, HTTPS redirection and HSTS |
+| [`ApexPost.Api.IntegrationTests`](tests/ApexPost.Api.IntegrationTests) | 278 tests (the 51 that need no host, such as the custom rules and the route constraint, are in [`ApexPost.UnitTests`](tests/ApexPost.UnitTests)):<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles, the courierId rule, partner API keys, HTTPS redirection and HSTS |
 
 **Run it:**
 
@@ -409,13 +409,22 @@ Its README is also a step-by-step script for the 3–5 minute video: login, scan
 
 ```powershell
 dotnet build ApexPost.slnx -c Release -warnaserror
-dotnet test ApexPost.slnx -c Release --no-build
+dotnet test ApexPost.slnx -c Release --no-build                  # all tests
+dotnet test tests/ApexPost.UnitTests -c Release --no-build       # unit tests only: seconds, nothing installed
 ```
 
+In Visual Studio, open **Test Explorer** and choose **Run All**; no set-up is needed. The solution groups the test projects by level of the test pyramid, **1 Unit** and **2 Integration**. The strategy behind them is in [TESTING-STRATEGY.md](TESTING-STRATEGY.md).
+
 **What the tests need:**
-- The courier tests (`ApexPost.Courier.Offline.Tests` and `ApexPost.Courier.Tests`) need nothing installed: each test opens its own Couchbase Lite database in a temporary folder.
-- The Infrastructure, Web and API tests need a SQL Server. Each test run creates its own database (`ApexPostDb_Test_<guid>`, or `ApexPostDb_ApiTest_<guid>` for the API) from the migrations and drops it afterwards. The development database is never used, and a guard refuses any other database name.
-- By default the tests use the local default instance with Windows authentication. Point them elsewhere with `APEXPOST_TEST_SQLSERVER`, a connection string without a database name:
+- **`ApexPost.UnitTests` needs nothing:** no database, no files written, no network.
+- **The courier tests need nothing installed.** In `ApexPost.Courier.Offline.IntegrationTests` and `ApexPost.Courier.IntegrationTests`, each test opens its own Couchbase Lite database in a temporary folder.
+- **The Infrastructure, Web and API integration tests need a SQL Server, and find one by themselves:**
+  1. `APEXPOST_TEST_SQLSERVER`, if set;
+  2. else the local default instance;
+  3. else LocalDB, which Visual Studio installs;
+  4. else they fail with a message saying what to set.
+
+  Each test run creates its own database (`ApexPostDb_Test_<guid>`, or `ApexPostDb_ApiTest_<guid>` for the API) from the migrations and drops it afterwards. The development database is never used, and a guard refuses any other database name. To choose a server yourself, set a connection string without a database name:
 
   ```powershell
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
@@ -423,19 +432,18 @@ dotnet test ApexPost.slnx -c Release --no-build
 
 **Results:** the latest run had 1151 tests passing and a zero-warning build:
 
-| Project | Tests |
-|---|---|
-| Domain | 153 |
-| Application | 152 |
-| Infrastructure | 145 |
-| Web integration | 112 |
-| Courier offline | 129 |
-| Courier app (Part D) | 131 |
-| API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 329 |
+| Level | Project | Tests |
+|---|---|---|
+| Unit | `ApexPost.UnitTests` (Domain 153, Application 152, Infrastructure 55, API 51, courier offline 39, courier core 7) | 457 |
+| Integration | `ApexPost.Infrastructure.IntegrationTests` (SQL Server) | 90 |
+| Integration | `ApexPost.Api.IntegrationTests` (endpoints, OpenAPI, versioning, contracts, generated client, authentication, authorization, partner API keys, HTTPS) | 278 |
+| Integration | `ApexPost.Web.IntegrationTests` | 112 |
+| Integration | `ApexPost.Courier.Offline.IntegrationTests` (Couchbase Lite) | 90 |
+| Integration | `ApexPost.Courier.IntegrationTests` (the courier app's composition) | 124 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 
-**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors, checks that every model change has a migration, starts a throwaway SQL Server container with a random password, and runs every test on each push and pull request to `master`, then reruns the error-handling tests with full JIT optimization. Of the 52 runs on GitHub Actions up to 10 November 2026, 51 passed. The other (the push of `2a3ce1a` to `master`) failed inside GitHub before any job started, and the next push to `master` passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
+**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors and checks that every model change has a migration. It runs the unit tests before any database exists, then starts a throwaway SQL Server container with a random password and runs each integration project, on each push and pull request to `master` and on pull requests into the week branches. It keeps the results as TRX files, then reruns the error-handling tests with full JIT optimization. Of the 52 runs on GitHub Actions up to 10 November 2026, 51 passed. The other (the push of `2a3ce1a` to `master`) failed inside GitHub before any job started, and the next push to `master` passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
 
 ## Database artifacts
 
