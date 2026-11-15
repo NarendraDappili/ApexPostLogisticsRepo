@@ -59,7 +59,41 @@ The failure is the right one: the recorder says the double tap is a *new* scan a
 
 ## 3. GREEN: the minimal implementation
 
-*Written when the GREEN commit is made.*
+**Commit:** `GREEN: ScanRecorder returns the earlier scan instead of saving a double scan`
+
+The least code that makes all eleven tests pass: one loop over the parcel's history, added before the save.
+
+```csharp
+var scan = ShipmentScan.Record(trackingNumber, scanType, courierId, location, scannedAtUtc ?? clock.GetUtcNow(), notes);
+foreach (var earlier in scans.FindByTrackingNumber(scan.TrackingNumber))
+{
+    if (earlier.ScanType == scan.ScanType && earlier.CourierId == scan.CourierId && earlier.SyncStatus != SyncStatus.Failed
+        && (scan.ScannedAtUtc - earlier.ScannedAtUtc).Duration() < TimeSpan.FromMinutes(2))
+    {
+        return new ScanRecordResult(earlier, AlreadyRecorded: true);
+    }
+}
+
+scans.Create(scan);
+```
+
+Decisions taken by staying minimal:
+- **No new query.** `IScanRepository.FindByTrackingNumber` already exists. It is a parameterised SQL++ query over an indexed field, proven on Couchbase Lite in Week 4 by `ScanQueryTests`, and a parcel's history is a handful of scans. A dedicated "latest identical scan" query would add an interface method, a query and an index for no measurable gain.
+- **The scan is built first, then compared.** `ShipmentScan.Record` normalises the tracking number and trims the courier ID, so the comparison sees what is stored. An invalid scan still fails exactly as before, before the history is read.
+- **`Duration()`** gives "either side" in one expression, which the −30 s row requires.
+
+The run:
+
+```text
+Passed!  - Failed:     0, Passed:    11, Skipped:     0, Total:    11   (ScanRecorderTests)
+Passed!  - Failed:     0, Passed:   592, Skipped:     0, Total:   592   (ApexPost.UnitTests)
+Passed!  - Failed:     0, Passed:    90 (Courier.Offline.IntegrationTests), 124 (Courier.IntegrationTests)
+```
+
+The design smells this leaves, deliberately, for REFACTOR:
+- the two-minute window is a magic number;
+- the four-part condition has no name;
+- "is this the same event?" is a domain question buried in a loop in the recorder.
 
 ## 4. REFACTOR
 

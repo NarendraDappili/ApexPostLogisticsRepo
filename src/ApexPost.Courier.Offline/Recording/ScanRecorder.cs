@@ -12,6 +12,15 @@ public sealed class ScanRecorder(IScanRepository scans, TimeProvider clock)
     public ScanRecordResult Record(string trackingNumber, ScanType scanType, string courierId, string location, DateTimeOffset? scannedAtUtc = null, string? notes = null)
     {
         var scan = ShipmentScan.Record(trackingNumber, scanType, courierId, location, scannedAtUtc ?? clock.GetUtcNow(), notes);
+        foreach (var earlier in scans.FindByTrackingNumber(scan.TrackingNumber))
+        {
+            if (earlier.ScanType == scan.ScanType && earlier.CourierId == scan.CourierId && earlier.SyncStatus != SyncStatus.Failed
+                && (scan.ScannedAtUtc - earlier.ScannedAtUtc).Duration() < TimeSpan.FromMinutes(2))
+            {
+                return new ScanRecordResult(earlier, AlreadyRecorded: true);
+            }
+        }
+
         scans.Create(scan);
         return new ScanRecordResult(scan, AlreadyRecorded: false);
     }
