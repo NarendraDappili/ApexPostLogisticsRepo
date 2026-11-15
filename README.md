@@ -411,9 +411,10 @@ Its README is also a step-by-step script for the 3–5 minute video: login, scan
 dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build                  # all tests
 dotnet test tests/ApexPost.UnitTests -c Release --no-build       # unit tests only: seconds, nothing installed
+dotnet test tests/ApexPost.Specs -c Release --no-build           # the Gherkin acceptance scenarios (Reqnroll)
 ```
 
-In Visual Studio, open **Test Explorer** and choose **Run All**; no set-up is needed. The solution groups the test projects by level of the test pyramid, **1 Unit** and **2 Integration**. The strategy behind them is in [TESTING-STRATEGY.md](TESTING-STRATEGY.md).
+In Visual Studio, open **Test Explorer** and choose **Run All**; no set-up is needed. The solution groups the test projects by level of the test pyramid: **1 Unit**, **2 Integration** and **3 Specs**, the business scenarios in Gherkin. The strategy behind them is in [TESTING-STRATEGY.md](TESTING-STRATEGY.md).
 
 **What the tests need:**
 - **`ApexPost.UnitTests` needs nothing:** no database, no files written, no network.
@@ -430,7 +431,7 @@ In Visual Studio, open **Test Explorer** and choose **Run All**; no set-up is ne
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1287 tests passing and a zero-warning build:
+**Results:** the latest run had 1299 tests passing and a zero-warning build:
 
 | Level | Project | Tests |
 |---|---|---|
@@ -440,10 +441,11 @@ In Visual Studio, open **Test Explorer** and choose **Run All**; no set-up is ne
 | Integration | `ApexPost.Web.IntegrationTests` | 112 |
 | Integration | `ApexPost.Courier.Offline.IntegrationTests` (Couchbase Lite) | 90 |
 | Integration | `ApexPost.Courier.IntegrationTests` (the courier app's composition) | 125 |
+| Acceptance | `ApexPost.Specs` (Reqnroll): registering a shipment at head office (API level); courier scans reaching head office exactly once (from the device to the API) | 12 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 
-**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors and checks that every model change has a migration. It runs the unit tests before any database exists, then starts a throwaway SQL Server container with a random password and runs each integration project, on each push and pull request to `master` and on pull requests into the week branches. It keeps the results as TRX files, then reruns the error-handling tests with full JIT optimization. Of the 52 runs on GitHub Actions up to 10 November 2026, 51 passed. The other (the push of `2a3ce1a` to `master`) failed inside GitHub before any job started, and the next push to `master` passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
+**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors and checks that every model change has a migration. It runs the unit tests before any database exists, then starts a throwaway SQL Server container with a random password and runs each integration project and the acceptance scenarios, on each push and pull request to `master` and on pull requests into the week branches. It keeps the results as TRX files, then reruns the error-handling tests with full JIT optimization. Of the 52 runs on GitHub Actions up to 10 November 2026, 51 passed. The other (the push of `2a3ce1a` to `master`) failed inside GitHub before any job started, and the next push to `master` passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
 
 ## Database artifacts
 

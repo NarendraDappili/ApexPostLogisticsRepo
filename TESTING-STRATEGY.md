@@ -79,7 +79,7 @@ The brief's examples map to R1 (status transitions), R2 (duplicate tracking numb
 | Integration | ~674 cases (59%) | ~45–50% |
 | BDD | 0 | ~2–3% (about 15–20 scenario cases) |
 
-Measured after step S7: **592 unit tests out of 1287 (46.0%)** and 695 integration tests (54.0%). The unit share reached the target through tests that belong at unit level: boundary tables, Moq interaction tests, the HTTP client suite and the no-network guard. No integration test was cut. BDD follows in S8.
+Measured after step S8: **592 unit tests out of 1299 (45.6%)**, 695 integration tests (53.5%) and **12 acceptance scenarios (0.9%)**. The top of the pyramid is thinner than the ~2–3% estimate, on purpose: each scenario is a business promise (R1–R5 end to end), and their boundaries and permutations are already proven lower down. The unit share reached the target through tests that belong at unit level: boundary tables, Moq interaction tests, the HTTP client suite and the no-network guard. No integration test was cut. BDD follows in S8.
 
 **Why ApexPost's pyramid has a wide middle.** The costliest risks live at *boundaries*:
 - R2: a unique index;
@@ -166,6 +166,42 @@ The two tables of rows guard themselves. A test fails if a status or scan type i
 - refusing exactly 5 minutes ahead failed 2 rows.
 
 **Runner integration.** Every test runs from Visual Studio's Test Explorer and from `dotnet test`, with no manual set-up. The commands are in the README and in `docs/testing.md`.
+
+### 4.4 Acceptance scenarios (BDD with Reqnroll)
+
+`ApexPost.Specs` holds the business promises, written in Gherkin and run by **Reqnroll** (`Reqnroll.xUnit` 3.3.4). That adapter targets xUnit v2, like every other test project, so section 5's single-framework decision holds. There was no SpecFlow work to migrate.
+
+**The features and the level each one runs at:**
+
+| Feature | Scenarios | Runs at | Why this level |
+|---|---|---|---|
+| `ShipmentCreation.feature` | 7: a shipment registered and looked up; a duplicate tracking number refused; the weight outline (0.09, 0.1, 70, 70.01 kg); a courier may not register | **API**: the real tracking API in memory (`WebApplicationFactory`) over its own SQL Server database, with real JWT validation | The promise is what head office's clients see. Only at this level do request validation, the database's unique key and the role rules all take part. A service-level run would skip the duplicate-key path (R2) and the 403 (R5). |
+| `ScanSync.feature` | 5: scans recorded without a network are sent when it returns; a scan that reaches head office twice is stored once; the outline of scans head office refuses (dated in the future, skipping a stage, an unknown parcel) | **From the courier's device to the API**: the device is composed with `AddCourierCore()` exactly as an app head composes it, over Couchbase Lite in a temporary folder. Its HTTP client is pointed at head office's in-memory test server. | "A scan captured offline reaches head office exactly once" spans both sides. Faking the server would prove only the fake's rules, and faking the device would skip the outbox and automatic sync (R3, R4). No socket is opened. |
+
+**Gherkin.**
+- **Business language only:** no HTTP verbs, status codes, JSON or class names in steps. "Then the registration is refused because the tracking number is already in use", not "Then the response is 409".
+- **Each feature has a Background:** the administrator, or the courier on their device, is signed in.
+- **Each feature has a Scenario Outline with Examples:** the weight boundaries, and the three reasons head office refuses a scan. The first column of the scan outline (`case`) makes each example's name readable in Test Explorer.
+
+**Bindings.**
+- **Context injection, no static fields.** `ScenarioState` (the parcel in play, the last answer), `DeviceContext` (the courier's device) and `HeadOfficeContext` are created once per scenario by Reqnroll and passed into the step classes' constructors. Head office lives in Reqnroll's `FeatureContext`.
+- **Thin steps over drivers.** `HeadOfficeDriver` holds the HTTP calls and their checks, so an API change touches one class, not the feature files.
+
+**Hooks** set up and clean up the test data:
+- `[BeforeFeature]` starts head office on a freshly migrated, throwaway database, and `[AfterFeature]` drops it.
+- `[BeforeScenario("courier")]` gives the courier a fresh device in a new temporary folder, and `[AfterScenario("courier")]` deletes it.
+- Every scenario takes its own tracking numbers, so scenarios never see each other's parcels.
+
+**Deterministic.**
+- Tokens are valid from 2000 to 2100.
+- "In the future" is a fixed date in 2100.
+- Waiting for the device's live Pending count is bounded by a `Stopwatch`.
+
+**Proof that the scenarios can fail for the right reason.** Two production rules were broken for a moment:
+- Letting automatic sync run without a network failed "Scans recorded without a network are sent when the network returns" (`Expected: Pending, Actual: Synced`).
+- Letting a courier register shipments failed only "A courier cannot register shipments" (`Expected: Forbidden, Actual: Created`).
+
+A first attempt, lowering the minimum weight constant, stopped head office from starting instead: the constant also shapes a database CHECK constraint, and EF Core refused to migrate a model that differs from its migrations. That is the wrong reason for a scenario to fail, so it was not used as proof. It does show the weight limit is enforced at three layers (request check, domain, database).
 
 ---
 

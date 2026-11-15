@@ -23,4 +23,7 @@
     <Project Path="tests/ApexPost.Infrastructure.IntegrationTests/ApexPost.Infrastructure.IntegrationTests.csproj" />
     <Project Path="tests/ApexPost.Web.IntegrationTests/ApexPost.Web.IntegrationTests.csproj" />
   </Folder>
+  <Folder Name="/tests/3 Specs/">
+    <Project Path="tests/ApexPost.Specs/ApexPost.Specs.csproj" />
+  </Folder>
 </Solution>
