@@ -79,6 +79,8 @@ The brief's examples map to R1 (status transitions), R2 (duplicate tracking numb
 | Integration | ~674 cases (59%) | ~45–50% |
 | BDD | 0 | ~2–3% (about 15–20 scenario cases) |
 
+Measured after step S6: **581 unit tests out of 1275 (45.6%)** and 694 integration tests (54.4%). The unit share reached the target through tests that belong at unit level: boundary tables, Moq interaction tests, the HTTP client suite and the no-network guard. No integration test was cut. BDD follows in S8.
+
 **Why ApexPost's pyramid has a wide middle.** The costliest risks live at *boundaries*:
 - R2: a unique index;
 - R4: SQL++ queries and listeners;
@@ -367,12 +369,18 @@ Existing fakes are **not** rewritten in Moq. A stateful fake expressed as a chai
 
 ### 7.2 Moq: units and what the tests show
 
-| Unit under test | Mocked | Shown |
-|---|---|---|
-| `ShipmentTrackingService` | `ITrackedShipmentRepository`, `ITrackingQueries`, `IUnitOfWork` | A duplicate number: `Add` and `SaveChangesAsync` are `Times.Never` called. A race: `SaveChangesAsync` throws `DuplicateKeyException`, which becomes `TrackingNumberInUseException`. `It.Is<TrackedShipment>(…)` checks what is added. |
-| `ShippingWorkflowService` (Week 3) | `IShipmentRepository` and its other ports | Invalid input never touches the repository; a valid shipment is added once with the expected weight |
-| `OutboxService` | `IScanRepository`, `IShipmentUploader` | Nothing Pending: no upload. 45 scans: 3 batches of at most 20. A failed upload marks nothing Synced. Two simultaneous syncs: one upload. |
-| `ScanRecorder` (the TDD rule) | `IScanRepository` + `FakeTimeProvider` | A double scan inside the window is not saved; one outside it is |
+Each Moq class is named `<Unit>InteractionTests`, because interactions are what it proves. It sits beside the existing test class for the same unit, which proves behaviour over a fake or a real store.
+
+| Unit under test | Mocked | Test class (step) | Shown, with the Moq features used |
+|---|---|---|---|
+| `ShipmentTrackingService` | `ITrackedShipmentRepository`, `ITrackingQueries`, `IUnitOfWork` | `ShipmentTrackingServiceInteractionTests` (S6, 7 tests) | A number already stored: `Add` and `SaveChangesAsync` `Times.Never`. A new number typed in lower case is looked up normalised (`It.Is<TrackingNumber>(n => n.Value == "APX-…")`), added once with the expected values (`It.Is<TrackedShipment>`) and saved once, in that order (`Callback`). A race: `SaveChangesAsync` `ThrowsAsync(DuplicateKeyException)`, which becomes `TrackingNumberInUseException` with that cause. A forbidden status move or a delete after pickup is never saved. An unknown number is a 404 with nothing saved. |
+| `ShippingWorkflowService` (Week 3) | `IBranchRepository`, `IShipmentRepository`, `IShippingRateProvider`, `IUnitOfWork` | `ShippingWorkflowServiceInteractionTests` (S6, 5 tests) | A valid shipment is added once with the requested ID, weight and branch, and saved once; the rate comes from `ReturnsAsync` on a `ValueTask`. A stored ID is refused with nothing added. An unknown branch stops before the shipment or the rates are looked up. A weight of 0 or 30.001 kg is refused before any port is called (`VerifyNoOtherCalls`). |
+| `OutboxService` | `IScanRepository`, `IShipmentUploader` | `OutboxServiceInteractionTests` (S6, 5 tests) | Nothing Pending: the server is never called. 45 scans: two batches of 20 and one of 5, never more than 20 (`It.Is<IReadOnlyList<ShipmentScan>>(b => b.Count == 20)`, `Times.Exactly(2)`), and each scan marked Synced once. The server unreachable (`ThrowsAsync(HttpRequestException)`): one attempt, no scan marked, all 45 still Pending. One scan rejected: that scan is Failed with the server's reason and the others are Synced. A second sync during a run returns "already running", and the server is called once. |
+| `ScanRecorder` (the TDD rule) | `IScanRepository` + `FakeTimeProvider` | S7 | A double scan inside the window is not saved; one outside it is |
+
+**Proof that the mocks catch real defects.** Each production line was broken for a moment, the tests run, and the line restored:
+- removing the "number already in use" pre-check failed `CreateAsync_TrackingNumberAlreadyStored_ThrowsInUseAndNeverAddsOrSaves`;
+- letting the outbox send the next batch after a failed upload failed the unreachable-server test. Moq reported "Expected invocation on the mock once, but was 3 times".
 
 ### 7.3 What a mock does not prove
 
@@ -385,18 +393,31 @@ Existing fakes are **not** rewritten in Moq. A stateful fake expressed as a chai
 
 ### 7.4 HTTP: the Week 4 Part D client
 
-`ApexApiClient` is tested on a **fake `HttpMessageHandler`** (`StubServer`), not `Moq.Protected()`. The fake records each request and its body, answers in turn, and can delay, with no string-named protected-method set-ups that break silently on refactoring.
+`ApexApiClient` is tested on a **fake `HttpMessageHandler`**, not `Moq.Protected()`:
+- the fake records each request and its body, and answers with whatever the test gives it, including a delay or an exception;
+- it has no string-named set-up of the protected `SendAsync`, which would break silently on a rename.
 
-A focused **unit-level** suite builds the client directly on `new HttpClient(stub)`, with no host, no store and no DI. It covers:
-- a 200 with JSON;
-- 404;
-- 500 (only a reference, never server internals);
-- timeout and caller cancellation;
-- a ProblemDetails response.
+The component tests use `StubServer`, and the unit tests use `FakeHttpMessageHandler`.
 
-The retry pipeline stays at component level, because there the registration *is* the behaviour.
+`ApexApiClientHttpTests` (S6, unit level) builds the client directly on `new HttpClient(handler)`, with no host, no store, no resilience pipeline and no DI:
 
-**No real network:** unit tests never open a socket. `WebApplicationFactory` uses the in-memory `TestServer`. An architecture test fails if a test project starts Kestrel on a port or opens a `TcpListener`.
+| Case | The server answers | The client gives the app |
+|---|---|---|
+| 200 with JSON | `{ "accepted": 1, … }` | the parsed result; the request was a POST to `api/v2/shipments/{number}/scans` with the scan's ID and type in the body |
+| 404 ProblemDetails | `application/problem+json` with a detail | `ApexApiException` with status 404, the server's detail as the message, and the parsed problem |
+| 500 | ProblemDetails carrying a stack trace | `ApexApiException` whose message gives only the reference (`00-ref-500`), never the internals |
+| 400 validation ProblemDetails | `errors` for two fields | a message naming each refused field |
+| Timeout | nothing, within the client's 100 ms | `ApiUnavailableException` (`TimedOut`) |
+| Caller cancellation | the courier leaves during the call | `OperationCanceledException`, not a server error |
+| No connection | `HttpRequestException` | `ApiUnavailableException` (`NoConnection`) |
+
+The retry, circuit breaker and timeout policy, and the token handler, stay at component level (`ResilienceTests`, `TokenHandlingTests`). There the registration *is* the behaviour.
+
+**No real network, enforced.**
+- Unit tests answer HTTP through the fake handler, and API and Web tests use `WebApplicationFactory`'s in-memory `TestServer`.
+- `NoRealNetworkTests` reads the source of every test project and fails on any API that would open a real connection: `TcpListener`, `TcpClient`, `new Socket(`, `UseUrls(`, `UseKestrel(`, `Listen…(`, a bare `new HttpClient()`, `HttpClientHandler`, `SocketsHttpHandler`, `Dns.GetHost…`.
+- A second test checks that the scan reads every test project, so the guard cannot pass by reading nothing.
+- A `TcpListener` planted in a test file was caught.
 
 ---
 
@@ -466,7 +487,7 @@ The SQL Server used by the tests is found automatically:
 
 ### 9.5 The API integration test
 
-`WebApplicationFactory<Program>` hosts `ApexPost.Api` in memory over a throwaway SQL Server database, with **real JWT validation and a per-run signing key** (`TestTokens`). A fake authentication handler was rejected: it would bypass the issuer, audience, lifetime and role-claim configuration, which is exactly what R5 must prove. The test owns only the key.
+`WebApplicationFactory<Program>` hosts `ApexPost.Api` in memory over a throwaway SQL Server database, with **real JWT validation and a per-run signing key** (`TestTokens`, tokens valid 2000–2100). Examples: `ShipmentEndpointTests.Create_is_201_with_a_location_that_reads_the_same_shipment` posts a shipment and reads it back through the Location header. `Creating_a_tracking_number_twice_is_409_problem_details` proves the unique key end to end. A fake authentication handler was rejected: it would bypass the issuer, audience, lifetime and role-claim configuration, which is exactly what R5 must prove. The test owns only the key.
 
 ---
 
