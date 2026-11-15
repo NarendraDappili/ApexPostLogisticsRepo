@@ -162,8 +162,39 @@ Left for REFACTOR: the screen still works out "blank means now" with its own clo
 
 ### REFACTOR
 
-*Written when the REFACTOR commit is made.*
+**Commit:** `REFACTOR: the New Scan screen leaves blank-time-means-now to ScanRecorder and drops its own clock`
+
+With every test green and no test file changed:
+- **One copy of the rule.** The screen passes `null` for a blank time, and `ScanRecorder` dates the scan from the injected clock. Before, the screen had its own copy of "blank means now".
+- **`NewScanScreen` no longer takes a `TimeProvider`.** It asks and answers; the recorder holds the rules.
+- **The result is deconstructed** (`var (scan, alreadyRecorded) = …`). A comment says why no change notification is awaited for a repeat: nothing was written.
+
+The run: `ApexPost.Courier.IntegrationTests` 125/125, including the first scripted session, which leaves the time blank, so "blank means now" is still covered through the real app. `ApexPost.UnitTests` 592/592.
 
 ## 6. Production code changed to make it testable
 
-*Completed at the end of the second cycle.*
+| Change | Why it was needed for the tests | Kind |
+|---|---|---|
+| **Recording moved out of the console screen** into `ScanRecorder` in `ApexPost.Courier.Offline` | The rule could only have been tested by driving the console. As a class, it is tested in milliseconds with no user interface, and the future MAUI app shares the same code. | extract class |
+| **`IScanRepository` passed to `ScanRecorder`'s constructor** | Moq stands in for the device database: `FindByTrackingNumber` returns a chosen history, and `Create` is verified `Times.Never` or `Times.Once` | constructor injection |
+| **`TimeProvider` passed to `ScanRecorder` instead of reading the clock** | "Now" for an untimed scan comes from a `FakeTimeProvider`, so `Record_NoTimeGiven_DatesTheScanWithTheClock` is exact and deterministic. The screen's own clock was then removed. | `TimeProvider` instead of `DateTime.Now` |
+| **The rule named on the domain object:** `ShipmentScan.IsRepeatOf(earlier, window)` | One small, pure method holds the rule, and the boundary rows pin it (a `<=` mutation fails exactly the 120 s row) | extract method |
+| **The window as `ScanRecorderOptions.RepeatWindow`** | The two minutes has a name and a reason, and a test or another app head can set it without editing the rule | options object |
+| **`ScanRecorder` registered in `AddCourierCore()`** | The app-level test runs the real composition; the screen gets the recorder exactly as the MAUI head will | dependency injection |
+
+**Not changed:**
+- **`IScanRepository`.** The existing, index-backed `FindByTrackingNumber` query was enough, so no interface method, query or index was added (see GREEN).
+- **The API.** The rule lives on the device, before any upload.
+
+## 7. The commits
+
+| Commit | Phase |
+|---|---|
+| `b632b3f` | RED: ScanRecorder keeps the first of two identical scans within two minutes (failing tests) |
+| `ea33150` | GREEN: ScanRecorder returns the earlier scan instead of saving a double scan |
+| `ff0d5c4` | REFACTOR: name the repeat rule (ShipmentScan.IsRepeatOf) and its window (ScanRecorderOptions) |
+| `f87b1bd` | RED: a courier who enters the same delivery twice is told it is already recorded (failing app test) |
+| `980e9ea` | GREEN: the New Scan screen records through ScanRecorder and says when a scan is already recorded |
+| *(this commit)* | REFACTOR: the New Scan screen leaves blank-time-means-now to ScanRecorder and drops its own clock |
+
+`git log --oneline` on `week5-testing` shows the six commits in order. The step branch is merged with a merge commit, not squashed, so they stay visible on `master` too.
