@@ -421,7 +421,7 @@ dotnet test ApexPost.slnx -c Release --no-build
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1148 tests passing and a zero-warning build:
+**Results:** the latest run had 1151 tests passing and a zero-warning build:
 
 | Project | Tests |
 |---|---|
@@ -430,7 +430,7 @@ dotnet test ApexPost.slnx -c Release --no-build
 | Infrastructure | 145 |
 | Web integration | 112 |
 | Courier offline | 129 |
-| Courier app (Part D) | 128 |
+| Courier app (Part D) | 131 |
 | API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 329 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).

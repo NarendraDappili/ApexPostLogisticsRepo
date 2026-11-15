@@ -23,8 +23,9 @@ internal static class CourierAppHost
         // appsettings.json sits next to the program; read it from there whatever directory the program is started from.
         var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { Args = args, ContentRootPath = AppContext.BaseDirectory });
 
-        // Log lines go to the screen as they happen, between the menu lines, not later from a queue.
-        var screenOutput = TextWriter.Synchronized(output);
+        // Log lines go to the screen as they happen, between the menu lines, not later from a queue. One shared output
+        // knows when a prompt is waiting, so a background log line never ends up on the prompt's line.
+        var screenOutput = new ScreenOutput(output);
         builder.Logging.ClearProviders();
         builder.Logging.AddProvider(new LineLoggerProvider(screenOutput));
 

@@ -7,12 +7,12 @@ dotnet build ApexPost.slnx -c Release -warnaserror
 dotnet test ApexPost.slnx -c Release --no-build
 ```
 
-The latest run (10 November 2026) had **1148 tests passing, 0 failing, 0 skipped**, with a zero-warning build:
+The latest run (13 November 2026) had **1151 tests passing, 0 failing, 0 skipped**, with a zero-warning build:
 - 430 for Weeks 2 and 3;
 - 129 for the Week 4 courier offline store (Part A);
 - 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model;
 - 97 for Part C, all in the API project: the OpenAPI documents, Swagger UI, versioning, the committed contracts and the generated client;
-- 218 for Part D: 90 in the API project (authentication, roles, the courierId rule, partner API keys, HTTPS and HSTS) and 128 for the courier console app (ApexPost.Courier.Tests).
+- 221 for Part D: 90 in the API project (authentication, roles, the courierId rule, partner API keys, HTTPS and HSTS) and 131 for the courier console app (ApexPost.Courier.Tests).
 
 The Week 3 error-handling tests also pass with `DOTNET_TieredCompilation=0` (55 tests).
 
@@ -77,7 +77,7 @@ The other five runs are the pushes to `master` that merged #22–#26.
 | `ApexPost.Web.IntegrationTests` | 112 | SQL Server (except the CSV, display and demo-seed guard tests) |
 | `ApexPost.Courier.Offline.Tests` | 129 | No: each test opens its own Couchbase Lite database in a temporary folder |
 | `ApexPost.Api.Tests` | 329 (142 Part B, 97 Part C, 90 Part D) | SQL Server for the endpoint, versioning, "Try it out" and generated-client tests (one disposable database per run). The composition, routing, error-handling, custom-rule, OpenAPI, Swagger UI, contract and most security tests use a connection string that is never opened. |
-| `ApexPost.Courier.Tests` | 128 | No: each test has its own Couchbase Lite folder, an in-memory fake of the API and a fake network, so no test reaches a real server |
+| `ApexPost.Courier.Tests` | 131 | No: each test has its own Couchbase Lite folder, an in-memory fake of the API and a fake network, so no test reaches a real server |
 
 The final-review round added 136 tests:
 - 117 in new test files;
@@ -321,11 +321,11 @@ These cover Week 4 Part A. Every test runs on a real Couchbase Lite database in 
 | Partner API keys (`PartnerApiKeyTests`, `PartnerShipmentTests`) | No key, a wrong key, a near-miss of a real key, two keys, a key in the query string and a bearer token instead are all 401s with `WWW-Authenticate: ApiKey header="X-Api-Key"`, and a partner key opens no other route. Malformed key settings stop the start without naming the key. Two keys per partner work during a rotation. Refusals are logged without any key. A valid key reads status, city and the latest scan, without the recipient. The v2 document declares the key scheme on that route only. |
 | HTTPS (`TransportSecurityTests`, `BearerTokenHandlerTests`) | HTTP is redirected (308 outside Development, 307 in it) before any token is used; HSTS for a year outside Development and not in it. No source file turns certificate validation off. The generated client refuses to send a token over plain HTTP except to this machine. |
 
-**The courier app (128, `ApexPost.Courier.Tests`).** The app's real composition (`CourierAppHost`) runs every test, against a Couchbase Lite database in a temporary folder. `FakeApi` is a small in-memory stand-in for the API, following its rules: tokens, the courierId check, validation, unknown shipments, duplicates. `FakeNetwork` is a network the test switches on and off. Timing values are shortened to milliseconds.
+**The courier app (131, `ApexPost.Courier.Tests`).** The app's real composition (`CourierAppHost`) runs every test, against a Couchbase Lite database in a temporary folder. `FakeApi` is a small in-memory stand-in for the API, following its rules: tokens, the courierId check, validation, unknown shipments, duplicates. `FakeNetwork` is a network the test switches on and off. Timing values are shortened to milliseconds.
 
 | Area | Tests show |
 |---|---|
-| Screens (`CourierAppTests`) | Whole scripted sessions: Login, New Scan, Pending Scans with the count, Sync Now, Sync Status, Sign Out. The live count follows the change listener; bad input is explained and nothing is saved; scans survive a restart. Signing in offline still saves scans; without a network Sync Now sends nothing. A second app on the same folder is refused, and a byte order mark in piped input is ignored. |
+| Screens (`CourierAppTests`) | Whole scripted sessions: Login, New Scan, Pending Scans with the count, Sync Now, Sync Status, Sign Out. The live count follows the change listener; bad input is explained and nothing is saved; scans survive a restart. Signing in offline still saves scans; without a network Sync Now sends nothing. A second app on the same folder is refused, and a byte order mark in piped input is ignored. A background log line written while a prompt waits goes on its own line and the prompt is printed again (`ScreenOutputTests`). |
 | Typed client and JSON (`ApexApiClientTests`, `ContractCompatibilityTests`, `ErrorAndJsonHandlingTests`) | `ApexApiClient` comes from the factory, and the app never creates an `HttpClient`. The token is added per request. The address comes from configuration, and an `http://` address for another machine stops the app. The app's request and response records match `contracts/v2.json`. ProblemDetails and validation errors become friendly messages, a 5xx never shows server internals, and unknown, missing, null and malformed content never crashes the app. |
 | Resilience (`ResilienceTests`) | Retries on 5xx, 408 and network errors, never on another 4xx or an unmarked POST; four tries in all; the same body and token each time. A slow attempt is abandoned and retried, and the whole call stops at the total timeout. The circuit opens after one failed sync, shows the banner and fails calls at once, then closes when the server answers again. Every event is logged, and the defaults are pinned to RESILIENCE.md. |
 | Sync (`ApiShipmentUploaderTests`, `AutoSyncTests`) | One request per shipment. Accepted and duplicate scans become Synced; rejected ones Failed with the reason; 404 and scans named in a 400 Failed; 403 and 409 left Pending; no answer, 401 and 5xx stop the batch. 45 scans go in batches of at most 20. Automatic sync runs when the network comes back and periodically (which finds the API again after an outage), and never without a network, a token or anything Pending. |

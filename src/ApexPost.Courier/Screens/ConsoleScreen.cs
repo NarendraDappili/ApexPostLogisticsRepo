@@ -15,13 +15,15 @@ internal sealed class ConsoleScreen
     private static readonly TimeSpan ListenerSettle = TimeSpan.FromMilliseconds(150);
 
     private readonly TextReader _input;
+    private readonly ScreenOutput _screen;
     private readonly TimeSpan _listenerWait;
     private readonly SemaphoreSlim _notified = new(0);
 
-    public ConsoleScreen(TextReader input, TextWriter output, ScanChangeMonitor monitor, TimeSpan? listenerWait = null)
+    public ConsoleScreen(TextReader input, ScreenOutput output, ScanChangeMonitor monitor, TimeSpan? listenerWait = null)
     {
         _input = input;
-        Output = output;
+        _screen = output;
+        Output = output.Writer;
         _listenerWait = listenerWait ?? TimeSpan.FromSeconds(2);
         monitor.Changed += (_, _) => _notified.Release();
     }
@@ -33,8 +35,17 @@ internal sealed class ConsoleScreen
     /// <summary>Asks for one line; <see langword="null"/> when the input has ended.</summary>
     public string? Ask(string prompt)
     {
-        Output.Write($"{prompt}: ");
-        var line = _input.ReadLine();
+        _screen.WritePrompt($"{prompt}: ");
+        string? line;
+        try
+        {
+            line = _input.ReadLine();
+        }
+        finally
+        {
+            _screen.EndPrompt();
+        }
+
         if (line is null) Output.WriteLine();
         // Input piped from Windows PowerShell starts with a byte order mark, which would make the first answer invalid.
         return line?.TrimStart('﻿');
@@ -48,23 +59,30 @@ internal sealed class ConsoleScreen
     {
         if (!ReferenceEquals(_input, Console.In) || Console.IsInputRedirected) return Ask(prompt);
 
-        Output.Write($"{prompt}: ");
+        _screen.WritePrompt($"{prompt}: ");
         var secret = new StringBuilder();
-        while (true)
+        try
         {
-            var key = Console.ReadKey(intercept: true);
-            if (key.Key == ConsoleKey.Enter) break;
-            if (key.Key == ConsoleKey.Backspace)
+            while (true)
             {
-                if (secret.Length == 0) continue;
-                secret.Length--;
-                Output.Write("\b \b");
+                var key = Console.ReadKey(intercept: true);
+                if (key.Key == ConsoleKey.Enter) break;
+                if (key.Key == ConsoleKey.Backspace)
+                {
+                    if (secret.Length == 0) continue;
+                    secret.Length--;
+                    Output.Write("\b \b");
+                }
+                else if (!char.IsControl(key.KeyChar))
+                {
+                    secret.Append(key.KeyChar);
+                    Output.Write('*');
+                }
             }
-            else if (!char.IsControl(key.KeyChar))
-            {
-                secret.Append(key.KeyChar);
-                Output.Write('*');
-            }
+        }
+        finally
+        {
+            _screen.EndPrompt();
         }
 
         Output.WriteLine();
