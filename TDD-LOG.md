@@ -111,6 +111,43 @@ The results:
 - **The suites stay green:** `ScanRecorderTests` 11/11, `ApexPost.UnitTests` 592/592, the courier offline and app integration tests 90/90 and 124/124. The domain-independence guard confirms the new domain method uses no Couchbase type.
 - **The tests still pin the refactored code.** Changing `IsRepeatOf`'s `< window` to `<= window` for a moment fails exactly `Record_SameScanTwoMinutesOrMoreLater_SavesASecondScan(secondsLater: 120)`.
 
-## 5. Production code changed to make it testable
+## 5. Second cycle: the rule reaches the courier app
 
-*Completed at the end of the cycle.*
+The first cycle built and tested the rule in the shared courier library, but the console app's New Scan screen still saved scans itself. The second cycle drives the rule into the app from the outside: a scripted courier session (`CourierAppTests`), run through the app's real composition with Couchbase Lite in a temporary folder.
+
+### RED
+
+**Commit:** `RED: a courier who enters the same delivery twice is told it is already recorded (failing app test)`
+
+```text
+NewScan_SameDeliveryEnteredTwice_SaysAlreadyRecordedAndKeepsOneScan
+  Script: sign in as CR-001; New Scan APX-30000003, Delivered, 14 Elm Street, at 2026-11-02 09:30;
+          New Scan apx-30000003 (lower case), Delivered, 14 Elm Street, at the same time; exit.
+  Expects: one scan on the device, one "Saved on this device as Pending",
+           and "Already recorded on this device: <id of the kept scan>. Nothing new was saved."
+```
+
+The same time is typed twice, so the test does not depend on the clock. A background sync may have uploaded the first scan by the time the second is entered, so the test counts the scans on the device, not the Pending ones. A synced scan still counts as a repeat.
+
+The run:
+
+```text
+CourierAppTests.NewScan_SameDeliveryEnteredTwice_SaysAlreadyRecordedAndKeepsOneScan [FAIL]
+  Error Message:
+   Assert.Single() Failure: The collection contained 2 items
+Failed!  - Failed:     1, Passed:     0, Skipped:     0, Total:     1
+```
+
+The right failure: the real app stored the double tap.
+
+### GREEN
+
+*Written when the GREEN commit is made.*
+
+### REFACTOR
+
+*Written when the REFACTOR commit is made.*
+
+## 6. Production code changed to make it testable
+
+*Completed at the end of the second cycle.*

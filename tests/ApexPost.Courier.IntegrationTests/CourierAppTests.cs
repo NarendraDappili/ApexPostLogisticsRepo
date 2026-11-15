@@ -55,6 +55,30 @@ public sealed class CourierAppTests : IDisposable
             scans.OrderBy(scan => scan.TrackingNumber).Select(scan => (scan.TrackingNumber, scan.SyncStatus)));
     }
 
+    // Week 5 (S7, TDD cycle 2, TDD-LOG.md): the double-scan guard reaches the courier's New Scan screen.
+    [Fact]
+    public async Task NewScan_SameDeliveryEnteredTwice_SaysAlreadyRecordedAndKeepsOneScan()
+    {
+        // Arrange: the same time typed twice, so the two scans are certainly within two minutes of each other.
+        var scannedAt = FixedTimes.Now.ToString(ConsoleScreen.TimeFormat, CultureInfo.InvariantCulture);
+        IReadOnlyList<ShipmentScan> scans = [];
+
+        // Act
+        var output = await _app.RunAsync(
+            [
+                "CR-001", "",
+                "1", "APX-30000003", "3", "14 Elm Street", "", scannedAt,   // a delivery
+                "1", "apx-30000003", "3", "14 Elm Street", "", scannedAt,   // the same delivery again, a double tap
+                "7",
+            ],
+            services => scans = CourierAppRun.Scans(services));
+
+        // Assert
+        var kept = Assert.Single(scans);
+        Assert.Equal(1, CountOf("Saved on this device as Pending", output));
+        Assert.Contains($"Already recorded on this device: {kept.Id}. Nothing new was saved.", output, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task The_listener_log_line_and_the_live_count_follow_the_save()
     {
