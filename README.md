@@ -344,7 +344,7 @@ Start the API, then run `dotnet run --project src/ApexPost.Client.Consumer` (the
 
 ## Courier app (Week 4, Part D)
 
-[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now** and **Out for Delivery**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. Since Week 5 the app's logic (the typed client, resilience, uploader, automatic sync and session) lives in the class library [`ApexPost.Courier.Core`](src/ApexPost.Courier.Core), which the future MAUI app will reference too. The console app adds only its screens, an in-memory token store and the operating system's network status ([ADR 0032](docs/adr/0032-courier-core-library-for-every-app-head.md)). Pending scans are uploaded to the tracking API, by the courier (**Sync Now**) or by themselves when the network comes back.
+[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now** and **Out for Delivery**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. Since Week 5, a double tap is caught on the device: the same parcel, scan type and courier within two minutes of an earlier scan keeps the first scan, and the screen says "Already recorded on this device". Without this, a second Delivered scan would come back from the server as Failed (built test-first, [TDD-LOG.md](TDD-LOG.md)). Since Week 5 the app's logic (the typed client, resilience, uploader, automatic sync and session) lives in the class library [`ApexPost.Courier.Core`](src/ApexPost.Courier.Core), which the future MAUI app will reference too. The console app adds only its screens, an in-memory token store and the operating system's network status ([ADR 0032](docs/adr/0032-courier-core-library-for-every-app-head.md)). Pending scans are uploaded to the tracking API, by the courier (**Sync Now**) or by themselves when the network comes back.
 
 Start the API first (see [Tracking API](#tracking-api-week-4-part-b)), then the app:
 
@@ -430,16 +430,16 @@ In Visual Studio, open **Test Explorer** and choose **Run All**; no set-up is ne
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1275 tests passing and a zero-warning build:
+**Results:** the latest run had 1287 tests passing and a zero-warning build:
 
 | Level | Project | Tests |
 |---|---|---|
-| Unit | `ApexPost.UnitTests` (Domain 231, Application 167, Infrastructure 55, API 58, courier offline 44, courier core 14, no-network guards 12) | 581 |
+| Unit | `ApexPost.UnitTests` (Domain 231, Application 167, Infrastructure 55, API 58, courier offline 55, courier core 14, no-network guards 12) | 592 |
 | Integration | `ApexPost.Infrastructure.IntegrationTests` (SQL Server) | 90 |
 | Integration | `ApexPost.Api.IntegrationTests` (endpoints, OpenAPI, versioning, contracts, generated client, authentication, authorization, partner API keys, HTTPS) | 278 |
 | Integration | `ApexPost.Web.IntegrationTests` | 112 |
 | Integration | `ApexPost.Courier.Offline.IntegrationTests` (Couchbase Lite) | 90 |
-| Integration | `ApexPost.Courier.IntegrationTests` (the courier app's composition) | 124 |
+| Integration | `ApexPost.Courier.IntegrationTests` (the courier app's composition) | 125 |
 
 Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
 

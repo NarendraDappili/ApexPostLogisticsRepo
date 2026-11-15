@@ -195,6 +195,6 @@ The run: `ApexPost.Courier.IntegrationTests` 125/125, including the first script
 | `ff0d5c4` | REFACTOR: name the repeat rule (ShipmentScan.IsRepeatOf) and its window (ScanRecorderOptions) |
 | `f87b1bd` | RED: a courier who enters the same delivery twice is told it is already recorded (failing app test) |
 | `980e9ea` | GREEN: the New Scan screen records through ScanRecorder and says when a scan is already recorded |
-| *(this commit)* | REFACTOR: the New Scan screen leaves blank-time-means-now to ScanRecorder and drops its own clock |
+| `4e38d6b` | REFACTOR: the New Scan screen leaves blank-time-means-now to ScanRecorder and drops its own clock |
 
 `git log --oneline` on `week5-testing` shows the six commits in order. The step branch is merged with a merge commit, not squashed, so they stay visible on `master` too.
