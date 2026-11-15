@@ -431,11 +431,11 @@ In Visual Studio, open **Test Explorer** and choose **Run All**; no set-up is ne
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1299 tests passing and a zero-warning build:
+**Results:** the latest run had 1301 tests passing, 0 failing, 0 skipped, with a zero-warning build. The run, as printed, is in [docs/week5/TEST-RUN.md](docs/week5/TEST-RUN.md):
 
 | Level | Project | Tests |
 |---|---|---|
-| Unit | `ApexPost.UnitTests` (Domain 231, Application 167, Infrastructure 55, API 58, courier offline 55, courier core 14, no-network guards 12) | 592 |
+| Unit | `ApexPost.UnitTests` (Domain 231, Application 168, Infrastructure 55, API 59, courier offline 55, courier core 14, no-network guards 12) | 594 |
 | Integration | `ApexPost.Infrastructure.IntegrationTests` (SQL Server) | 90 |
 | Integration | `ApexPost.Api.IntegrationTests` (endpoints, OpenAPI, versioning, contracts, generated client, authentication, authorization, partner API keys, HTTPS) | 278 |
 | Integration | `ApexPost.Web.IntegrationTests` | 112 |
@@ -443,7 +443,7 @@ In Visual Studio, open **Test Explorer** and choose **Run All**; no set-up is ne
 | Integration | `ApexPost.Courier.IntegrationTests` (the courier app's composition) | 125 |
 | Acceptance | `ApexPost.Specs` (Reqnroll): registering a shipment at head office (API level); courier scans reaching head office exactly once (from the device to the API) | 12 |
 
-Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
+**Coverage:** 96.6% of lines and 87% of branches of the production code ([summary](docs/week5/coverage-summary.md)). Coverage is read as evidence, not chased as a target: the report found two untested paths in risk areas, which now have tests, and the rest of what is uncovered is explained in [docs/testing.md](docs/testing.md#line-coverage).
 
 **CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors and checks that every model change has a migration. It runs the unit tests before any database exists, then starts a throwaway SQL Server container with a random password and runs each integration project and the acceptance scenarios, on each push and pull request to `master` and on pull requests into the week branches. It keeps the results as TRX files, then reruns the error-handling tests with full JIT optimization. Of the 52 runs on GitHub Actions up to 10 November 2026, 51 passed. The other (the push of `2a3ce1a` to `master`) failed inside GitHub before any job started, and the next push to `master` passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
 

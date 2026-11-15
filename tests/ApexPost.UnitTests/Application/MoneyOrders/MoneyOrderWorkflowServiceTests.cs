@@ -123,6 +123,22 @@ public sealed class MoneyOrderWorkflowServiceTests
         Assert.Contains("MO-2", notifications.Messages[0].Body, StringComparison.Ordinal);
     }
 
+    // Week 5 (S10a): the coverage report showed this refusal was never reached by any test.
+    [Fact]
+    public async Task CreateAsync_UnknownBranch_ThrowsBranchNotFoundAndStoresNothing()
+    {
+        // Arrange
+        var orders = new InMemoryMoneyOrderRepository();
+        var service = CreateService(orders, 100m);
+
+        // Act
+        var exception = await Assert.ThrowsAsync<MoneyOrderBranchNotFoundException>(() => service.CreateAsync(Request(50m) with { BranchCode = "BR-NOWHERE" }));
+
+        // Assert
+        Assert.Equal("The money-order branch was not found.", exception.Message);
+        Assert.Null(await orders.FindByIdAsync(new MoneyOrderId("MO-1")));
+    }
+
     private static MoneyOrderWorkflowService CreateService(InMemoryMoneyOrderRepository orders, decimal threshold, INotificationSender? notifications = null, IIdentityVerifier? verifier = null, SpyUnitOfWork? unitOfWork = null) =>
         new(new InMemoryBranchRepository(new Branch(new("BR-A"), "Branch A"), new Branch(new("BR-B"), "Branch B")), orders,
             new MoneyOrderPolicy(new Money(threshold), _ => new Money(2m)), verifier ?? new StubIdentityVerifier(), unitOfWork ?? new SpyUnitOfWork(), new FakeTimeProvider(TestTime.Now),
