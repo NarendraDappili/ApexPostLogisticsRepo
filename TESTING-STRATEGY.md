@@ -127,6 +127,44 @@ The brief allows "your documented equivalent structure". The integration tests a
 
 The unit tests, by contrast, have no runtime dependency, so they are **consolidated into one project**. `dotnet test tests/ApexPost.UnitTests` gives the fast feedback loop and needs nothing installed.
 
+### 4.3 Conventions in every test project
+
+**Naming.** New tests are named `Method_Scenario_ExpectedResult`, in a class named `<UnitUnderTest>Tests`, for example `IsAllowed_EveryPairOfStatuses_FollowsTheChain` or `CheckoutAsync_ClockAtOneSecondToMidnight_RecordsTheSaleAndItsEventsAtThatInstant`.
+
+The tests from Weeks 2 to 4 use behaviour sentences, such as `Sending_the_same_scans_again_stores_nothing_and_reports_duplicates`. These already state the scenario and the result, and their class names the unit. They keep their names: renaming 1151 tests would rewrite history and Test Explorer baselines and add no confidence. A test gets the new form only when a Week 5 change rewrites it.
+
+**Arrange, Act, Assert.** A unit test has exactly one Act. New tests mark the three parts with `// Arrange`, `// Act` and `// Assert` comments; older tests separate them with blank lines. Only an integration journey, such as a whole courier session, may contain a sequence of actions.
+
+**Parameterised tests.** `[Theory]` with `[InlineData]` rows, one row per named case:
+- A comment marks a row whose meaning is not obvious (`// exactly five minutes ahead: still accepted`).
+- Decimals are passed as text, so `30.001` is exact.
+- Theory data never holds a per-process random value, because Test Explorer discovers and runs tests in different processes (section 5).
+
+**Boundaries.** Each rule is tested on both sides of every edge:
+
+| Rule | Rows | Where |
+|---|---|---|
+| Status transitions (R1) | all 36 pairs of the six statuses, plus which are final | `TrackingStatusRulesTests` (Week 5) |
+| What a scan does (R1, R3) | all 24 pairs of status and scan type: moves, repeats, late history, refused | `ScanDecisionTableTests` (Week 5) |
+| Tracking weight 0.1–70 kg (R7) | 0, 0.099, 0.1, 31.5, 70, 70.001, −1 | `TrackedShipmentTests` (existing) |
+| Counter weight, more than 0 and at most 30 kg (R7) | 0.001, 1, 29.999, 30 accepted; 30.001, 31, 1000 refused. Zero and negative are in `ParcelMeasurementTests`. | `ParcelWeightTests` (Week 5; the ceiling had no test) |
+| Tracking number `APX-` + 8 digits (R7) | 7 and 9 digits, no hyphen, wrong prefix, a letter, non-ASCII digits, SQL text refused; lower case and spaces normalised | `TrackingValueObjectTests` (existing) |
+| Scan time at most 5 minutes ahead (R7) | a day ago, now, 299.999 s and 300 s ahead accepted; 300.001 s and 6 min refused; the same scan becomes valid when the clock moves on | `NotInFutureAttributeTests` (Week 5), `CustomRuleTests` (existing, whole minutes) |
+| Scans per upload, 1 to 100 (R7) | 0, 100, 101 | `CustomRuleTests` (existing) |
+
+The two tables of rows guard themselves. A test fails if a status or scan type is added without its rows, so the tables cannot silently go incomplete.
+
+**Exceptions.** An exception test checks more than the type: the parameter name, the rejected value, or the message the caller will see. Examples:
+- `ParamName == "kilograms"` and `ActualValue == 30.001`;
+- "the shipment is already Delivered and cannot change.", with the status unchanged.
+
+**Proof that the boundary tests can fail.** Each Week 5 table was checked by breaking the rule for a moment, running the tests and restoring the rule:
+- allowing InTransit → Delivered failed 2 rows (the status table and the scan table);
+- refusing exactly 30 kg failed the 30 kg row;
+- refusing exactly 5 minutes ahead failed 2 rows.
+
+**Runner integration.** Every test runs from Visual Studio's Test Explorer and from `dotnet test`, with no manual set-up. The commands are in the README and in `docs/testing.md`.
+
 ---
 
 ## 5. Framework choice: xUnit
