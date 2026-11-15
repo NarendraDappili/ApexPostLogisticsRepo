@@ -137,7 +137,10 @@ public sealed class ApexApiClientTests : IDisposable
         var second = host.Services.GetRequiredService<ApexApiClient>();
 
         Assert.NotSame(first, second);
-        var offenders = Directory.EnumerateFiles(RepositoryFiles.PathOf("src", "ApexPost.Courier"), "*.cs", SearchOption.AllDirectories)
+        // The console app and the courier logic it shares with the future MAUI app (ApexPost.Courier.Core, ADR 0032).
+        string[] folders = [RepositoryFiles.PathOf("src", "ApexPost.Courier"), RepositoryFiles.PathOf("src", "ApexPost.Courier.Core")];
+        Assert.All(folders, folder => Assert.True(Directory.Exists(folder), folder));
+        var offenders = folders.SelectMany(folder => Directory.EnumerateFiles(folder, "*.cs", SearchOption.AllDirectories))
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             .Where(path => File.ReadAllText(path).Contains("new HttpClient(", StringComparison.Ordinal))
             .ToList();

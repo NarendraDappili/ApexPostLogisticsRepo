@@ -1,28 +1,6 @@
 namespace ApexPost.Courier.Api;
 
 /// <summary>
-/// Where the app keeps the courier's access token between requests. It plays the part of MAUI's SecureStorage: the
-/// only place the token lives (SECURITY.md).
-/// </summary>
-internal interface ITokenStore
-{
-    ValueTask<string?> GetAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>When the stored token stops being accepted; null if there is none or its expiry is unknown.</summary>
-    DateTimeOffset? ExpiresAtUtc { get; }
-
-    ValueTask SaveAsync(string token, DateTimeOffset? expiresAtUtc = null, CancellationToken cancellationToken = default);
-
-    ValueTask ClearAsync(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Clears the token only if it is still <paramref name="token"/>: an answer to an old request must not throw
-    /// away a token the courier got meanwhile. Returns whether it cleared it.
-    /// </summary>
-    bool ClearIfCurrent(string token);
-}
-
-/// <summary>
 /// Keeps the token in this process's memory only: never in a file, a setting or a log, so it is gone when the app
 /// closes and the courier signs in again. A console program has no secure store of its own the way a phone has.
 /// </summary>

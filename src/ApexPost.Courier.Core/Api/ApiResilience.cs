@@ -14,7 +14,7 @@ namespace ApexPost.Courier.Api;
 /// The ApexPostApi:Resilience configuration section. The defaults are the values RESILIENCE.md explains; tests
 /// shorten them.
 /// </summary>
-internal sealed class ApiResilienceOptions
+public sealed class ApiResilienceOptions
 {
     public const string Section = "ApexPostApi:Resilience";
 
@@ -50,7 +50,7 @@ internal sealed class ApiResilienceOptions
 /// waiting for a server that is down. Every retry, timeout and circuit change is logged, without the request body or
 /// the token.
 /// </summary>
-internal static class ApiResilience
+public static class ApiResilience
 {
     public const string PipelineName = "apexpost-api";
 

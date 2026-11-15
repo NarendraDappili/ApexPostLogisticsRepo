@@ -4,18 +4,6 @@ using System.Net.NetworkInformation;
 namespace ApexPost.Courier.Sync;
 
 /// <summary>
-/// Whether the device has a network, and when that changes. It plays the part of MAUI's
-/// Connectivity.ConnectivityChanged for the console app.
-/// </summary>
-internal interface INetworkStatus
-{
-    bool IsAvailable { get; }
-
-    /// <summary>Raised with the new state each time the network comes or goes.</summary>
-    event EventHandler<bool>? AvailabilityChanged;
-}
-
-/// <summary>
 /// The operating system's view, re-read on NetworkChange.NetworkAvailabilityChanged and NetworkAddressChanged (which
 /// also fires when Wi-Fi reconnects or airplane mode is turned off). "Available" means an interface is up and has a
 /// default gateway, a way out of this machine. NetworkInterface.GetIsNetworkAvailable() alone would count virtual

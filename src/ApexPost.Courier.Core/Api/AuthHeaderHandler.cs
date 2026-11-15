@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Logging;
@@ -14,7 +15,16 @@ namespace ApexPost.Courier.Api;
 /// <item>The token is never logged, and never sent over plain HTTP to anything but this machine.</item>
 /// </list>
 /// </summary>
-internal sealed class AuthHeaderHandler(ITokenStore tokens, CourierSession session, TimeProvider clock, ILogger<AuthHeaderHandler> logger) : DelegatingHandler
+/// <remarks>
+/// Marked as non-user code for the debugger. When the API cannot be reached, which is normal for an offline-first
+/// app, the transport's <see cref="HttpRequestException"/> passes through this handler into the resilience handler.
+/// That handler catches it and retries, and <see cref="ApexApiClient"/> turns the final failure into
+/// <see cref="ApiUnavailableException"/>. Without this attribute, Visual Studio's "Just My Code" stops here with
+/// "user-unhandled" on every attempt, although the app handles the failure. The attribute changes nothing at run
+/// time. To step into this handler, turn off Just My Code.
+/// </remarks>
+[DebuggerNonUserCode]
+public sealed class AuthHeaderHandler(ITokenStore tokens, CourierSession session, TimeProvider clock, ILogger<AuthHeaderHandler> logger) : DelegatingHandler
 {
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {

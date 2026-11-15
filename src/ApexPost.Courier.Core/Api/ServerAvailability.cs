@@ -1,7 +1,7 @@
 namespace ApexPost.Courier.Api;
 
 /// <summary>The API circuit breaker's state, as the screens show it.</summary>
-internal enum ConnectionState
+public enum ConnectionState
 {
     /// <summary>Normal: calls go to the server.</summary>
     Closed,
@@ -18,7 +18,7 @@ internal enum ConnectionState
 /// (<see cref="ApiResilience"/>). While the circuit is not closed the screens show <see cref="Banner"/>; scans are
 /// still saved on the device as usual.
 /// </summary>
-internal sealed class ServerAvailability(TimeProvider clock)
+public sealed class ServerAvailability(TimeProvider clock)
 {
     public const string Banner = "Server unavailable – working offline";
 

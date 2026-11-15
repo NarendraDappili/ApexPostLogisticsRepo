@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace ApexPost.Courier.Api;
 
 /// <summary>A pasted token that the app accepted, with when it expires.</summary>
-internal sealed record AcceptedToken(string Value, DateTimeOffset ExpiresAtUtc)
+public sealed record AcceptedToken(string Value, DateTimeOffset ExpiresAtUtc)
 {
     // Never the token itself.
     public override string ToString() => $"AcceptedToken(****, expires {ExpiresAtUtc:u})";
@@ -17,7 +17,7 @@ internal sealed record AcceptedToken(string Value, DateTimeOffset ExpiresAtUtc)
 /// token it receives. These checks only spare the courier a sign-in that the server would refuse anyway. The messages
 /// never contain the token.
 /// </summary>
-internal static class PastedToken
+public static class PastedToken
 {
     public static (AcceptedToken? Token, string? Problem) Read(string text, string courierId, DateTimeOffset now)
     {
@@ -86,7 +86,7 @@ internal static class PastedToken
 }
 
 /// <summary>The claim and role names the API's tokens use (SECURITY.md).</summary>
-internal static class ApiClaims
+public static class ApiClaims
 {
     public const string CourierId = "courierId";
     public const string CourierRole = "Courier";

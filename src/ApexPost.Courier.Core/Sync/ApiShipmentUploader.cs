@@ -20,7 +20,7 @@ namespace ApexPost.Courier.Sync;
 /// outbox keeps every scan Pending, and sending them again later is safe (RESILIENCE.md).</item>
 /// </list>
 /// </summary>
-internal sealed partial class ApiShipmentUploader(ApexApiClient api, CourierSession session, ILogger<ApiShipmentUploader> logger) : IShipmentUploader
+public sealed partial class ApiShipmentUploader(ApexApiClient api, CourierSession session, ILogger<ApiShipmentUploader> logger) : IShipmentUploader
 {
     public async Task<IReadOnlyList<ScanUploadOutcome>> UploadAsync(IReadOnlyList<ShipmentScan> scans, CancellationToken cancellationToken = default)
     {

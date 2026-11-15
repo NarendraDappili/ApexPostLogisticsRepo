@@ -16,7 +16,7 @@ namespace ApexPost.Courier.Api;
 /// <see cref="ApexApiException"/> when the server answered with an error or something unreadable (its
 /// ProblemDetails are kept), <see cref="ApiUnavailableException"/> when it could not be reached at all.
 /// </summary>
-internal sealed class ApexApiClient(HttpClient http)
+public sealed class ApexApiClient(HttpClient http)
 {
     /// <summary>
     /// Uploads one shipment's scans. Marked safe to retry although it is a POST: every scan carries the ID the device

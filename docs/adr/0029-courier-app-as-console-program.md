@@ -1,6 +1,6 @@
 # ADR 0029: The courier app is a console program, with stand-ins for the phone's services
 
-Status: Accepted (Week 4, Part D). The console app replaces the brief's MAUI app for now, by the project owner's decision.
+Status: Accepted (Week 4, Part D). The console app replaces the brief's MAUI app for now, by the project owner's decision. In Week 5 the app's logic moved into the class library `ApexPost.Courier.Core`, as foreseen under Consequences ([ADR 0032](0032-courier-core-library-for-every-app-head.md)).
 
 ## Context
 

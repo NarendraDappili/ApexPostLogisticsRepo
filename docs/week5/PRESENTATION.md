@@ -23,7 +23,7 @@ The order is driven by dependencies, not by the order of the brief's tasks:
 | Step | Brief task | What it means in ApexPost | Evidence | Status |
 |---|---|---|---|---|
 | S1 Strategy first | Task 1 | Risk map, pyramid, xUnit choice, review of all 102 existing test classes, data access strategy, what is not tested | [TESTING-STRATEGY.md](../../TESTING-STRATEGY.md) | ✓ done |
-| S2 MAUI-ready courier core | enabling | The courier client and sync code moves from the console app into `ApexPost.Courier.Core`, so the tests target code the MAUI app will reuse | ADR 0032 | planned |
+| S2 MAUI-ready courier core | enabling | The courier client and sync code moves from the console app into `ApexPost.Courier.Core`, so the tests target code the MAUI app will reuse | [ADR 0032](../adr/0032-courier-core-library-for-every-app-head.md), `src/ApexPost.Courier.Core` | ✓ done |
 | S3 Test projects | Task 2 | `ApexPost.UnitTests`, the `*.IntegrationTests` projects (one per runtime dependency), `ApexPost.Specs`; the test database is found with no manual set-up | `tests/` | planned |
 | S4 Determinism | constraints | `TimeProvider` everywhere; fixed instants in tests; no system clock except the documented JWT exception | review table, Modified (S4) rows | planned |
 | S5 Unit testing fundamentals | Task 2 | AAA; `Method_Scenario_ExpectedResult`; boundary theories (status matrix, weight, tracking number, scan-time skew); exception tests | `tests/ApexPost.UnitTests` | planned |
@@ -105,6 +105,7 @@ Each step is a branch merged into `week5-testing` with a merge commit, so the hi
 | Step | Task | What was done | Branch / commit | Tests after |
 |---|---|---|---|---|
 | S1 | 1 | `TESTING-STRATEGY.md` written **before any new test**: the risk map, pyramid, framework choice, a review of all 102 existing test classes, the data access strategy, and what is not tested. Also this presentation and the roadmap diagram. | `week5-s01-testing-strategy` | 1151 |
+| S2 | enabling | The courier client, resilience, uploader, automatic sync and session moved from the console executable into the class library `ApexPost.Courier.Core` (ADR 0032). The console app keeps its screens and two device adapters, and calls `AddCourierCore()`. A pure move: all 1151 tests unchanged and green. One guard was widened: the "never `new HttpClient()`" scan would otherwise have stopped covering the moved client; this was proven by planting a probe and watching the test fail. | `week5-s02-courier-core` | 1151 |
 
 ---
 

@@ -16,7 +16,7 @@ namespace ApexPost.Courier.Api;
 [JsonSerializable(typeof(ApiProblem))]
 [JsonSerializable(typeof(DevelopmentTokenRequest))]
 [JsonSerializable(typeof(DevelopmentToken))]
-internal sealed partial class CourierJsonContext : JsonSerializerContext
+public sealed partial class CourierJsonContext : JsonSerializerContext
 {
     /// <summary>The shared options behind the context, for any code that needs JsonSerializerOptions itself.</summary>
     public static JsonSerializerOptions SharedOptions => Default.Options;

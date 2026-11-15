@@ -6,7 +6,7 @@ namespace ApexPost.Courier.Api;
 /// The ApexPostApi configuration section: where the API is. appsettings.json points at the API's https launch profile
 /// on this machine; the app's launch profiles and --ApexPostApi:BaseAddress=&lt;url&gt; point elsewhere (README.md).
 /// </summary>
-internal sealed class ApexApiOptions
+public sealed class ApexApiOptions
 {
     public const string Section = "ApexPostApi";
 
@@ -20,7 +20,7 @@ internal sealed class ApexApiOptions
 /// Checks the address when the app starts: absolute, and HTTPS unless it is this machine. Every request carries the
 /// courier's token, which must never cross a network in clear text (SECURITY.md).
 /// </summary>
-internal sealed class ApexApiOptionsValidator : IValidateOptions<ApexApiOptions>
+public sealed class ApexApiOptionsValidator : IValidateOptions<ApexApiOptions>
 {
     public ValidateOptionsResult Validate(string? name, ApexApiOptions options) => options.BaseAddress switch
     {

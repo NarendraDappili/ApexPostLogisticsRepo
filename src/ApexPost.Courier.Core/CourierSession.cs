@@ -5,7 +5,7 @@ namespace ApexPost.Courier;
 /// courier's token (401) or it expires, <see cref="EndSignIn"/> records why, and the app takes the courier back to
 /// Login at the next screen.
 /// </summary>
-internal sealed class CourierSession
+public sealed class CourierSession
 {
     private volatile string? _signInEndedReason;
 

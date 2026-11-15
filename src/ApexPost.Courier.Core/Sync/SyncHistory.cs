@@ -3,20 +3,20 @@ using ApexPost.Courier.Offline.Sync;
 namespace ApexPost.Courier.Sync;
 
 /// <summary>One finished outbox run and when it ended.</summary>
-internal sealed record SyncRun(DateTimeOffset FinishedAtUtc, OutboxSyncResult Result)
+public sealed record SyncRun(DateTimeOffset FinishedAtUtc, OutboxSyncResult Result)
 {
     /// <summary>The run reached the server: no upload failed as a whole.</summary>
     public bool ReachedServer => Result.UploadError is null;
 }
 
 /// <summary>Something that went wrong in a sync: a rejected scan, or an upload that failed as a whole.</summary>
-internal sealed record SyncFailure(DateTimeOffset AtUtc, string What, string Reason);
+public sealed record SyncFailure(DateTimeOffset AtUtc, string What, string Reason);
 
 /// <summary>
 /// What the Sync Status screen shows: the last run, the last time the server was reached and the latest failures.
 /// Kept in memory for this session; the scans themselves keep their Pending, Synced or Failed state on the device.
 /// </summary>
-internal sealed class SyncHistory
+public sealed class SyncHistory
 {
     /// <summary>How many failures are kept, newest first.</summary>
     public const int KeptFailures = 20;

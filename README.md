@@ -344,7 +344,7 @@ Start the API, then run `dotnet run --project src/ApexPost.Client.Consumer` (the
 
 ## Courier app (Week 4, Part D)
 
-[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now** and **Out for Delivery**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. Pending scans are uploaded to the tracking API, by the courier (**Sync Now**) or by themselves when the network comes back.
+[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now** and **Out for Delivery**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. Since Week 5 the app's logic (the typed client, resilience, uploader, automatic sync and session) lives in the class library [`ApexPost.Courier.Core`](src/ApexPost.Courier.Core), which the future MAUI app will reference too. The console app adds only its screens, an in-memory token store and the operating system's network status ([ADR 0032](docs/adr/0032-courier-core-library-for-every-app-head.md)). Pending scans are uploaded to the tracking API, by the courier (**Sync Now**) or by themselves when the network comes back.
 
 Start the API first (see [Tracking API](#tracking-api-week-4-part-b)), then the app:
 
@@ -359,7 +359,7 @@ dotnet run --project src/ApexPost.Courier -- --ApexPostApi:BaseAddress=http://lo
 
 The header then says `Uploads: on until 18:35 UTC`. The token lives in memory only. If the server answers 401, or the token expires, the token is cleared and the courier is taken back to Login, where Enter keeps the same courier ID; scans stay Pending until then ([SECURITY.md](SECURITY.md#the-courier-apps-token)). Without a server, the courier is signed in offline (`Uploads: off`): scans are recorded and saved as usual, and uploads start after signing in again with a network.
 
-**Sync** ([`Sync/`](src/ApexPost.Courier/Sync)):
+**Sync** ([`Sync/`](src/ApexPost.Courier.Core/Sync)):
 - **The real uploader:** `ApiShipmentUploader` replaces Part A's stand-in server. The outbox still sends the Pending scans in batches of 20. The uploader sends each batch to the API, one request per shipment, and marks every scan Synced or Failed from the API's answer:
   - a scan the API stored, now or earlier, is Synced;
   - a scan the API rejected is Failed, with the API's reason;
