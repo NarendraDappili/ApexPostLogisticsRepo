@@ -97,7 +97,19 @@ The design smells this leaves, deliberately, for REFACTOR:
 
 ## 4. REFACTOR
 
-*Written when the REFACTOR commit is made.*
+**Commit:** `REFACTOR: name the repeat rule (ShipmentScan.IsRepeatOf) and its window (ScanRecorderOptions)`
+
+The three smells GREEN left, removed with every test green and **no test file changed** (`git diff -- tests` is empty for this commit):
+
+| Smell | After |
+|---|---|
+| "Is this the same event?" as a four-part condition buried in the recorder's loop | `ShipmentScan.IsRepeatOf(earlier, window)`: a named domain rule on the scan itself. It is self-contained (it also compares the tracking number, which the loop got implicitly from the query), and the console and MAUI heads share it. |
+| A magic `TimeSpan.FromMinutes(2)` | `ScanRecorderOptions.RepeatWindow`, defaulting to `DefaultRepeatWindow` (two minutes), with the reason in its comment. The constructor parameter is optional, so the tests and callers did not change. |
+| A `foreach` with an early `return` | one line: `FindByTrackingNumber(…).FirstOrDefault(stored => scan.IsRepeatOf(stored, _repeatWindow))` |
+
+The results:
+- **The suites stay green:** `ScanRecorderTests` 11/11, `ApexPost.UnitTests` 592/592, the courier offline and app integration tests 90/90 and 124/124. The domain-independence guard confirms the new domain method uses no Couchbase type.
+- **The tests still pin the refactored code.** Changing `IsRepeatOf`'s `< window` to `<= window` for a moment fails exactly `Record_SameScanTwoMinutesOrMoreLater_SavesASecondScan(secondsLater: 120)`.
 
 ## 5. Production code changed to make it testable
 
