@@ -8,22 +8,24 @@ dotnet test ApexPost.slnx -c Release --no-build                              # e
 
 dotnet test tests/ApexPost.UnitTests -c Release --no-build                   # unit level: seconds, nothing installed
 dotnet test tests/ApexPost.Infrastructure.IntegrationTests -c Release --no-build   # one integration project at a time
+dotnet test tests/ApexPost.Specs -c Release --no-build                       # the Gherkin acceptance scenarios (Reqnroll)
 ```
 
-In Visual Studio, Test Explorer runs the same tests with no set-up. The solution groups them into **1 Unit** and **2 Integration** folders, the levels of the test pyramid ([TESTING-STRATEGY.md](../TESTING-STRATEGY.md)). The SQL Server tests find a server by themselves (see [The test database](#the-test-database)).
+In Visual Studio, Test Explorer runs the same tests with no set-up. The solution groups them into **1 Unit**, **2 Integration** and **3 Specs** folders, the levels of the test pyramid ([TESTING-STRATEGY.md](../TESTING-STRATEGY.md)). The SQL Server tests find a server by themselves (see [The test database](#the-test-database)).
 
-Since Week 5 (15 November 2026) the 1287 tests are organised by level:
-- **Unit:** 592 tests in `ApexPost.UnitTests` (46.0%).
+Since Week 5 (15 November 2026) the 1299 tests are organised by level:
+- **Unit:** 592 tests in `ApexPost.UnitTests` (45.6%).
 - **Integration:** 695 tests:
   - Api 278;
   - Courier app 125;
   - Courier offline 90;
   - Infrastructure 90;
   - Web 112.
+- **Acceptance:** 12 Gherkin scenarios in `ApexPost.Specs` (Reqnroll): 7 for registering a shipment and 5 for courier scans reaching head office ([TESTING-STRATEGY.md §4.4](../TESTING-STRATEGY.md#44-acceptance-scenarios-bdd-with-reqnroll)).
 
 The split is described in [Test projects](#test-projects).
 
-The latest run (15 November 2026, step S7) had **1287 tests passing, 0 failing, 0 skipped**, with a zero-warning build. The 136 Week 5 tests so far: 12 build the courier double-scan guard test-first ([TDD-LOG.md](../TDD-LOG.md)); 3 pin the injected clock (see [Determinism](#determinism)); 36 isolate units with Moq and a fake HTTP handler, or guard against real network use ([TESTING-STRATEGY.md §7](../TESTING-STRATEGY.md#7-isolation-mocks-fakes-and-real-dependencies)); 85 are boundary tables (the full status and scan-decision tables, the 30 kg counter limit, the exact scan-time limit; [TESTING-STRATEGY.md §4.3](../TESTING-STRATEGY.md#43-conventions-in-every-test-project)). The 1151 before Week 5 were:
+The latest run (15 November 2026, step S8) had **1299 tests passing, 0 failing, 0 skipped**, with a zero-warning build. The 148 Week 5 tests so far: 12 acceptance scenarios in Gherkin; 12 build the courier double-scan guard test-first ([TDD-LOG.md](../TDD-LOG.md)); 3 pin the injected clock (see [Determinism](#determinism)); 36 isolate units with Moq and a fake HTTP handler, or guard against real network use ([TESTING-STRATEGY.md §7](../TESTING-STRATEGY.md#7-isolation-mocks-fakes-and-real-dependencies)); 85 are boundary tables (the full status and scan-decision tables, the 30 kg counter limit, the exact scan-time limit; [TESTING-STRATEGY.md §4.3](../TESTING-STRATEGY.md#43-conventions-in-every-test-project)). The 1151 before Week 5 were:
 - 430 for Weeks 2 and 3;
 - 129 for the Week 4 courier offline store (Part A);
 - 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model;
@@ -62,8 +64,9 @@ The Week 4 courier offline projects, measured on 5 November 2026 with the same c
 3. runs the **unit tests**, before any database exists, which shows they need none;
 4. starts a throwaway SQL Server 2022 container with a random password;
 5. runs each **integration** project. All of them run, and the step fails if any failed, so a red run says which level broke;
-6. keeps the results of every run as TRX files (the `test-results` artifact);
-7. reruns the error-handling tests with `DOTNET_TieredCompilation=0`, so they also run on fully optimized, inlined code (ADR 0018).
+6. runs the **acceptance scenarios** (Reqnroll) on the same SQL Server;
+7. keeps the results of every run as TRX files (the `test-results` artifact);
+8. reruns the error-handling tests with `DOTNET_TieredCompilation=0`, so they also run on fully optimized, inlined code (ADR 0018).
 
 Up to 10 November 2026 the workflow ran 52 times on GitHub, and 51 runs passed. The other one, [42671711996](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/42671711996) (the push of `2a3ce1a`, the Part D merge, to `master`), failed inside GitHub before any job started: it has no jobs and no log. The next push to `master`, `e0fd6ba`, passed ([42683856112](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/42683856112)). The [list of runs](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/workflows/ci.yml) is always current; the table below is a snapshot.
 
@@ -99,6 +102,7 @@ Since Week 5 the projects follow the test pyramid ([TESTING-STRATEGY.md §4](../
 | Integration | `ApexPost.Web.IntegrationTests` | 112 | The Web host and SQL Server. The CSV, display and demo-seed guard tests are unit level, but stay here because the unit project does not reference the Web app. |
 | Integration | `ApexPost.Courier.Offline.IntegrationTests` | 90 | Couchbase Lite: each test opens its own database in a temporary folder |
 | Integration | `ApexPost.Courier.IntegrationTests` | 125 | The courier app's real composition, with Couchbase Lite in a temporary folder, an in-memory fake of the API and a fake network. No test reaches a real server. |
+| Acceptance | `ApexPost.Specs` | 12 scenarios | Head office (the API in memory over its own SQL Server database) and, for scan sync, a courier device composed by `AddCourierCore()` over Couchbase Lite in a temporary folder |
 
 The move changed no test. The list of test cases before and after it is identical when compared by class, method and arguments.
 

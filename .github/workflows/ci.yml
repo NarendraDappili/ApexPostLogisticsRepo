@@ -63,6 +63,11 @@ jobs:
           done
           exit $failed
 
+      # The top of the pyramid: business scenarios in Gherkin (Reqnroll). Head office runs in memory over its own
+      # throwaway database on the same SQL Server; the courier's device uses Couchbase Lite in a temporary folder.
+      - name: Acceptance scenarios (Reqnroll)
+        run: dotnet test tests/ApexPost.Specs --no-build --configuration Release --logger trx --results-directory TestResults
+
       - name: Keep the test results
         if: always()
         uses: actions/upload-artifact@v4
