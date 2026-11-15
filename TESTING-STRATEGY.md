@@ -79,7 +79,7 @@ The brief's examples map to R1 (status transitions), R2 (duplicate tracking numb
 | Integration | ~674 cases (59%) | ~45–50% |
 | BDD | 0 | ~2–3% (about 15–20 scenario cases) |
 
-Measured after step S8: **592 unit tests out of 1299 (45.6%)**, 695 integration tests (53.5%) and **12 acceptance scenarios (0.9%)**. The top of the pyramid is thinner than the ~2–3% estimate, on purpose: each scenario is a business promise (R1–R5 end to end), and their boundaries and permutations are already proven lower down. The unit share reached the target through tests that belong at unit level: boundary tables, Moq interaction tests, the HTTP client suite and the no-network guard. No integration test was cut. BDD follows in S8.
+Measured after step S10a: **594 unit tests out of 1301 (45.7%)**, 695 integration tests (53.4%) and **12 acceptance scenarios (0.9%)**. The top of the pyramid is thinner than the ~2–3% estimate, on purpose: each scenario is a business promise (R1–R5 end to end), and their boundaries and permutations are already proven lower down. The unit share reached the target through tests that belong at unit level: boundary tables, Moq interaction tests, the HTTP client suite and the no-network guard. No integration test was cut. BDD follows in S8.
 
 **Why ApexPost's pyramid has a wide middle.** The costliest risks live at *boundaries*:
 - R2: a unique index;
@@ -554,4 +554,28 @@ The courier client and sync code (`ApexApiClient`, `AuthHeaderHandler`, the resi
 
 ## 12. Reflection
 
-*Written at the end of Week 5: what the strategy caught, what we would change, and which test type gave the most confidence per minute spent.*
+*Draft from step S10a; the Copilot findings are added after step S9.*
+
+**What the strategy caught.** Reviewing every test class against the risk map, and testing each risk at the level that can prove it, found real problems, not just missing numbers:
+- **A defect in the product.** A courier who double-taps a Delivered scan saw a *Failed* scan for a parcel they had just delivered. Scan-ID idempotency could not catch it, because the two scans had different IDs. The double-scan guard was built test-first to fix it (TDD-LOG.md).
+- **Rules with no test at all:**
+  - the Week 3 30 kg counter ceiling;
+  - the API's mapping of service-level validation errors, found by the coverage report;
+  - a money order for an unknown branch, also found by the coverage report.
+- **Tests that could fail for the wrong reason.**
+  - Four report tests compared "today" across midnight UTC.
+  - Twenty-one test files and four production classes read the system clock.
+  - Moving the courier code into a library made the "never `new HttpClient()`" guard silently stop scanning it.
+- **Our own mistakes.** The draft strategy gave the JWT clock skew as five minutes; the code says one.
+- **Defence in depth, shown rather than assumed.** A deliberate break of the minimum weight stopped the API from starting, which showed the weight limit is enforced in the request, the domain and a database CHECK.
+
+**What we would change.**
+- **Make time injectable from the first week.** Retrofitting `TimeProvider` and fixed instants touched 31 test classes and four production ones.
+- **Replace the hand-made "break the code and watch it fail" checks with a mutation-testing tool** (Stryker.NET) on the unit project, run nightly in CI. The manual checks made the case for it: three of them found something.
+- **Write the Gherkin scenarios before the code they describe.** `ScanSync.feature` states the courier's promise more clearly than the Week 4 notes did, and it would have shaped the uploader's design.
+
+**Most confidence per minute.** The **table-driven unit tests**:
+- The 36-pair status table and the 24-row scan table took minutes to write and run in milliseconds.
+- They pin the core business rule exhaustively, so any change to it fails a named row.
+
+The most confidence *per test* came from one **ScanSync scenario**. In about two seconds it runs the courier's device, the API and SQL Server together, and proves the promise that matters most: a scan captured offline reaches head office exactly once. No number of unit tests could give that, and none could replace it.

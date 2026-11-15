@@ -13,8 +13,8 @@ dotnet test tests/ApexPost.Specs -c Release --no-build                       # t
 
 In Visual Studio, Test Explorer runs the same tests with no set-up. The solution groups them into **1 Unit**, **2 Integration** and **3 Specs** folders, the levels of the test pyramid ([TESTING-STRATEGY.md](../TESTING-STRATEGY.md)). The SQL Server tests find a server by themselves (see [The test database](#the-test-database)).
 
-Since Week 5 (15 November 2026) the 1299 tests are organised by level:
-- **Unit:** 592 tests in `ApexPost.UnitTests` (45.6%).
+Since Week 5 (15 November 2026) the 1301 tests are organised by level:
+- **Unit:** 594 tests in `ApexPost.UnitTests` (45.7%).
 - **Integration:** 695 tests:
   - Api 278;
   - Courier app 125;
@@ -25,7 +25,7 @@ Since Week 5 (15 November 2026) the 1299 tests are organised by level:
 
 The split is described in [Test projects](#test-projects).
 
-The latest run (15 November 2026, step S8) had **1299 tests passing, 0 failing, 0 skipped**, with a zero-warning build. The 148 Week 5 tests so far: 12 acceptance scenarios in Gherkin; 12 build the courier double-scan guard test-first ([TDD-LOG.md](../TDD-LOG.md)); 3 pin the injected clock (see [Determinism](#determinism)); 36 isolate units with Moq and a fake HTTP handler, or guard against real network use ([TESTING-STRATEGY.md §7](../TESTING-STRATEGY.md#7-isolation-mocks-fakes-and-real-dependencies)); 85 are boundary tables (the full status and scan-decision tables, the 30 kg counter limit, the exact scan-time limit; [TESTING-STRATEGY.md §4.3](../TESTING-STRATEGY.md#43-conventions-in-every-test-project)). The 1151 before Week 5 were:
+The latest run (15 November 2026, step S10a; the record is in [docs/week5/TEST-RUN.md](week5/TEST-RUN.md)) had **1301 tests passing, 0 failing, 0 skipped**, with a zero-warning build and 96.6% line coverage. The 150 Week 5 tests so far: 2 close gaps the coverage report found ([Line coverage](#line-coverage)); 12 acceptance scenarios in Gherkin; 12 build the courier double-scan guard test-first ([TDD-LOG.md](../TDD-LOG.md)); 3 pin the injected clock (see [Determinism](#determinism)); 36 isolate units with Moq and a fake HTTP handler, or guard against real network use ([TESTING-STRATEGY.md §7](../TESTING-STRATEGY.md#7-isolation-mocks-fakes-and-real-dependencies)); 85 are boundary tables (the full status and scan-decision tables, the 30 kg counter limit, the exact scan-time limit; [TESTING-STRATEGY.md §4.3](../TESTING-STRATEGY.md#43-conventions-in-every-test-project)). The 1151 before Week 5 were:
 - 430 for Weeks 2 and 3;
 - 129 for the Week 4 courier offline store (Part A);
 - 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model;
@@ -36,25 +36,45 @@ The Week 3 error-handling tests also pass with `DOTNET_TieredCompilation=0` (55 
 
 ### Line coverage
 
-Coverage is measured with the collector built into `Microsoft.NET.Test.Sdk`, so no package is needed:
+**Coverage is evidence, not a target** ([TESTING-STRATEGY.md §1](../TESTING-STRATEGY.md#1-the-idea-in-one-sentence)). It is read for what it says about the risks, and no test is written only to raise the number.
+
+It is measured with the collector built into `Microsoft.NET.Test.Sdk`, so no package is needed. The one merged result is turned into a report by ReportGenerator, a local tool pinned in `dotnet-tools.json`:
 
 ```powershell
-dotnet test ApexPost.slnx -c Release --no-build --collect "Code Coverage;Format=cobertura"
+dotnet test ApexPost.slnx -c Release --no-build --collect "Code Coverage;Format=cobertura" --results-directory TestResults/coverage
+dotnet tool restore
+dotnet reportgenerator "-reports:TestResults/coverage/*/*.cobertura.xml" "-targetdir:TestResults/coverage/report" "-reporttypes:Html;MarkdownSummaryGithub" "-assemblyfilters:+ApexPost.*;-*Tests;-ApexPost.Specs" "-classfilters:-*.Migrations.*;-AspNetCoreGeneratedDocument.*;-*.Generated.*" "-filefilters:-*.g.cs;-*\obj\*;-*Program.cs"
 ```
 
-Line coverage on 4 November 2026, excluding migrations, Razor views and `Program.cs`:
+The report covers production code only. It leaves out the test projects, EF migrations, generated code (source generators, Razor views) and `Program.cs`, the same rules as earlier weeks. `TestResults/coverage/report/index.html` is the browsable report (not committed). [docs/week5/coverage-summary.md](week5/coverage-summary.md) is the committed summary of the run in [docs/week5/TEST-RUN.md](week5/TEST-RUN.md).
 
-| Project | Before the final-review round | After |
-|---|---|---|
-| Domain | 90% | 94% |
-| Application | 98% | 99% |
-| Infrastructure | 96% | 99% |
-| Web | 85% | 93% |
-| **Total** | **92%** | **97%** |
+**15 November 2026 (Week 5): 96.6% of lines, 87% of branches.**
 
-Most of the remaining lines are the `catch (OperationCanceledException) … StatusCode(499)` branches for a client disconnect, and the demo seeder's seeding path.
+| Assembly | Lines | | Assembly | Lines |
+|---|---|---|---|---|
+| ApexPost.Api | 99.6% | | ApexPost.Courier.Core | 97.7% |
+| ApexPost.Application | 99.0% | | ApexPost.Courier.Offline | 96.0% |
+| ApexPost.Infrastructure | 99.3% | | ApexPost.Courier.Offline.Harness | 95.4% |
+| ApexPost.Domain | 94.0% | | ApexPost.Courier (console head) | 90.2% |
+| ApexPost.Web | 93.0% | | ApexPost.Client / .Consumer | 92.0% / 91.5% |
 
-The Week 4 courier offline projects, measured on 5 November 2026 with the same command: `ApexPost.Courier.Offline` **93%**, and `ApexPost.Courier.Offline.Harness` **84%**. The harness figure includes `Program.cs`, which only the manual runs exercise.
+**What the report led to.** Every class under 90% was read line by line. Two of them were real gaps in risk areas, and each got a test:
+
+| Uncovered | Risk | Why it mattered | Test added |
+|---|---|---|---|
+| `ApiExceptionHandler`: a service-level `RequestValidationException` becoming a 400 with one entry per field (79% → 100%) | R7, R9 | The API's request checks catch bad input first, so this safety net had never run. Had it been broken, a rule firing inside a service would have answered with the wrong shape. | `ApiExceptionHandlerTests.TryHandleAsync_ServiceValidationErrors_Writes400WithTheErrorsGroupedByField` |
+| `MoneyOrderWorkflowService`: a money order for an unknown branch (`MoneyOrderBranchNotFoundException`, 0%) | R10 | A refusal no test had ever triggered | `MoneyOrderWorkflowServiceTests.CreateAsync_UnknownBranch_ThrowsBranchNotFoundAndStoresNothing` |
+
+**What was left uncovered, on purpose:**
+- `ConsoleScreen` (66%): the masked token prompt reads a real keyboard (`Console.ReadKey`). Scripted input takes the other path.
+- `SystemNetworkStatus` (63%): reacts to the operating system's network events. Its tests use `FakeNetwork`, and the real adapter was checked in the Week 4 demo script.
+- The value objects' `ToString` overrides and the compiler-generated record members (50–85%): no behaviour.
+- The two `const` declarations ReportGenerator reports in `PriceRevisionService`: a quirk of the line mapping, not code that runs.
+- The `OperationCanceledException` catch blocks for a client that disconnects mid-request (Web), as in earlier weeks.
+
+**Earlier figures,** for comparison:
+- 4 November 2026, Week 3 projects only: 97% in total (Domain 94%, Application 99%, Infrastructure 99%, Web 93%).
+- 5 November 2026, Week 4 courier offline store: 93%; its harness: 84%.
 
 ## CI on GitHub Actions
 
@@ -96,7 +116,7 @@ Since Week 5 the projects follow the test pyramid ([TESTING-STRATEGY.md §4](../
 
 | Level | Project | Tests | Real dependency |
 |---|---|---|---|
-| Unit | `ApexPost.UnitTests` | 592: Domain 231, Application 167, Infrastructure 55 (model, migration text, simulation, design-time factory, password hasher), API 58 (custom rules, the scan-time limit, route constraint, controller architecture, correlation, the generated client's token handler), courier offline 55 (scan model, IDs, domain independence, the harness's fake uploader, the outbox with Moq, the double-scan guard built test-first), courier core 14 (sync history, contract compatibility, the API client on a fake HTTP handler), guards 12 (no real network in any test) | none: no database, no files written, no sockets |
+| Unit | `ApexPost.UnitTests` | 594: Domain 231, Application 168, Infrastructure 55 (model, migration text, simulation, design-time factory, password hasher), API 59 (custom rules, the scan-time limit, the exception handler's validation mapping, route constraint, controller architecture, correlation, the generated client's token handler), courier offline 55 (scan model, IDs, domain independence, the harness's fake uploader, the outbox with Moq, the double-scan guard built test-first), courier core 14 (sync history, contract compatibility, the API client on a fake HTTP handler), guards 12 (no real network in any test) | none: no database, no files written, no sockets |
 | Integration | `ApexPost.Infrastructure.IntegrationTests` | 90 | SQL Server |
 | Integration | `ApexPost.Api.IntegrationTests` | 278 | The API host (`WebApplicationFactory`) with real JWT validation. SQL Server is used for the endpoint, versioning, "Try it out" and generated-client tests; the other host tests use a connection string that is never opened. |
 | Integration | `ApexPost.Web.IntegrationTests` | 112 | The Web host and SQL Server. The CSV, display and demo-seed guard tests are unit level, but stay here because the unit project does not reference the Web app. |
