@@ -42,14 +42,19 @@ public sealed class HeadOfficeDriver(HeadOfficeContext headOffice) : IDisposable
         var operations = Operations();
         using var registered = await RegisterAsync(operations, trackingNumber);
         Assert.Equal(HttpStatusCode.Created, registered.StatusCode);
-        string[] chain = ["PickedUp", "InTransit", "OutForDelivery"];
-        foreach (var step in chain.TakeWhile(_ => status != "Created"))
+        // Created → PickedUp → InTransit → OutForDelivery, then Delivered or Failed when one of those is asked for.
+        string[] chain = ["PickedUp", "InTransit", "OutForDelivery", status is "Delivered" or "Failed" ? status : "OutForDelivery"];
+        foreach (var step in chain.Distinct().TakeWhile(_ => status != "Created"))
         {
-            using var moved = await operations.PatchAsJsonAsync($"api/v2/shipments/{trackingNumber}/status", new { status = step });
+            using var moved = await ChangeStatusAsync(operations, trackingNumber, step);
             Assert.Equal(HttpStatusCode.OK, moved.StatusCode);
             if (step == status) break;
         }
     }
+
+    /// <summary>Asks head office to move the shipment to <paramref name="status"/>, as the signed-in client.</summary>
+    public Task<HttpResponseMessage> ChangeStatusAsync(HttpClient client, string trackingNumber, string status) =>
+        client.PatchAsJsonAsync($"api/v2/shipments/{trackingNumber}/status", new { status });
 
     /// <summary>The shipment as head office shows it, or null when head office does not know the number.</summary>
     public async Task<JsonElement?> LookUpAsync(string trackingNumber)
