@@ -480,6 +480,7 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - [API-NOTES.md](API-NOTES.md): the tracking API: endpoints and status codes, validation, errors, the idempotent scan upload.
 - [SECURITY.md](SECURITY.md): the tracking API's security: JWT bearer authentication and roles, partner API keys, HTTPS and HSTS, OAuth2 flows (Authorization Code with PKCE, Client Credentials), and moving to a real identity provider.
 - [RESILIENCE.md](RESILIENCE.md): the courier app's retry, circuit breaker and timeout values and the reasons for them; why the scan upload is safe to retry.
+- [TESTING-STRATEGY.md](TESTING-STRATEGY.md): the Week 5 testing strategy: risk map, test pyramid, xUnit choice, the review of every existing test class, mocks versus real databases, what is not tested. The five-minute viva and the roadmap diagram are in [docs/week5/PRESENTATION.md](docs/week5/PRESENTATION.md).
 - [VERSIONING.md](VERSIONING.md): the tracking API's versions: every change from v1 to v2, breaking or not and why, v1's deprecation and sunset plan, how to change the contract. The contracts are in [contracts/](contracts).
 - [PERFORMANCE.md](PERFORMANCE.md): execution plans, before/after measurements, index trade-offs, generated SQL.
 - [sql/README.md](sql/README.md): reporting queries, the atomic T-SQL sale, the blocking demo, deadlock avoidance.
