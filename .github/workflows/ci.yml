@@ -3,10 +3,10 @@ name: CI
 on:
   push:
     branches: [ master ]
-  # Week 4 step PRs merge into a part branch first (week4-partA, week4/partB, ...), so they are checked on Linux before
-  # the part reaches master. A '*' never matches '/', so the two naming styles need one pattern each.
+  # Step PRs merge into a week branch first (week4-partA, week4/partB, week5-testing, ...), so they are checked on
+  # Linux before the week reaches master. A '*' never matches '/', so the naming styles need one pattern each.
   pull_request:
-    branches: [ master, 'week4-part*', 'week4/part*' ]
+    branches: [ master, 'week4-part*', 'week4/part*', 'week5-*' ]
 
 permissions:
   contents: read
@@ -35,6 +35,11 @@ jobs:
           dotnet tool restore
           dotnet ef migrations has-pending-model-changes --project src/ApexPost.Infrastructure --no-build --configuration Release
 
+      # The test pyramid runs level by level (TESTING-STRATEGY.md §3), so a red run says which level failed. Unit tests
+      # run before SQL Server starts: they need no database, no files and no network.
+      - name: Unit tests
+        run: dotnet test tests/ApexPost.UnitTests --no-build --configuration Release --logger trx --results-directory TestResults
+
       # Integration tests create and drop their own databases on a real SQL Server. The container is thrown away
       # with the runner and gets a random password per run, so no credential is stored in the repository.
       - name: Start SQL Server
@@ -48,8 +53,28 @@ jobs:
           done
           echo "APEXPOST_TEST_SQLSERVER=Server=localhost,1433;User ID=sa;Password=$SA_PASSWORD;TrustServerCertificate=True" >> "$GITHUB_ENV"
 
-      - name: Test
-        run: dotnet test ApexPost.slnx --no-build --configuration Release --verbosity normal
+      # One project per real dependency: SQL Server (Infrastructure), the API host, the Web host, Couchbase Lite (the
+      # courier store) and the courier app's composition. All of them run, and the step fails if any failed.
+      - name: Integration tests
+        run: |
+          failed=0
+          for project in tests/*.IntegrationTests; do
+            dotnet test "$project" --no-build --configuration Release --logger trx --results-directory TestResults || failed=1
+          done
+          exit $failed
+
+      # The top of the pyramid: business scenarios in Gherkin (Reqnroll). Head office runs in memory over its own
+      # throwaway database on the same SQL Server; the courier's device uses Couchbase Lite in a temporary folder.
+      - name: Acceptance scenarios (Reqnroll)
+        run: dotnet test tests/ApexPost.Specs --no-build --configuration Release --logger trx --results-directory TestResults
+
+      - name: Keep the test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          if-no-files-found: ignore
 
       # The 400/500 decision reads stack traces, and a running server inlines hot business code into its callers.
       # Tests normally run on unoptimized first-call code, so run the error-handling tests again fully optimized

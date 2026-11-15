@@ -23,4 +23,8 @@
     <ProjectReference Include="..\..\src\ApexPost.Web\ApexPost.Web.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../Shared/TestSqlServer.cs" Link="Shared/TestSqlServer.cs" />
+  </ItemGroup>
+
 </Project>

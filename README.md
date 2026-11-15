@@ -160,7 +160,7 @@ Couriers record pickups and deliveries without a network. Each scan is saved fir
 |---|---|
 | [`ApexPost.Courier.Offline`](src/ApexPost.Courier.Offline) | `Domain`: `ShipmentScan`, `ScanId`, `IScanRepository`, `IShipmentUploader`, with no Couchbase types (a test enforces this). `Storage`: `CourierDatabase`, `CouchbaseScanRepository`, `ScanChangeMonitor`, the SQL++ queries. `Sync`: `OutboxService`, `FakeShipmentUploader`. |
 | [`ApexPost.Courier.Offline.Harness`](src/ApexPost.Courier.Offline.Harness) | The console test harness |
-| [`ApexPost.Courier.Offline.Tests`](tests/ApexPost.Courier.Offline.Tests) | 129 tests on real temporary databases; no SQL Server or network needed |
+| [`ApexPost.Courier.Offline.IntegrationTests`](tests/ApexPost.Courier.Offline.IntegrationTests) | 90 tests on real temporary databases; no SQL Server or network needed. The 39 that need no database at all (scan model, IDs, domain independence) are in [`ApexPost.UnitTests`](tests/ApexPost.UnitTests). |
 
 **Run the harness** (no Couchbase Server, Sync Gateway or network needed):
 
@@ -215,7 +215,7 @@ With single-field indexes, the first two queries used their index but still sort
 |---|---|
 | [`ApexPost.Api`](src/ApexPost.Api) | `Program.cs`. `Controllers/V1` and `Controllers/V2`: `ShipmentsController`, `ScansController`. `Contracts`: request DTOs and v1's response DTOs; `Contracts/V2`: v2's response DTOs. `Validation`: the custom rules. `Errors/ApiExceptionHandler`. `Routing`: the `{trackingNumber:trackingNumber}` constraint. `OpenApi` and `Versioning` (Part C). [`ApexPost.Api.http`](src/ApexPost.Api/ApexPost.Api.http) |
 | Week 3 projects (additions only) | Domain: `TrackedShipment`, `TrackingScan`, `TrackingStatusRules`, `TrackingNumber`, `TrackingScanId`, `Recipient`. Application: `ShipmentTrackingService`, `ITrackedShipmentRepository`, `ITrackingQueries`. Infrastructure: their EF Core configuration, repository and queries, plus the migration `AddShipmentTracking` |
-| [`ApexPost.Api.Tests`](tests/ApexPost.Api.Tests) | 329 tests:<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles, the courierId rule, partner API keys, HTTPS redirection and HSTS |
+| [`ApexPost.Api.IntegrationTests`](tests/ApexPost.Api.IntegrationTests) | 278 tests (the 51 that need no host, such as the custom rules and the route constraint, are in [`ApexPost.UnitTests`](tests/ApexPost.UnitTests)):<br>• every endpoint of both versions over HTTP on a disposable SQL Server database;<br>• the error handling in Production and Development;<br>• the validation rules;<br>• the OpenAPI documents and Swagger UI;<br>• the committed contracts;<br>• the generated client and its console consumer;<br>• authentication, roles, the courierId rule, partner API keys, HTTPS redirection and HSTS |
 
 **Run it:**
 
@@ -344,7 +344,7 @@ Start the API, then run `dotnet run --project src/ApexPost.Client.Consumer` (the
 
 ## Courier app (Week 4, Part D)
 
-[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now** and **Out for Delivery**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. Pending scans are uploaded to the tracking API, by the courier (**Sync Now**) or by themselves when the network comes back.
+[`ApexPost.Courier`](src/ApexPost.Courier) is the courier's app, a console program. It is built on the Part A offline store and has four screens: **Login**, **New Scan**, **Pending Scans** and **Sync Status**, plus **Sync Now** and **Out for Delivery**. A scan is saved on the device as Pending before anything is sent, and the live pending count in the header comes from the Part A change listener. Since Week 5, a double tap is caught on the device: the same parcel, scan type and courier within two minutes of an earlier scan keeps the first scan, and the screen says "Already recorded on this device". Without this, a second Delivered scan would come back from the server as Failed (built test-first, [TDD-LOG.md](TDD-LOG.md)). Since Week 5 the app's logic (the typed client, resilience, uploader, automatic sync and session) lives in the class library [`ApexPost.Courier.Core`](src/ApexPost.Courier.Core), which the future MAUI app will reference too. The console app adds only its screens, an in-memory token store and the operating system's network status ([ADR 0032](docs/adr/0032-courier-core-library-for-every-app-head.md)). Pending scans are uploaded to the tracking API, by the courier (**Sync Now**) or by themselves when the network comes back.
 
 Start the API first (see [Tracking API](#tracking-api-week-4-part-b)), then the app:
 
@@ -359,7 +359,7 @@ dotnet run --project src/ApexPost.Courier -- --ApexPostApi:BaseAddress=http://lo
 
 The header then says `Uploads: on until 18:35 UTC`. The token lives in memory only. If the server answers 401, or the token expires, the token is cleared and the courier is taken back to Login, where Enter keeps the same courier ID; scans stay Pending until then ([SECURITY.md](SECURITY.md#the-courier-apps-token)). Without a server, the courier is signed in offline (`Uploads: off`): scans are recorded and saved as usual, and uploads start after signing in again with a network.
 
-**Sync** ([`Sync/`](src/ApexPost.Courier/Sync)):
+**Sync** ([`Sync/`](src/ApexPost.Courier.Core/Sync)):
 - **The real uploader:** `ApiShipmentUploader` replaces Part A's stand-in server. The outbox still sends the Pending scans in batches of 20. The uploader sends each batch to the API, one request per shipment, and marks every scan Synced or Failed from the API's answer:
   - a scan the API stored, now or earlier, is Synced;
   - a scan the API rejected is Failed, with the API's reason;
@@ -409,33 +409,43 @@ Its README is also a step-by-step script for the 3–5 minute video: login, scan
 
 ```powershell
 dotnet build ApexPost.slnx -c Release -warnaserror
-dotnet test ApexPost.slnx -c Release --no-build
+dotnet test ApexPost.slnx -c Release --no-build                  # all tests
+dotnet test tests/ApexPost.UnitTests -c Release --no-build       # unit tests only: seconds, nothing installed
+dotnet test tests/ApexPost.Specs -c Release --no-build           # the Gherkin acceptance scenarios (Reqnroll)
 ```
 
+In Visual Studio, open **Test Explorer** and choose **Run All**; no set-up is needed. The solution groups the test projects by level of the test pyramid: **1 Unit**, **2 Integration** and **3 Specs**, the business scenarios in Gherkin. The strategy behind them is in [TESTING-STRATEGY.md](TESTING-STRATEGY.md).
+
 **What the tests need:**
-- The courier tests (`ApexPost.Courier.Offline.Tests` and `ApexPost.Courier.Tests`) need nothing installed: each test opens its own Couchbase Lite database in a temporary folder.
-- The Infrastructure, Web and API tests need a SQL Server. Each test run creates its own database (`ApexPostDb_Test_<guid>`, or `ApexPostDb_ApiTest_<guid>` for the API) from the migrations and drops it afterwards. The development database is never used, and a guard refuses any other database name.
-- By default the tests use the local default instance with Windows authentication. Point them elsewhere with `APEXPOST_TEST_SQLSERVER`, a connection string without a database name:
+- **`ApexPost.UnitTests` needs nothing:** no database, no files written, no network.
+- **The courier tests need nothing installed.** In `ApexPost.Courier.Offline.IntegrationTests` and `ApexPost.Courier.IntegrationTests`, each test opens its own Couchbase Lite database in a temporary folder.
+- **The Infrastructure, Web and API integration tests need a SQL Server, and find one by themselves:**
+  1. `APEXPOST_TEST_SQLSERVER`, if set;
+  2. else the local default instance;
+  3. else LocalDB, which Visual Studio installs;
+  4. else they fail with a message saying what to set.
+
+  Each test run creates its own database (`ApexPostDb_Test_<guid>`, or `ApexPostDb_ApiTest_<guid>` for the API) from the migrations and drops it afterwards. The development database is never used, and a guard refuses any other database name. To choose a server yourself, set a connection string without a database name:
 
   ```powershell
   $env:APEXPOST_TEST_SQLSERVER = "Server=(localdb)\MSSQLLocalDB;Trusted_Connection=True"
   ```
 
-**Results:** the latest run had 1148 tests passing and a zero-warning build:
+**Results:** the latest run had 1301 tests passing, 0 failing, 0 skipped, with a zero-warning build. The run, as printed, is in [docs/week5/TEST-RUN.md](docs/week5/TEST-RUN.md):
 
-| Project | Tests |
-|---|---|
-| Domain | 153 |
-| Application | 152 |
-| Infrastructure | 145 |
-| Web integration | 112 |
-| Courier offline | 129 |
-| Courier app (Part D) | 128 |
-| API (with the OpenAPI, versioning, contract, generated-client and authentication, authorization and partner API key and HTTPS tests) | 329 |
+| Level | Project | Tests |
+|---|---|---|
+| Unit | `ApexPost.UnitTests` (Domain 231, Application 168, Infrastructure 55, API 59, courier offline 55, courier core 14, no-network guards 12) | 594 |
+| Integration | `ApexPost.Infrastructure.IntegrationTests` (SQL Server) | 90 |
+| Integration | `ApexPost.Api.IntegrationTests` (endpoints, OpenAPI, versioning, contracts, generated client, authentication, authorization, partner API keys, HTTPS) | 278 |
+| Integration | `ApexPost.Web.IntegrationTests` | 112 |
+| Integration | `ApexPost.Courier.Offline.IntegrationTests` (Couchbase Lite) | 90 |
+| Integration | `ApexPost.Courier.IntegrationTests` (the courier app's composition) | 125 |
+| Acceptance | `ApexPost.Specs` (Reqnroll): registering a shipment at head office (API level); courier scans reaching head office exactly once (from the device to the API) | 12 |
 
-Line coverage of the Week 3 projects is 97% (see [docs/testing.md](docs/testing.md#line-coverage)).
+**Coverage:** 96.6% of lines and 87% of branches of the production code ([summary](docs/week5/coverage-summary.md)). Coverage is read as evidence, not chased as a target: the report found two untested paths in risk areas, which now have tests, and the rest of what is uncovered is explained in [docs/testing.md](docs/testing.md#line-coverage).
 
-**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors, checks that every model change has a migration, starts a throwaway SQL Server container with a random password, and runs every test on each push and pull request to `master`, then reruns the error-handling tests with full JIT optimization. Of the 52 runs on GitHub Actions up to 10 November 2026, 51 passed. The other (the push of `2a3ce1a` to `master`) failed inside GitHub before any job started, and the next push to `master` passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
+**CI:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) builds with warnings as errors and checks that every model change has a migration. It runs the unit tests before any database exists, then starts a throwaway SQL Server container with a random password and runs each integration project and the acceptance scenarios, on each push and pull request to `master` and on pull requests into the week branches. It keeps the results as TRX files, then reruns the error-handling tests with full JIT optimization. Of the 52 runs on GitHub Actions up to 10 November 2026, 51 passed. The other (the push of `2a3ce1a` to `master`) failed inside GitHub before any job started, and the next push to `master` passed; [docs/testing.md](docs/testing.md#ci-on-github-actions) links them.
 
 ## Database artifacts
 
@@ -480,6 +490,7 @@ curl -H "X-Api-Key: <local-integration-key>" "http://localhost:5145/integration/
 - [API-NOTES.md](API-NOTES.md): the tracking API: endpoints and status codes, validation, errors, the idempotent scan upload.
 - [SECURITY.md](SECURITY.md): the tracking API's security: JWT bearer authentication and roles, partner API keys, HTTPS and HSTS, OAuth2 flows (Authorization Code with PKCE, Client Credentials), and moving to a real identity provider.
 - [RESILIENCE.md](RESILIENCE.md): the courier app's retry, circuit breaker and timeout values and the reasons for them; why the scan upload is safe to retry.
+- [TESTING-STRATEGY.md](TESTING-STRATEGY.md): the Week 5 testing strategy: risk map, test pyramid, xUnit choice, the review of every existing test class, mocks versus real databases, what is not tested. The five-minute viva and the roadmap diagram are in [docs/week5/PRESENTATION.md](docs/week5/PRESENTATION.md).
 - [VERSIONING.md](VERSIONING.md): the tracking API's versions: every change from v1 to v2, breaking or not and why, v1's deprecation and sunset plan, how to change the contract. The contracts are in [contracts/](contracts).
 - [PERFORMANCE.md](PERFORMANCE.md): execution plans, before/after measurements, index trade-offs, generated SQL.
 - [sql/README.md](sql/README.md): reporting queries, the atomic T-SQL sale, the blocking demo, deadlock avoidance.

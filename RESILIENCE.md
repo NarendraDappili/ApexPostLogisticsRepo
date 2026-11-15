@@ -1,6 +1,6 @@
 # Courier app resilience
 
-The courier works on a phone network that drops out in lifts, basements and between towns, and the API itself can be restarting or overloaded. This file explains how the courier app ([`ApexPost.Courier`](src/ApexPost.Courier)) calls the API so that a weak network costs time, never scans. The code is [`ApiResilience.cs`](src/ApexPost.Courier/Api/ApiResilience.cs), built on `Microsoft.Extensions.Http.Resilience` (Polly 8).
+The courier works on a phone network that drops out in lifts, basements and between towns, and the API itself can be restarting or overloaded. This file explains how the courier app ([`ApexPost.Courier`](src/ApexPost.Courier), its logic in [`ApexPost.Courier.Core`](src/ApexPost.Courier.Core)) calls the API so that a weak network costs time, never scans. The code is [`ApiResilience.cs`](src/ApexPost.Courier.Core/Api/ApiResilience.cs), built on `Microsoft.Extensions.Http.Resilience` (Polly 8).
 
 There are two layers:
 - **Within one call**, the resilience pipeline below rides out short failures: a dropped packet, a server restarting, a timeout. It works in seconds.
@@ -87,7 +87,7 @@ The lines give the method and path, never the request body, the query string or 
 
 ## Tests
 
-[`ResilienceTests`](tests/ApexPost.Courier.Tests/Api/ResilienceTests.cs) run the app's real composition against a stub network:
+[`ResilienceTests`](tests/ApexPost.Courier.IntegrationTests/Api/ResilienceTests.cs) run the app's real composition against a stub network:
 - retries after 5xx, 408 and network errors, each try with the same body and token;
 - exactly four tries in all when the failure lasts;
 - no retry on any other 4xx, or on a POST that is not marked safe;

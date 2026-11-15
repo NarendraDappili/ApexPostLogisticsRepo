@@ -14,7 +14,7 @@ namespace ApexPost.Web.Filters;
 /// views, Problem Details), or, when an exception escapes MVC, the status ProblemDetailsExceptionMiddleware will send
 /// for it (409/404/400 for mapped business errors, 499 for a client abort, otherwise 500).
 /// </summary>
-public sealed class AuditResourceFilter(IAuditStore auditStore, ILogger<AuditResourceFilter> logger) : IAsyncResourceFilter, IOrderedFilter
+public sealed class AuditResourceFilter(IAuditStore auditStore, TimeProvider clock, ILogger<AuditResourceFilter> logger) : IAsyncResourceFilter, IOrderedFilter
 {
     private const int ClientClosedRequest = 499;
 
@@ -46,7 +46,7 @@ public sealed class AuditResourceFilter(IAuditStore auditStore, ILogger<AuditRes
             var escaped = thrown ?? (executed is { Exception: { } unhandled, ExceptionHandled: false } ? unhandled : null);
             var statusCode = escaped is null ? httpContext.Response.StatusCode : StatusFor(escaped, httpContext);
             var record = new AuditRecord(
-                DateTimeOffset.UtcNow,
+                clock.GetUtcNow(),
                 httpContext.User.FindFirst(ApexPostClaimTypes.StaffId)?.Value,
                 httpContext.User.FindFirst(ClaimTypes.Role)?.Value,
                 httpContext.User.FindFirst(ApexPostClaimTypes.BranchCode)?.Value,

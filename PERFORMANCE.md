@@ -382,11 +382,11 @@ Used pages per index, measured straight after index creation ([`storage-baseline
 
 ## Generated SQL (`ToQueryString`)
 
-Captured by [`GeneratedSqlTests`](tests/ApexPost.Infrastructure.Tests/Sql/GeneratedSqlTests.cs) from the query builders the application itself uses. The tests also pin the parts the indexes depend on.
+Captured by [`GeneratedSqlTests`](tests/ApexPost.Infrastructure.IntegrationTests/Sql/GeneratedSqlTests.cs) from the query builders the application itself uses. The tests also pin the parts the indexes depend on.
 
 To regenerate:
 ```
-dotnet test tests/ApexPost.Infrastructure.Tests --filter GeneratedSqlTests --logger "console;verbosity=detailed"
+dotnet test tests/ApexPost.Infrastructure.IntegrationTests --filter GeneratedSqlTests --logger "console;verbosity=detailed"
 ```
 
 **1. Branch dashboard** (`EfBranchQueries.DashboardQuery`): one round trip, three correlated counts. The enum constant becomes the literal `'Paid'`, and the date filter is a half-open range.

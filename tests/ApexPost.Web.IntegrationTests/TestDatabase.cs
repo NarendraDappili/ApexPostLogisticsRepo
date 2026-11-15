@@ -1,3 +1,4 @@
+using ApexPost.TestSupport;
 using ApexPost.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.SqlClient;
@@ -10,18 +11,16 @@ namespace ApexPost.Web.IntegrationTests;
 /// <summary>
 /// A disposable SQL Server database for one test host: created from the migrations when the host starts and
 /// dropped when the factory is disposed. The development database is never used.
-/// The server comes from APEXPOST_TEST_SQLSERVER, defaulting to the local default instance with Windows authentication.
+/// The server is found by <see cref="TestSqlServer"/>.
 /// </summary>
 public sealed class TestDatabase
 {
     public const string NamePrefix = "ApexPostDb_Test_";
-    private const string ServerVariable = "APEXPOST_TEST_SQLSERVER";
 
     public TestDatabase()
     {
         Name = NamePrefix + Guid.NewGuid().ToString("N");
-        var server = Environment.GetEnvironmentVariable(ServerVariable) ?? "Server=.;Trusted_Connection=True;TrustServerCertificate=True";
-        ConnectionString = new SqlConnectionStringBuilder(server) { InitialCatalog = Name }.ConnectionString;
+        ConnectionString = TestSqlServer.ForDatabase(Name);
     }
 
     public string Name { get; }

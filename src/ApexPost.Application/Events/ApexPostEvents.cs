@@ -6,7 +6,11 @@ namespace ApexPost.Application.Events;
 /// <summary>A business event raised by a workflow after the state change it describes has been persisted.</summary>
 public abstract record ApexPostEvent
 {
-    public DateTimeOffset OccurredAtUtc { get; init; } = DateTimeOffset.UtcNow;
+    /// <summary>
+    /// When it happened, given by whoever raises the event from the injected <see cref="TimeProvider"/>. It is
+    /// required, so no event reads the system clock by itself and a test can fix the time (TESTING-STRATEGY.md §8).
+    /// </summary>
+    public required DateTimeOffset OccurredAtUtc { get; init; }
 }
 
 public sealed record TransactionCompleted(CounterTransaction Transaction) : ApexPostEvent;

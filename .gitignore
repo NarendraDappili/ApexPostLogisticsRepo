@@ -48,6 +48,9 @@ Generated\ Files/
 # NUnit
 *.VisualState.xml
 TestResult.xml
+TestResults/
+# Reqnroll generates each feature's test class on every build
+*.feature.cs
 nunit-*.xml
 
 # Build Results of an ATL Project

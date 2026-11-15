@@ -605,11 +605,13 @@ Measured on a 200,000-sale data set, the five workload indexes cut the per-branc
 
 ## Tests
 
+Since Week 5 the tests are organised by level of the test pyramid ([TESTING-STRATEGY.md](TESTING-STRATEGY.md)). `ApexPost.UnitTests` holds everything that needs no real dependency: the former Domain and Application test projects and the pure classes from the others. Each integration project boots one real dependency. The Week 2 and 3 projects map as follows:
+
 | Project | Uses | Covers |
 |---|---|---|
-| `ApexPost.Domain.Tests` | No database | Value objects, entities, state transitions (Week 2 tests unchanged) |
-| `ApexPost.Application.Tests` | Fakes + `SpyUnitOfWork` | Workflows commit once, or never on failure; pricing; stock adjustment; price revision |
-| `ApexPost.Infrastructure.Tests` | A disposable SQL Server database per run (`ApexPostDb_Test_<guid>`), built by the migrations | Mapping; rollback; concurrency; procedures; audit store; data-change history and audit-log queries; query shape and N+1; generated SQL; index definitions |
+| `ApexPost.UnitTests` (`Domain/`) | No database | Value objects, entities, state transitions (Week 2 tests unchanged) |
+| `ApexPost.UnitTests` (`Application/`) | Fakes + `SpyUnitOfWork` | Workflows commit once, or never on failure; pricing; stock adjustment; price revision |
+| `ApexPost.Infrastructure.IntegrationTests` | A disposable SQL Server database per run (`ApexPostDb_Test_<guid>`), built by the migrations | Mapping; rollback; concurrency; procedures; audit store; data-change history and audit-log queries; query shape and N+1; generated SQL; index definitions |
 | `ApexPost.Web.IntegrationTests` | `WebApplicationFactory` + a disposable database | Sales persist; voids need a manager; report totals; Problem Details; over-posting; security pipeline; audit statuses; security events; Audit log access by role; role-aware menu and branch picker |
 
 A guard refuses to run tests against any database whose name is not a test database. See [docs/testing.md](docs/testing.md).
@@ -649,8 +651,9 @@ A guard refuses to run tests against any database whose name is not a test datab
 | [0029](docs/adr/0029-courier-app-as-console-program.md) | The courier app is a console program on the Generic Host, with stand-ins for SecureStorage and ConnectivityChanged; no MAUI head yet | Accepted |
 | [0030](docs/adr/0030-api-security-tokens-roles-and-partner-keys.md) | The tracking API is secure by default: JWT bearer tokens from configuration, roles per action, a courierId filter, a partner API key endpoint filter, HTTPS and HSTS | Accepted |
 | [0031](docs/adr/0031-courier-sync-through-one-resilient-client.md) | The courier app syncs through one typed client with retry, circuit breaker and timeouts; only transient failures of safe requests are retried; a lost answer leaves scans Pending | Accepted |
+| [0032](docs/adr/0032-courier-core-library-for-every-app-head.md) | The courier app's logic (typed client, resilience, uploader, automatic sync, session) is the class library `ApexPost.Courier.Core`; each app head adds only its screens, token store and network status | Accepted |
 
-Week 3 added thirteen ADRs (0011–0023). The seven the brief requires are in bold. ADR 0024 answers the final review's remark that auditing was not visible anywhere. Week 4 added ADRs 0025 and 0026 for the tracking API ([API-NOTES.md](API-NOTES.md)), 0027 and 0028 for its versions, documentation and generated client ([VERSIONING.md](VERSIONING.md)), and 0029–0031 for its security and the courier app ([SECURITY.md](SECURITY.md), [RESILIENCE.md](RESILIENCE.md)).
+Week 3 added thirteen ADRs (0011–0023). The seven the brief requires are in bold. ADR 0024 answers the final review's remark that auditing was not visible anywhere. Week 4 added ADRs 0025 and 0026 for the tracking API ([API-NOTES.md](API-NOTES.md)), 0027 and 0028 for its versions, documentation and generated client ([VERSIONING.md](VERSIONING.md)), and 0029–0031 for its security and the courier app ([SECURITY.md](SECURITY.md), [RESILIENCE.md](RESILIENCE.md)). Week 5 added ADR 0032, which moves the courier app's logic into a library the future MAUI app will share ([TESTING-STRATEGY.md](TESTING-STRATEGY.md)).
 
 ## Known limitations
 

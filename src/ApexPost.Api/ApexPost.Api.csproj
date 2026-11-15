@@ -6,7 +6,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="ApexPost.Api.Tests" />
+    <InternalsVisibleTo Include="ApexPost.Api.IntegrationTests" />
+    <InternalsVisibleTo Include="ApexPost.UnitTests" />
+    <InternalsVisibleTo Include="ApexPost.Specs" />
   </ItemGroup>
 
   <ItemGroup>

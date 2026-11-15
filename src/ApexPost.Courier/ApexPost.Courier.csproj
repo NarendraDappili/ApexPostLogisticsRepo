@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\ApexPost.Courier.Offline\ApexPost.Courier.Offline.csproj" />
+    <ProjectReference Include="..\ApexPost.Courier.Core\ApexPost.Courier.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -11,7 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="ApexPost.Courier.Tests" />
+    <InternalsVisibleTo Include="ApexPost.Courier.IntegrationTests" />
   </ItemGroup>
 
   <ItemGroup>
