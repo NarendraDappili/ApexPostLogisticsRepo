@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 1000" width="1260" height="1000" role="img" aria-labelledby="title desc">
   <title id="title">ApexPost Week 5 testing roadmap</title>
-  <desc id="desc">The ten Week 5 steps and how they depend on each other. S1 Strategy first (Task 1) leads to S2 MAUI-ready courier core and S3 Test projects; S2 also leads to S3. S3 leads to S4 Determinism and S5 Unit testing fundamentals (Task 2). S4 leads to S6 Mocking and isolation (Task 3). S5 leads to S7 TDD double-scan guard (Task 4) and S8 BDD with Reqnroll (Task 5). S6 also leads to S7. S8 leads to S9 Copilot test drafting (Task 6). S6, S7 and S9 lead to S10 Results, reflection and viva (Task 7). Steps marked done (S1 to S4) have a green border.</desc>
+  <desc id="desc">The ten Week 5 steps and how they depend on each other. S1 Strategy first (Task 1) leads to S2 MAUI-ready courier core and S3 Test projects; S2 also leads to S3. S3 leads to S4 Determinism and S5 Unit testing fundamentals (Task 2). S4 leads to S6 Mocking and isolation (Task 3). S5 leads to S7 TDD double-scan guard (Task 4) and S8 BDD with Reqnroll (Task 5). S6 also leads to S7. S8 leads to S9 Copilot test drafting (Task 6). S6, S7 and S9 lead to S10 Results, reflection and viva (Task 7). Steps marked done (S1 to S5) have a green border.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="12" markerHeight="12" orient="auto-start-reverse">
       <path d="M1 1 L10 6 L1 11" fill="none" stroke="#c8c8c8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -62,7 +62,8 @@
   <text class="work" x="300" y="450">TimeProvider · FakeTimeProvider · no system clock</text>
 
   <!-- S5 -->
-  <rect class="box" x="720" y="360" width="480" height="110" rx="24"/>
+  <rect class="box done" x="720" y="360" width="480" height="110" rx="24"/>
+  <text class="badge" x="1182" y="382">✓ done</text>
   <text class="head" x="960" y="396">Unit testing fundamentals</text>
   <text class="step" x="960" y="424">S5 · Task 2</text>
   <text class="work" x="960" y="450">AAA · naming · boundary theories · exceptions</text>

@@ -12,8 +12,8 @@ dotnet test tests/ApexPost.Infrastructure.IntegrationTests -c Release --no-build
 
 In Visual Studio, Test Explorer runs the same tests with no set-up. The solution groups them into **1 Unit** and **2 Integration** folders, the levels of the test pyramid ([TESTING-STRATEGY.md](../TESTING-STRATEGY.md)). The SQL Server tests find a server by themselves (see [The test database](#the-test-database)).
 
-Since Week 5 (15 November 2026) the 1154 tests are organised by level:
-- **Unit:** 460 tests in `ApexPost.UnitTests`.
+Since Week 5 (15 November 2026) the 1239 tests are organised by level:
+- **Unit:** 545 tests in `ApexPost.UnitTests`.
 - **Integration:** 694 tests:
   - Api 278;
   - Courier app 124;
@@ -23,7 +23,7 @@ Since Week 5 (15 November 2026) the 1154 tests are organised by level:
 
 The split is described in [Test projects](#test-projects).
 
-The latest run (15 November 2026, step S4, run twice in a row) had **1154 tests passing, 0 failing, 0 skipped**, with a zero-warning build. The three Week 5 tests so far pin the injected clock (see [Determinism](#determinism)). The 1151 before Week 5 were:
+The latest run (15 November 2026, step S5) had **1239 tests passing, 0 failing, 0 skipped**, with a zero-warning build. The 88 Week 5 tests so far: 3 pin the injected clock (see [Determinism](#determinism)), and 85 are boundary tables (the full status and scan-decision tables, the 30 kg counter limit, the exact scan-time limit; [TESTING-STRATEGY.md §4.3](../TESTING-STRATEGY.md#43-conventions-in-every-test-project)). The 1151 before Week 5 were:
 - 430 for Weeks 2 and 3;
 - 129 for the Week 4 courier offline store (Part A);
 - 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model;
@@ -93,7 +93,7 @@ Since Week 5 the projects follow the test pyramid ([TESTING-STRATEGY.md §4](../
 
 | Level | Project | Tests | Real dependency |
 |---|---|---|---|
-| Unit | `ApexPost.UnitTests` | 460: Domain 153, Application 155, Infrastructure 55 (model, migration text, simulation, design-time factory, password hasher), API 51 (custom rules, route constraint, controller architecture, correlation, the generated client's token handler), courier offline 39 (scan model, IDs, domain independence, the harness's fake uploader), courier core 7 (sync history, contract compatibility) | none: no database, no files written, no sockets |
+| Unit | `ApexPost.UnitTests` | 545: Domain 231, Application 155, Infrastructure 55 (model, migration text, simulation, design-time factory, password hasher), API 58 (custom rules, the scan-time limit, route constraint, controller architecture, correlation, the generated client's token handler), courier offline 39 (scan model, IDs, domain independence, the harness's fake uploader), courier core 7 (sync history, contract compatibility) | none: no database, no files written, no sockets |
 | Integration | `ApexPost.Infrastructure.IntegrationTests` | 90 | SQL Server |
 | Integration | `ApexPost.Api.IntegrationTests` | 278 | The API host (`WebApplicationFactory`) with real JWT validation. SQL Server is used for the endpoint, versioning, "Try it out" and generated-client tests; the other host tests use a connection string that is never opened. |
 | Integration | `ApexPost.Web.IntegrationTests` | 112 | The Web host and SQL Server. The CSV, display and demo-seed guard tests are unit level, but stay here because the unit project does not reference the Web app. |
