@@ -174,7 +174,7 @@ public sealed class ScanChangeMonitorTests : IDisposable
 
     private ShipmentScan Save(string trackingNumber)
     {
-        var scan = ShipmentScan.Record(trackingNumber, ScanType.Pickup, "CR-001", "Riverside Depot", DateTimeOffset.UtcNow.AddMinutes(-5));
+        var scan = ShipmentScan.Record(trackingNumber, ScanType.Pickup, "CR-001", "Riverside Depot", new DateTimeOffset(2026, 11, 2, 9, 25, 0, TimeSpan.Zero));
         _repository.Create(scan);
         return scan;
     }

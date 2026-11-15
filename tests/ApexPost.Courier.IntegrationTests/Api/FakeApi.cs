@@ -31,6 +31,13 @@ internal sealed partial class FakeApi
 
     public StubServer Server { get; } = new();
 
+    /// <summary>
+    /// The server's clock for its "scan time not in the future" rule. It is the system clock, because it must agree
+    /// with the app under test, which stamps new scans with the system clock. The tests' own scan times are fixed
+    /// instants far from now (<see cref="FixedTimes"/>), so the rule's outcome never depends on when they run.
+    /// </summary>
+    public TimeProvider Clock { get; init; } = TimeProvider.System;
+
     /// <summary>When set, every request gets 503, as from a server that is down.</summary>
     public bool Down { get; set; }
 
@@ -61,7 +68,7 @@ internal sealed partial class FakeApi
         if (path.EndsWith("/dev/token", StringComparison.Ordinal))
         {
             var courierId = body!["courierId"]!.GetValue<string>();
-            return StubServer.Json(HttpStatusCode.OK, $$"""{ "accessToken": "fake-token-{{courierId}}#{{Interlocked.Increment(ref _issued)}}", "tokenType": "Bearer", "expiresAtUtc": "{{DateTimeOffset.UtcNow.AddHours(1):O}}" }""");
+            return StubServer.Json(HttpStatusCode.OK, $$"""{ "accessToken": "fake-token-{{courierId}}#{{Interlocked.Increment(ref _issued)}}", "tokenType": "Bearer", "expiresAtUtc": "{{FixedTimes.FarFuture:O}}" }""");
         }
 
         var upload = UploadPath().Match(path);
@@ -89,7 +96,7 @@ internal sealed partial class FakeApi
         var errors = new JsonObject();
         for (var i = 0; i < scans.Count; i++)
         {
-            if (DateTimeOffset.Parse(scans[i]["scannedAtUtc"]!.GetValue<string>(), null, System.Globalization.DateTimeStyles.RoundtripKind) > DateTimeOffset.UtcNow.AddMinutes(5))
+            if (DateTimeOffset.Parse(scans[i]["scannedAtUtc"]!.GetValue<string>(), null, System.Globalization.DateTimeStyles.RoundtripKind) > Clock.GetUtcNow().AddMinutes(5))
             {
                 errors[$"scans[{i}].scannedAtUtc"] = new JsonArray("scannedAtUtc cannot be in the future; it is more than 5 minutes ahead of the server clock.");
             }

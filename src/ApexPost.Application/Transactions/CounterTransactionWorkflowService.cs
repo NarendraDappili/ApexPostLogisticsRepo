@@ -31,9 +31,10 @@ public sealed class CounterTransactionWorkflowService
     private readonly IMoneyOrderPolicy _moneyOrderPolicy;
     private readonly ITaxPolicy _taxPolicy;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly TimeProvider _clock;
     private readonly IEventPublisher? _events;
 
-    public CounterTransactionWorkflowService(IBranchRepository branches, ICounterRepository counters, IStaffMemberRepository staff, IProductRepository products, InventoryService inventory, IShipmentRepository shipments, IShippingRateProvider rates, IMoneyOrderRepository moneyOrders, ICounterTransactionRepository transactions, IMoneyOrderPolicy moneyOrderPolicy, ITaxPolicy taxPolicy, IUnitOfWork unitOfWork, IEventPublisher? events = null)
+    public CounterTransactionWorkflowService(IBranchRepository branches, ICounterRepository counters, IStaffMemberRepository staff, IProductRepository products, InventoryService inventory, IShipmentRepository shipments, IShippingRateProvider rates, IMoneyOrderRepository moneyOrders, ICounterTransactionRepository transactions, IMoneyOrderPolicy moneyOrderPolicy, ITaxPolicy taxPolicy, IUnitOfWork unitOfWork, TimeProvider clock, IEventPublisher? events = null)
     {
         _branches = branches ?? throw new ArgumentNullException(nameof(branches));
         _counters = counters ?? throw new ArgumentNullException(nameof(counters));
@@ -47,6 +48,7 @@ public sealed class CounterTransactionWorkflowService
         _moneyOrderPolicy = moneyOrderPolicy ?? throw new ArgumentNullException(nameof(moneyOrderPolicy));
         _taxPolicy = taxPolicy ?? throw new ArgumentNullException(nameof(taxPolicy));
         _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _events = events;
     }
 
@@ -69,7 +71,7 @@ public sealed class CounterTransactionWorkflowService
         if (lines.Length == 0) throw new InvalidOperationException("A transaction requires at least one line.");
 
         var subtotal = lines.Select(line => line.Total).Total;
-        var transaction = new CounterTransaction(id, branchCode, counterCode, clerkId, lines, subtotal, _taxPolicy.Calculate(subtotal), request.PaymentMethod);
+        var transaction = new CounterTransaction(id, branchCode, counterCode, clerkId, lines, subtotal, _taxPolicy.Calculate(subtotal), request.PaymentMethod, _clock.GetUtcNow());
         transaction.MarkPaid();
 
         var movements = new List<StockMovement>();
@@ -91,7 +93,7 @@ public sealed class CounterTransactionWorkflowService
 
         if (_events is not null)
         {
-            await _events.PublishAsync(new TransactionCompleted(transaction), CancellationToken.None).ConfigureAwait(false);
+            await _events.PublishAsync(new TransactionCompleted(transaction) { OccurredAtUtc = transaction.OccurredAtUtc }, CancellationToken.None).ConfigureAwait(false);
         }
 
         return transaction;
@@ -131,7 +133,8 @@ public sealed class CounterTransactionWorkflowService
 
         if (_events is not null)
         {
-            ApexPostEvent reversal = refund ? new TransactionRefunded(transaction) : new TransactionVoided(transaction);
+            var occurredAtUtc = _clock.GetUtcNow();
+            ApexPostEvent reversal = refund ? new TransactionRefunded(transaction) { OccurredAtUtc = occurredAtUtc } : new TransactionVoided(transaction) { OccurredAtUtc = occurredAtUtc };
             await _events.PublishAsync(reversal, CancellationToken.None).ConfigureAwait(false);
         }
 

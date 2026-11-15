@@ -19,6 +19,18 @@ namespace ApexPost.Infrastructure.IntegrationTests.Sql;
 /// </summary>
 internal sealed class SqlTestData
 {
+    /// <summary>
+    /// The fixed "now" of the checkout and stock services in these tests. Sales land on a known day, so a run that
+    /// crosses midnight UTC cannot move them to the next day (TESTING-STRATEGY.md §8).
+    /// </summary>
+    public static readonly DateTimeOffset Now = new(2026, 11, 2, 10, 0, 0, TimeSpan.Zero);
+
+    /// <summary>The day of <see cref="Now"/>, the day the reports are asked for.</summary>
+    public static readonly DateOnly Today = DateOnly.FromDateTime(Now.UtcDateTime);
+
+    /// <summary>A clock standing at <see cref="Now"/>.</summary>
+    public static TimeProvider Clock() => new FakeTimeProvider(Now);
+
     private SqlTestData(string suffix)
     {
         Branch = new BranchCode($"BR-{suffix}");
@@ -61,8 +73,8 @@ internal sealed class SqlTestData
         IUnitOfWork unitOfWork = new EfUnitOfWork(db);
         return new CounterTransactionWorkflowService(
             new EfBranchRepository(db), new EfCounterRepository(db), new EfStaffMemberRepository(db), new EfProductRepository(db),
-            new InventoryService(new EfInventoryRepository(db), unitOfWork, new InventoryServiceOptions { LowStockThreshold = 2 }),
+            new InventoryService(new EfInventoryRepository(db), unitOfWork, new InventoryServiceOptions { LowStockThreshold = 2 }, Clock()),
             new EfShipmentRepository(db), new EfShippingRateProvider(db, new ShippingRateCache()), new EfMoneyOrderRepository(db),
-            new EfCounterTransactionRepository(db), new MoneyOrderPolicy(new Money(1000m)), new FixedRateTaxPolicy(taxRate), unitOfWork);
+            new EfCounterTransactionRepository(db), new MoneyOrderPolicy(new Money(1000m)), new FixedRateTaxPolicy(taxRate), unitOfWork, Clock());
     }
 }

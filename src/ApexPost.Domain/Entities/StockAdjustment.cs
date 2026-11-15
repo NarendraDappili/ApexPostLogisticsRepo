@@ -9,7 +9,7 @@ public sealed record StockAdjustment
 {
     public const int MaxReasonLength = 200;
 
-    public StockAdjustment(BranchCode branchCode, ProductId productId, int delta, string reason, StaffId changedBy, DateTimeOffset? occurredAtUtc = null)
+    public StockAdjustment(BranchCode branchCode, ProductId productId, int delta, string reason, StaffId changedBy, DateTimeOffset occurredAtUtc)
     {
         ArgumentNullException.ThrowIfNull(branchCode);
         ArgumentNullException.ThrowIfNull(productId);
@@ -24,13 +24,7 @@ public sealed record StockAdjustment
         Delta = delta;
         Reason = trimmed;
         ChangedBy = changedBy;
-        OccurredAtUtc = (occurredAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
-    }
-
-    // Used only when a stored history row is materialized; the stored time is already UTC.
-    private StockAdjustment(BranchCode branchCode, ProductId productId, int delta, string reason, StaffId changedBy, DateTimeOffset occurredAtUtc)
-        : this(branchCode, productId, delta, reason, changedBy, (DateTimeOffset?)occurredAtUtc)
-    {
+        OccurredAtUtc = occurredAtUtc.ToUniversalTime();
     }
 
     public BranchCode BranchCode { get; }

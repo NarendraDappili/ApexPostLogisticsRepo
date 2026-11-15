@@ -232,7 +232,7 @@ public sealed class ResilienceTests : IDisposable
 
     private static Task<ScanUploadResult> Upload(IHost host) =>
         host.Services.GetRequiredService<ApexApiClient>().UploadScansAsync("APX-30000001",
-            [ShipmentScan.Record("APX-30000001", ScanType.Pickup, "CR-001", "Riverside Depot", DateTimeOffset.UtcNow.AddMinutes(-5))]);
+            [ShipmentScan.Record("APX-30000001", ScanType.Pickup, "CR-001", "Riverside Depot", FixedTimes.Now.AddMinutes(-5))]);
 
     private static HttpResponseMessage Status(HttpStatusCode status) =>
         StubServer.Json(status, $$"""{ "title": "{{status}}", "status": {{(int)status}} }""", "application/problem+json");

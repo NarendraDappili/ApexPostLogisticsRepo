@@ -17,7 +17,7 @@ namespace ApexPost.Courier.IntegrationTests.Api;
 /// </summary>
 public sealed class TokenHandlingTests : IDisposable
 {
-    private static readonly DateTimeOffset InAnHour = DateTimeOffset.UtcNow.AddHours(1);
+    private static readonly DateTimeOffset ValidUntil = FixedTimes.FarFuture;
     private readonly CourierAppRun _app = new();
 
     public void Dispose() => _app.Dispose();
@@ -57,7 +57,7 @@ public sealed class TokenHandlingTests : IDisposable
     public async Task An_expired_token_is_never_sent_and_ends_the_sign_in()
     {
         using var host = Host();
-        var (tokens, session) = SignIn(host, expiresAtUtc: DateTimeOffset.UtcNow.AddMinutes(-1));
+        var (tokens, session) = SignIn(host, expiresAtUtc: FixedTimes.LongExpired);
 
         await Assert.ThrowsAsync<ApexApiException>(() => Upload(host));
 
@@ -74,7 +74,7 @@ public sealed class TokenHandlingTests : IDisposable
         _app.Api.Server.Respond = _ =>
         {
             // While the request with the first token is out, the courier signs in again.
-            tokens.SaveAsync("fake-token-CR-001#99", InAnHour).AsTask().GetAwaiter().GetResult();
+            tokens.SaveAsync("fake-token-CR-001#99", ValidUntil).AsTask().GetAwaiter().GetResult();
             return StubServer.Json(HttpStatusCode.Unauthorized, """{ "status": 401 }""", "application/problem+json");
         };
 
@@ -123,13 +123,13 @@ public sealed class TokenHandlingTests : IDisposable
     [Fact]
     public async Task A_pasted_token_signs_the_courier_in_and_is_never_shown()
     {
-        var jwt = Jwt(new JsonObject { ["sub"] = "Kofi", ["role"] = "Courier", ["courierId"] = "CR-001", ["exp"] = InAnHour.ToUnixTimeSeconds() });
+        var jwt = Jwt(new JsonObject { ["sub"] = "Kofi", ["role"] = "Courier", ["courierId"] = "CR-001", ["exp"] = ValidUntil.ToUnixTimeSeconds() });
         string? token = null;
 
         var output = await _app.RunAsync(["CR-001", jwt, "7"], services => token = services.GetRequiredService<ITokenStore>().GetAsync().AsTask().Result);
 
-        Assert.Contains($"Signed in as CR-001 with your token. Scans upload to the server (sign-in valid until {ConsoleScreen.Time(DateTimeOffset.FromUnixTimeSeconds(InAnHour.ToUnixTimeSeconds()))} UTC).", output, StringComparison.Ordinal);
-        Assert.Contains($"Uploads: on until {InAnHour.UtcDateTime:HH:mm} UTC", output, StringComparison.Ordinal);
+        Assert.Contains($"Signed in as CR-001 with your token. Scans upload to the server (sign-in valid until {ConsoleScreen.Time(DateTimeOffset.FromUnixTimeSeconds(ValidUntil.ToUnixTimeSeconds()))} UTC).", output, StringComparison.Ordinal);
+        Assert.Contains($"Uploads: on until {ValidUntil.UtcDateTime:HH:mm} UTC", output, StringComparison.Ordinal);
         Assert.Equal(jwt, token);
         Assert.DoesNotContain(jwt.Split('.')[1], output, StringComparison.Ordinal);
         // Pasting replaces the development token: the server was not asked for one.
@@ -139,7 +139,7 @@ public sealed class TokenHandlingTests : IDisposable
     [Fact]
     public async Task A_pasted_token_that_would_be_refused_is_explained_and_asked_for_again()
     {
-        var otherCourier = Jwt(new JsonObject { ["role"] = "Courier", ["courierId"] = "CR-002", ["exp"] = InAnHour.ToUnixTimeSeconds() });
+        var otherCourier = Jwt(new JsonObject { ["role"] = "Courier", ["courierId"] = "CR-002", ["exp"] = ValidUntil.ToUnixTimeSeconds() });
 
         var output = await _app.RunAsync(["CR-001", otherCourier, "", "7"]);
 
@@ -161,7 +161,7 @@ public sealed class TokenHandlingTests : IDisposable
     [InlineData("admin only", "That token does not have the Courier role, so the server would not take its scans.")]
     public void A_pasted_token_is_checked_for_what_the_server_will_check(string kind, string? problem)
     {
-        var exp = InAnHour.ToUnixTimeSeconds();
+        var exp = ValidUntil.ToUnixTimeSeconds();
         var text = kind switch
         {
             "valid" => Jwt(new JsonObject { ["role"] = "Courier", ["courierId"] = "CR-001", ["exp"] = exp }),
@@ -177,7 +177,7 @@ public sealed class TokenHandlingTests : IDisposable
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
-        var (token, found) = PastedToken.Read(text, "CR-001", DateTimeOffset.UtcNow);
+        var (token, found) = PastedToken.Read(text, "CR-001", FixedTimes.Now);
 
         Assert.Equal(problem, found);
         Assert.Equal(problem is null, token is not null);
@@ -223,13 +223,13 @@ public sealed class TokenHandlingTests : IDisposable
         var tokens = host.Services.GetRequiredService<ITokenStore>();
         var session = host.Services.GetRequiredService<CourierSession>();
         session.SignIn("CR-001");
-        tokens.SaveAsync("fake-token-CR-001#1", expiresAtUtc ?? InAnHour).AsTask().GetAwaiter().GetResult();
+        tokens.SaveAsync("fake-token-CR-001#1", expiresAtUtc ?? ValidUntil).AsTask().GetAwaiter().GetResult();
         return (tokens, session);
     }
 
     private static Task<ScanUploadResult> Upload(IHost host) => host.Services.GetRequiredService<ApexApiClient>().UploadScansAsync("APX-30000001", [Scan()]);
 
-    private static ShipmentScan Scan() => ShipmentScan.Record("APX-30000001", ScanType.Pickup, "CR-001", "Riverside Depot", DateTimeOffset.UtcNow.AddMinutes(-10));
+    private static ShipmentScan Scan() => ShipmentScan.Record("APX-30000001", ScanType.Pickup, "CR-001", "Riverside Depot", FixedTimes.Now.AddMinutes(-10));
 
     private static string Jwt(JsonObject payload) => $"{Base64Url("""{"alg":"HS256","typ":"JWT"}""")}.{Base64Url(payload.ToJsonString())}.c2lnbmF0dXJl";
 
@@ -237,10 +237,12 @@ public sealed class TokenHandlingTests : IDisposable
 
     private static async Task Until(Func<bool> condition)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(5);
+        // A Stopwatch, not the clock: the deadline only bounds the wait and never decides the outcome.
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        var limit = TimeSpan.FromSeconds(5);
         while (!condition())
         {
-            if (DateTime.UtcNow > deadline) Assert.Fail("The condition was not met in time.");
+            if (waited.Elapsed > limit) Assert.Fail("The condition was not met in time.");
             await Task.Delay(25);
         }
     }

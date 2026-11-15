@@ -17,7 +17,7 @@ public sealed class ContractCompatibilityTests
     [Fact]
     public void A_scan_is_sent_with_exactly_the_fields_the_api_takes_and_every_required_one()
     {
-        var scan = ShipmentScan.Record("APX-30000001", ScanType.Delivered, "CR-1042", "14 Elm Street", DateTimeOffset.UtcNow, null);
+        var scan = ShipmentScan.Record("APX-30000001", ScanType.Delivered, "CR-1042", "14 Elm Street", TestTime.Now, null);
         var sent = JsonNode.Parse(JsonSerializer.Serialize(ScanUploadItem.From(scan), CourierJsonContext.Default.ScanUploadItem))!.AsObject();
         var schema = Schemas["ScanUploadItem"]!;
 

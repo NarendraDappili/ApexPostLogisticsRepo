@@ -230,5 +230,5 @@ public sealed class ErrorAndJsonHandlingTests : IDisposable
     private static Task<ScanUploadResult> Upload(IHost host) =>
         host.Services.GetRequiredService<ApexApiClient>().UploadScansAsync("APX-30000001", [Scan()]);
 
-    private static ShipmentScan Scan() => ShipmentScan.Record("APX-30000001", ScanType.Pickup, "CR-1042", "Riverside Depot", DateTimeOffset.UtcNow.AddMinutes(-5));
+    private static ShipmentScan Scan() => ShipmentScan.Record("APX-30000001", ScanType.Pickup, "CR-1042", "Riverside Depot", FixedTimes.Now.AddMinutes(-5));
 }

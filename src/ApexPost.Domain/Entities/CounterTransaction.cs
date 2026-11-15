@@ -5,7 +5,7 @@ namespace ApexPost.Domain.Entities;
 
 public sealed class CounterTransaction : IEquatable<CounterTransaction>
 {
-    public CounterTransaction(CounterTransactionId id, BranchCode branchCode, CounterCode counterCode, StaffId clerkId, IReadOnlyCollection<CounterTransactionLine> lines, Money subtotal, Money tax, PaymentMethod paymentMethod, DateTimeOffset? occurredAtUtc = null)
+    public CounterTransaction(CounterTransactionId id, BranchCode branchCode, CounterCode counterCode, StaffId clerkId, IReadOnlyCollection<CounterTransactionLine> lines, Money subtotal, Money tax, PaymentMethod paymentMethod, DateTimeOffset occurredAtUtc)
     {
         ArgumentNullException.ThrowIfNull(id);
         ArgumentNullException.ThrowIfNull(branchCode);
@@ -21,7 +21,7 @@ public sealed class CounterTransaction : IEquatable<CounterTransaction>
         _lines = [.. lines]; Subtotal = subtotal; Tax = tax;
         Payment = new Payment(paymentMethod, Total);
         Status = CounterTransactionStatus.Open;
-        OccurredAtUtc = (occurredAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
+        OccurredAtUtc = occurredAtUtc.ToUniversalTime();
     }
 
     // Used only when a stored transaction is materialized: lines and payment are loaded afterwards

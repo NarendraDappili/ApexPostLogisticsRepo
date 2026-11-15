@@ -73,7 +73,7 @@ public sealed class EfAuditStoreTests(SqlServerTestDatabase database)
     private static string Correlation() => $"corr-{Guid.NewGuid():N}";
 
     private static AuditRecord Record(string correlationId, string outcome, int statusCode, IReadOnlyDictionary<string, string>? routeValues = null) =>
-        new(DateTimeOffset.UtcNow, "STF-MANAGER-01", "BranchManager", "BR-NORTH", "CounterTransactions", "Void",
+        new(SqlTestData.Now, "STF-MANAGER-01", "BranchManager", "BR-NORTH", "CounterTransactions", "Void",
             routeValues ?? new Dictionary<string, string>(), statusCode, 12, correlationId, outcome);
 
     private sealed class FixedStaff(StaffId staffId) : ICurrentStaffContext

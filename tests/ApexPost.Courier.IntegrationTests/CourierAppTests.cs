@@ -22,14 +22,14 @@ public sealed class CourierAppTests : IDisposable
     [Fact]
     public async Task A_session_signs_in_records_scans_syncs_them_and_shows_the_status()
     {
-        var tomorrow = DateTimeOffset.UtcNow.AddDays(1).ToString(ConsoleScreen.TimeFormat, CultureInfo.InvariantCulture);
+        var inTheFuture = FixedTimes.FarFuture.ToString(ConsoleScreen.TimeFormat, CultureInfo.InvariantCulture);
         IReadOnlyList<ShipmentScan> scans = [];
 
         var output = await _app.RunAsync(
             [
                 "cr-001", "",                                                // login, then Enter: a development token
                 "1", "apx-30000001", "1", "Riverside Depot", "Front desk", "", // a pickup, now
-                "1", "APX-30000002", "3", "14 Elm Street", "", tomorrow,     // a delivery dated tomorrow
+                "1", "APX-30000002", "3", "14 Elm Street", "", inTheFuture,  // a delivery dated in the future
                 "2",                                                         // pending scans
                 "3",                                                         // sync now
                 "2",                                                         // pending again
@@ -46,7 +46,7 @@ public sealed class CourierAppTests : IDisposable
         Assert.Contains("Rejected by the server, not sent again: 1", output, StringComparison.Ordinal);
         Assert.Contains("1 synced, 1 failed, 0 still pending", output, StringComparison.Ordinal);
         Assert.Contains("Recent failures (newest first): 1", output, StringComparison.Ordinal);
-        // The API refused the delivery dated tomorrow with a 400 naming scans[1].scannedAtUtc; only that scan failed.
+        // The API refused the delivery dated in the future with a 400 naming scans[1].scannedAtUtc; only that scan failed.
         Assert.Contains("scannedAtUtc: scannedAtUtc cannot be in the future", output, StringComparison.Ordinal);
         Assert.Equal(0, _app.ExitCode);
         Assert.All(scans, scan => Assert.Equal("CR-001", scan.CourierId));

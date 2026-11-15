@@ -39,7 +39,7 @@ public class CounterTransactionTests
     {
         var transaction = new CounterTransaction(new("TX-1"), new("BR-1"), new("C-1"), new("CLERK-1"),
             [new(new ProductId("P-1"), "Envelope", 2, new(10m)), new(null, "Standard parcel", 1, new(8.5m))],
-            new(28.5m), new(0m), PaymentMethod.Card);
+            new(28.5m), new(0m), PaymentMethod.Card, TestTime.Now);
         transaction.MarkPaid();
         return transaction;
     }

@@ -17,7 +17,7 @@ namespace ApexPost.Infrastructure.IntegrationTests.Sql;
 [Collection(SqlServerCollection.Name)]
 public sealed class StoredProcedureTests(SqlServerTestDatabase database)
 {
-    private static readonly DateOnly Today = DateOnly.FromDateTime(DateTime.UtcNow);
+    private static readonly DateOnly Today = SqlTestData.Today;
 
     [Fact]
     public async Task Daily_branch_sales_validates_its_parameters_with_meaningful_errors()
@@ -101,7 +101,7 @@ public sealed class StoredProcedureTests(SqlServerTestDatabase database)
         var data = await SqlTestData.SeedAsync(database, stock: 5);
         await using var db = database.CreateContext();
 
-        var quantity = await new EfStockAdjustments(db).ApplyAsync(new StockAdjustment(data.Branch, data.Product, 3, "  Delivery received  ", data.Manager), new Sku(data.Product.Value));
+        var quantity = await new EfStockAdjustments(db).ApplyAsync(new StockAdjustment(data.Branch, data.Product, 3, "  Delivery received  ", data.Manager, SqlTestData.Now), new Sku(data.Product.Value));
 
         Assert.Equal(8, quantity);
         var history = await db.StockAdjustments.AsNoTracking().SingleAsync(adjustment => adjustment.BranchCode == data.Branch);
@@ -114,8 +114,8 @@ public sealed class StoredProcedureTests(SqlServerTestDatabase database)
         var data = await SqlTestData.SeedAsync(database, stock: 2);
         await using var db = database.CreateContext();
 
-        var refused = await Assert.ThrowsAsync<RuleViolationException>(() => new EfStockAdjustments(db).ApplyAsync(new StockAdjustment(data.Branch, data.Product, -3, "Count", data.Manager), new Sku(data.Product.Value)));
-        var unknownSku = await Assert.ThrowsAsync<RuleViolationException>(() => new EfStockAdjustments(db).ApplyAsync(new StockAdjustment(data.Branch, data.Product, 1, "Count", data.Manager), new Sku("NO-SUCH-SKU")));
+        var refused = await Assert.ThrowsAsync<RuleViolationException>(() => new EfStockAdjustments(db).ApplyAsync(new StockAdjustment(data.Branch, data.Product, -3, "Count", data.Manager, SqlTestData.Now), new Sku(data.Product.Value)));
+        var unknownSku = await Assert.ThrowsAsync<RuleViolationException>(() => new EfStockAdjustments(db).ApplyAsync(new StockAdjustment(data.Branch, data.Product, 1, "Count", data.Manager, SqlTestData.Now), new Sku("NO-SUCH-SKU")));
         var zero = await Assert.ThrowsAsync<SqlException>(() => db.Database.ExecuteSqlAsync($"EXEC dbo.usp_AdjustStock @BranchCode = {data.Branch.Value}, @Sku = {data.Product.Value}, @Delta = {0}, @Reason = {"Count"}, @ChangedBy = {data.Manager.Value}"));
 
         Assert.Equal("Stock cannot be reduced below zero.", refused.Message);
@@ -178,7 +178,7 @@ public sealed class StoredProcedureTests(SqlServerTestDatabase database)
 
         await using (var manager = database.CreateContext())
         {
-            await new EfStockAdjustments(manager).ApplyAsync(new StockAdjustment(data.Branch, data.Product, -5, "Damaged", data.Manager), new Sku(data.Product.Value));
+            await new EfStockAdjustments(manager).ApplyAsync(new StockAdjustment(data.Branch, data.Product, -5, "Damaged", data.Manager, SqlTestData.Now), new Sku(data.Product.Value));
         }
 
         tracked.RemoveStock(1);
@@ -229,7 +229,7 @@ public sealed class StoredProcedureTests(SqlServerTestDatabase database)
             new EfInventoryRepository(db).Add(new BranchInventoryItem(data.Branch, newProduct));
             await unitOfWork.SaveChangesAsync(token);
             // The procedure runs inside this transaction (it does not start its own) and refuses to go below zero.
-            return await new EfStockAdjustments(db).ApplyAsync(new StockAdjustment(data.Branch, newProduct, -1, "Count", data.Manager), new Sku(newProduct.Value), token);
+            return await new EfStockAdjustments(db).ApplyAsync(new StockAdjustment(data.Branch, newProduct, -1, "Count", data.Manager, SqlTestData.Now), new Sku(newProduct.Value), token);
         }));
 
         await using var check = database.CreateContext();
@@ -249,7 +249,8 @@ public sealed class StoredProcedureTests(SqlServerTestDatabase database)
     {
         var unitOfWork = new EfUnitOfWork(db);
         return new StockAdjustmentService(new EfStaffMemberRepository(db), new EfProductRepository(db), new EfInventoryRepository(db), new EfStockAdjustments(db), unitOfWork,
-            new InventoryService(new EfInventoryRepository(db), unitOfWork, new InventoryServiceOptions { LowStockThreshold = 2 }));
+            new InventoryService(new EfInventoryRepository(db), unitOfWork, new InventoryServiceOptions { LowStockThreshold = 2 }, SqlTestData.Clock()),
+            SqlTestData.Clock());
     }
 
     private sealed class LowStockRow

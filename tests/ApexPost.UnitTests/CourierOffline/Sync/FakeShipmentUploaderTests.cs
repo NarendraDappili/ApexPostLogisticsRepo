@@ -6,7 +6,7 @@ namespace ApexPost.UnitTests.CourierOffline.Sync;
 public class FakeShipmentUploaderTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 5, 12, 0, 0, TimeSpan.Zero);
-    private readonly FakeShipmentUploader _uploader = new(new FixedTimeProvider(Now));
+    private readonly FakeShipmentUploader _uploader = new(new FakeTimeProvider(Now));
 
     [Fact]
     public async Task A_new_scan_is_accepted_and_the_same_id_again_is_a_duplicate()

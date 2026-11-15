@@ -124,14 +124,16 @@ public sealed class AutoSyncTests : IDisposable
         host.Services.GetRequiredService<ITokenStore>().SaveAsync("fake-token-CR-001").AsTask().GetAwaiter().GetResult();
     }
 
-    private static ShipmentScan Scan() => ShipmentScan.Record("APX-30000001", ScanType.Pickup, "CR-001", "Riverside Depot", DateTimeOffset.UtcNow.AddMinutes(-10));
+    private static ShipmentScan Scan() => ShipmentScan.Record("APX-30000001", ScanType.Pickup, "CR-001", "Riverside Depot", FixedTimes.Now.AddMinutes(-10));
 
     private static async Task Until(Func<bool> condition, int seconds = 5)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(seconds);
+        // A Stopwatch, not the clock: the deadline only bounds the wait and never decides the outcome.
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        var limit = TimeSpan.FromSeconds(seconds);
         while (!condition())
         {
-            if (DateTime.UtcNow > deadline) Assert.Fail("The condition was not met in time.");
+            if (waited.Elapsed > limit) Assert.Fail("The condition was not met in time.");
             await Task.Delay(25);
         }
     }

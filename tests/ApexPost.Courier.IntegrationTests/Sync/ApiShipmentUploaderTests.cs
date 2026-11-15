@@ -86,7 +86,7 @@ public sealed class ApiShipmentUploaderTests : IDisposable
     [Fact]
     public async Task A_400_rejects_only_the_scans_it_names_and_leaves_the_others_pending_to_go_alone_next_time()
     {
-        ShipmentScan[] scans = [Scan("APX-30000001"), Scan("APX-30000001", scannedAt: DateTimeOffset.UtcNow.AddDays(1)), Scan("APX-30000001")];
+        ShipmentScan[] scans = [Scan("APX-30000001"), Scan("APX-30000001", scannedAt: FixedTimes.FarFuture), Scan("APX-30000001")];
 
         var outcomes = await Uploader.UploadAsync(scans);
 
@@ -164,5 +164,5 @@ public sealed class ApiShipmentUploaderTests : IDisposable
     }
 
     private static ShipmentScan Scan(string trackingNumber, ScanType type = ScanType.Pickup, string courierId = "CR-001", DateTimeOffset? scannedAt = null) =>
-        ShipmentScan.Record(trackingNumber, type, courierId, "Riverside Depot", scannedAt ?? DateTimeOffset.UtcNow.AddMinutes(-10));
+        ShipmentScan.Record(trackingNumber, type, courierId, "Riverside Depot", scannedAt ?? FixedTimes.Now.AddMinutes(-10));
 }

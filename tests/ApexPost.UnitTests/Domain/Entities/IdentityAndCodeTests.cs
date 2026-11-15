@@ -128,5 +128,5 @@ public sealed class IdentityAndCodeTests
     }
 
     private static CounterTransaction Transaction(string id, int quantity) =>
-        new(new(id), new("BR-1"), new("C-1"), new("CLERK-1"), [new(new ProductId("P-1"), "Envelope", quantity, new(10m))], new(10m * quantity), new(0m), PaymentMethod.Card);
+        new(new(id), new("BR-1"), new("C-1"), new("CLERK-1"), [new(new ProductId("P-1"), "Envelope", quantity, new(10m))], new(10m * quantity), new(0m), PaymentMethod.Card, TestTime.Now);
 }

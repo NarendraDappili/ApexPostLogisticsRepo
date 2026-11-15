@@ -20,16 +20,19 @@ public sealed class MoneyOrderWorkflowService
     private readonly IMoneyOrderPolicy _policy;
     private readonly IIdentityVerifier _identityVerifier;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly TimeProvider _clock;
     private readonly IEventPublisher? _events;
 
-    public MoneyOrderWorkflowService(IBranchRepository branches, IMoneyOrderRepository moneyOrders, IMoneyOrderPolicy policy, IIdentityVerifier identityVerifier, IUnitOfWork unitOfWork, IEventPublisher? events = null)
+    public MoneyOrderWorkflowService(IBranchRepository branches, IMoneyOrderRepository moneyOrders, IMoneyOrderPolicy policy, IIdentityVerifier identityVerifier, IUnitOfWork unitOfWork, TimeProvider clock, IEventPublisher? events = null)
     {
         ArgumentNullException.ThrowIfNull(branches);
         ArgumentNullException.ThrowIfNull(moneyOrders);
         ArgumentNullException.ThrowIfNull(policy);
         ArgumentNullException.ThrowIfNull(identityVerifier);
         ArgumentNullException.ThrowIfNull(unitOfWork);
+        ArgumentNullException.ThrowIfNull(clock);
         _unitOfWork = unitOfWork;
+        _clock = clock;
         _branches = branches;
         _moneyOrders = moneyOrders;
         _policy = policy;
@@ -65,7 +68,7 @@ public sealed class MoneyOrderWorkflowService
         if (_events is not null)
         {
             // The order is committed, so its event must not be lost if the client disconnects now.
-            await _events.PublishAsync(new MoneyOrderIssued(moneyOrder, requiresVerification), CancellationToken.None).ConfigureAwait(false);
+            await _events.PublishAsync(new MoneyOrderIssued(moneyOrder, requiresVerification) { OccurredAtUtc = _clock.GetUtcNow() }, CancellationToken.None).ConfigureAwait(false);
         }
 
         return new MoneyOrderCreationResult(moneyOrder, moneyOrder.Total, requiresVerification);

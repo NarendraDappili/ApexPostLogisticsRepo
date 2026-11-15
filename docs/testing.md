@@ -12,8 +12,8 @@ dotnet test tests/ApexPost.Infrastructure.IntegrationTests -c Release --no-build
 
 In Visual Studio, Test Explorer runs the same tests with no set-up. The solution groups them into **1 Unit** and **2 Integration** folders, the levels of the test pyramid ([TESTING-STRATEGY.md](../TESTING-STRATEGY.md)). The SQL Server tests find a server by themselves (see [The test database](#the-test-database)).
 
-Since Week 5 (15 November 2026) the 1151 tests are organised by level:
-- **Unit:** 457 tests in `ApexPost.UnitTests`.
+Since Week 5 (15 November 2026) the 1154 tests are organised by level:
+- **Unit:** 460 tests in `ApexPost.UnitTests`.
 - **Integration:** 694 tests:
   - Api 278;
   - Courier app 124;
@@ -23,7 +23,7 @@ Since Week 5 (15 November 2026) the 1151 tests are organised by level:
 
 The split is described in [Test projects](#test-projects).
 
-The latest run (13 November 2026) had **1151 tests passing, 0 failing, 0 skipped**, with a zero-warning build:
+The latest run (15 November 2026, step S4, run twice in a row) had **1154 tests passing, 0 failing, 0 skipped**, with a zero-warning build. The three Week 5 tests so far pin the injected clock (see [Determinism](#determinism)). The 1151 before Week 5 were:
 - 430 for Weeks 2 and 3;
 - 129 for the Week 4 courier offline store (Part A);
 - 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model;
@@ -93,7 +93,7 @@ Since Week 5 the projects follow the test pyramid ([TESTING-STRATEGY.md §4](../
 
 | Level | Project | Tests | Real dependency |
 |---|---|---|---|
-| Unit | `ApexPost.UnitTests` | 457: Domain 153, Application 152, Infrastructure 55 (model, migration text, simulation, design-time factory, password hasher), API 51 (custom rules, route constraint, controller architecture, correlation, the generated client's token handler), courier offline 39 (scan model, IDs, domain independence, the harness's fake uploader), courier core 7 (sync history, contract compatibility) | none: no database, no files written, no sockets |
+| Unit | `ApexPost.UnitTests` | 460: Domain 153, Application 155, Infrastructure 55 (model, migration text, simulation, design-time factory, password hasher), API 51 (custom rules, route constraint, controller architecture, correlation, the generated client's token handler), courier offline 39 (scan model, IDs, domain independence, the harness's fake uploader), courier core 7 (sync history, contract compatibility) | none: no database, no files written, no sockets |
 | Integration | `ApexPost.Infrastructure.IntegrationTests` | 90 | SQL Server |
 | Integration | `ApexPost.Api.IntegrationTests` | 278 | The API host (`WebApplicationFactory`) with real JWT validation. SQL Server is used for the endpoint, versioning, "Try it out" and generated-client tests; the other host tests use a connection string that is never opened. |
 | Integration | `ApexPost.Web.IntegrationTests` | 112 | The Web host and SQL Server. The CSV, display and demo-seed guard tests are unit level, but stay here because the unit project does not reference the Web app. |
@@ -139,6 +139,22 @@ The SQL Server tests never touch the development database:
   The fallback to LocalDB and the failure message were checked with the default instance made unreachable, and the Infrastructure tests pass on LocalDB (90 of 90).
 
 No test uses a real credential, external service or arbitrary delay; the one exception is described under the courier offline tests. All data is fictional.
+
+## Determinism
+
+No test reads the system clock, depends on test order, or shares mutable state ([TESTING-STRATEGY.md §8](../TESTING-STRATEGY.md#8-determinism)):
+
+- **Production code takes the time from the injected `TimeProvider`.** Since Week 5 nothing reads `DateTimeOffset.UtcNow`: the counter sale and stock adjustment constructors require their time, business events must be given theirs, and the request audit filter uses the clock it is given.
+- **Unit tests use a fixed instant** (`TestTime.Now`) or `FakeTimeProvider` from `Microsoft.Extensions.TimeProvider.Testing`. It replaced three home-made fixed clocks.
+- **Tests through a host that keeps the real clock use instants far from any real "now".** The courier app's retry pipeline, the Web host's cookies and JWT lifetime validation all keep the real clock, so these tests use:
+  - scans dated before any run, or in 2100;
+  - tokens valid from 2000 to 2100, or expired in 2000.
+
+  The Web sales report is anchored on the sale's stored day, so a run that crosses midnight UTC cannot fail.
+- **The SQL report tests seed and query one fixed day** (`SqlTestData.Today`).
+- **Waits are bounded by a `Stopwatch`**, never by the clock.
+
+The whole suite is run twice in a row before a step is finished.
 
 ## What is covered
 

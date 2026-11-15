@@ -13,7 +13,10 @@ namespace ApexPost.Api.IntegrationTests.Endpoints;
 [Collection(SqlApiCollection.Name)]
 public sealed class ScanUploadEndpointTests(SqlApiFactory factory)
 {
-    private static readonly DateTimeOffset Scanned = DateTimeOffset.UtcNow.AddHours(-2);
+    // Fixed instants, far from any real now (TESTING-STRATEGY.md §8): the API judges "not in the future" by its own
+    // clock, so a scan dated before any run is always valid and one dated 2100 is always refused.
+    private static readonly DateTimeOffset Scanned = new(2026, 11, 2, 7, 30, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset FarFuture = new(2100, 1, 1, 0, 0, 0, TimeSpan.Zero);
     private readonly HttpClient _client = factory.CreateClient();
 
     [Fact]
@@ -108,7 +111,9 @@ public sealed class ScanUploadEndpointTests(SqlApiFactory factory)
     [Fact]
     public async Task A_lost_race_is_a_409_that_says_to_send_again()
     {
-        // Ten rounds of two parallel uploads: at least one 409 is very likely, and every 409 must read the same.
+        // Ten rounds of two parallel uploads. A 409 is likely but never required: the test asserts only what must hold
+        // on every interleaving (each answer is 200 or 409, every 409 reads the same, the scan is stored once), so it
+        // cannot fail or pass by timing alone (TESTING-STRATEGY.md §8).
         for (var round = 0; round < 10; round++)
         {
             var number = await NewShipmentAsync();
@@ -138,7 +143,7 @@ public sealed class ScanUploadEndpointTests(SqlApiFactory factory)
     {
         var number = await NewShipmentAsync();
 
-        using var response = await UploadAsync(number, Scan("Pickup", Scanned), Scan("InTransit", DateTimeOffset.UtcNow.AddHours(1)));
+        using var response = await UploadAsync(number, Scan("Pickup", Scanned), Scan("InTransit", FarFuture));
         var problem = await response.JsonAsync();
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

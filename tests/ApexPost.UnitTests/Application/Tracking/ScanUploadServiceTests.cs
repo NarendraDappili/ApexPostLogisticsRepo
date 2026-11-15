@@ -143,7 +143,7 @@ public sealed class ScanUploadServiceTests
     public async Task A_concurrent_upload_that_wins_the_race_makes_this_one_a_retryable_conflict(Type conflictType)
     {
         var conflict = (Exception)Activator.CreateInstance(conflictType, "conflict", null)!;
-        var service = new ShipmentTrackingService(_store, _store, new SpyUnitOfWork { FailWith = conflict }, new FixedClock(Received));
+        var service = new ShipmentTrackingService(_store, _store, new SpyUnitOfWork { FailWith = conflict }, new FakeTimeProvider(Received));
 
         var exception = await Assert.ThrowsAsync<ScanUploadConflictException>(() => service.UploadScansAsync("APX-24000001", [Scan(TrackingScanType.Pickup, Scanned)]));
 
@@ -159,13 +159,8 @@ public sealed class ScanUploadServiceTests
         await Assert.ThrowsAsync<RequestValidationException>(() => Service().UploadScansAsync("APX-24000001", []));
     }
 
-    private ShipmentTrackingService Service() => new(_store, _store, _unitOfWork, new FixedClock(Received));
+    private ShipmentTrackingService Service() => new(_store, _store, _unitOfWork, new FakeTimeProvider(Received));
 
     private static UploadedScan Scan(TrackingScanType type, DateTimeOffset scannedAt) =>
         new("scan::" + Guid.CreateVersion7(), type, "Depot 4", "CR-001", scannedAt, null);
-
-    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
-    }
 }

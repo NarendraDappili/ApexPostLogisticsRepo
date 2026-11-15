@@ -29,7 +29,9 @@ public sealed class DevelopmentTokenTests(SqlApiFactory factory)
         Assert.Equal("Bearer", body.GetProperty("tokenType").GetString());
         Assert.Equal((TestTokens.Issuer, TestTokens.Audience), (token.Issuer, Assert.Single(token.Audiences)));
         Assert.Equal(("Kofi Boateng", "Courier", "CR-1042"), (token.Subject, token.GetClaim("role").Value, token.GetClaim(ApiRoles.CourierIdClaim).Value));
-        Assert.InRange(token.ValidTo - DateTime.UtcNow, TimeSpan.FromMinutes(59), TimeSpan.FromMinutes(61));
+        // Measured against the token's own start, not the clock; The_api_accepts_the_tokens_it_issued shows it is valid now.
+        Assert.Equal(TimeSpan.FromHours(1), token.ValidTo - token.ValidFrom);
+        Assert.Equal(token.ValidFrom, token.IssuedAt);
         Assert.Equal(token.ValidTo, body.GetProperty("expiresAtUtc").GetDateTimeOffset().UtcDateTime, TimeSpan.FromSeconds(1));
     }
 

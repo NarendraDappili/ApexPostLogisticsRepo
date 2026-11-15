@@ -17,6 +17,8 @@ namespace ApexPost.Api.IntegrationTests.Security;
 /// </summary>
 public sealed class AuthorizationTests
 {
+    // A fixed scan time before any real run (TESTING-STRATEGY.md §8); these tests are about roles, not time.
+    private static readonly DateTimeOffset ScannedAt = new(2026, 11, 2, 9, 25, 0, TimeSpan.Zero);
     private static readonly string CourierOnly = TestTokens.Create([ApiRoles.Courier]);
     private static readonly string AdminOnly = TestTokens.Create([ApiRoles.Admin], courierId: null);
 
@@ -92,7 +94,7 @@ public sealed class AuthorizationTests
     public async Task A_malformed_upload_is_a_400_before_its_courier_ids_are_checked()
     {
         using var response = await SendAsync(CourierOnly, "POST", "/api/v2/shipments/APX-99999999/scans",
-            JsonContent.Create(new { scans = new[] { new { scanId = "not-a-scan-id", scanType = "Pickup", location = "Depot 4", courierId = "CR-2001", scannedAtUtc = DateTimeOffset.UtcNow } } }));
+            JsonContent.Create(new { scans = new[] { new { scanId = "not-a-scan-id", scanType = "Pickup", location = "Depot 4", courierId = "CR-2001", scannedAtUtc = ScannedAt } } }));
         var problem = await response.JsonAsync();
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -143,7 +145,7 @@ public sealed class AuthorizationTests
             scanType = "Pickup",
             location = "Depot 4",
             courierId,
-            scannedAtUtc = DateTimeOffset.UtcNow.AddMinutes(-5),
+            scannedAtUtc = ScannedAt,
         }),
     });
 
