@@ -1,6 +1,6 @@
 # Courier app resilience
 
-The courier works on a phone network that drops out in lifts, basements and between towns, and the API itself can be restarting or overloaded. This file explains how the courier app ([`ApexPost.Courier`](src/ApexPost.Courier)) calls the API so that a weak network costs time, never scans. The code is [`ApiResilience.cs`](src/ApexPost.Courier/Api/ApiResilience.cs), built on `Microsoft.Extensions.Http.Resilience` (Polly 8).
+The courier works on a phone network that drops out in lifts, basements and between towns, and the API itself can be restarting or overloaded. This file explains how the courier app ([`ApexPost.Courier`](src/ApexPost.Courier), its logic in [`ApexPost.Courier.Core`](src/ApexPost.Courier.Core)) calls the API so that a weak network costs time, never scans. The code is [`ApiResilience.cs`](src/ApexPost.Courier.Core/Api/ApiResilience.cs), built on `Microsoft.Extensions.Http.Resilience` (Polly 8).
 
 There are two layers:
 - **Within one call**, the resilience pipeline below rides out short failures: a dropped packet, a server restarting, a timeout. It works in seconds.

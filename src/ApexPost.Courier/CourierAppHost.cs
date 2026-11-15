@@ -1,7 +1,6 @@
 using ApexPost.Courier.Api;
 using ApexPost.Courier.Offline.Domain;
 using ApexPost.Courier.Offline.Storage;
-using ApexPost.Courier.Offline.Sync;
 using ApexPost.Courier.Screens;
 using ApexPost.Courier.Sync;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,35 +40,15 @@ internal static class CourierAppHost
         builder.Services.AddSingleton<IScanRepository>(services => new CouchbaseScanRepository(
             services.GetRequiredService<CourierDatabase>(), services.GetRequiredService<ILogger<CouchbaseScanRepository>>()));
 
-        // The outbox uploads to the v2 API, in batches of 20, and marks each scan from the API's answer. AutoSync starts
-        // it when the network comes back (the console's ConnectivityChanged) and every minute while online.
-        builder.Services.AddSingleton<IShipmentUploader, ApiShipmentUploader>();
-        builder.Services.Configure<AutoSyncOptions>(builder.Configuration.GetSection(AutoSyncOptions.Section));
-        builder.Services.AddSingleton<INetworkStatus, SystemNetworkStatus>();
-        builder.Services.AddSingleton<AutoSyncService>();
-        builder.Services.AddSingleton(services => new OutboxService(
-            services.GetRequiredService<IScanRepository>(),
-            services.GetRequiredService<IShipmentUploader>(),
-            new OutboxOptions(),
-            services.GetRequiredService<ILogger<OutboxService>>()));
-        builder.Services.AddSingleton<SyncHistory>();
-        builder.Services.AddSingleton<SyncService>();
+        // The courier logic every app head shares: the v2 API client with its token handler and resilience pipeline, the
+        // uploader, the outbox, automatic sync and the session (ApexPost.Courier.Core, ADR 0032).
+        builder.Services.AddCourierCore(builder.Configuration);
 
-        // The v2 API: a typed client from IHttpClientFactory, its address from configuration, the courier's token added
-        // by AuthHeaderHandler from the token store.
-        builder.Services.AddOptions<ApexApiOptions>().Bind(builder.Configuration.GetSection(ApexApiOptions.Section));
-        builder.Services.AddSingleton<IValidateOptions<ApexApiOptions>, ApexApiOptionsValidator>();
+        // What this head supplies for the device: the token lives in memory only (a phone would use SecureStorage), and
+        // the network comes from the operating system (a phone would use Connectivity).
         builder.Services.AddSingleton<ITokenStore, InMemoryTokenStore>();
-        builder.Services.AddTransient<AuthHeaderHandler>();
-        // Retry, circuit breaker and timeouts (RESILIENCE.md). The resilience handler comes first, so every retry goes
-        // through AuthHeaderHandler again and picks up the current token.
-        builder.Services.Configure<ApiResilienceOptions>(builder.Configuration.GetSection(ApiResilienceOptions.Section));
-        builder.Services.AddSingleton<ServerAvailability>();
-        builder.Services.AddHttpClient<ApexApiClient>((services, client) => client.BaseAddress = services.GetRequiredService<IOptions<ApexApiOptions>>().Value.Root)
-            .AddApexApiResilience()
-            .AddHttpMessageHandler<AuthHeaderHandler>();
+        builder.Services.AddSingleton<INetworkStatus, SystemNetworkStatus>();
 
-        builder.Services.AddSingleton<CourierSession>();
         builder.Services.AddSingleton(services => new ConsoleScreen(input, screenOutput, services.GetRequiredService<ScanChangeMonitor>()));
         builder.Services.AddSingleton<LoginScreen>();
         builder.Services.AddSingleton<NewScanScreen>();

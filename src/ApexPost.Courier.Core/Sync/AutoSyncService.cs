@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace ApexPost.Courier.Sync;
 
 /// <summary>The Courier:AutoSync configuration section.</summary>
-internal sealed class AutoSyncOptions
+public sealed class AutoSyncOptions
 {
     public const string Section = "Courier:AutoSync";
 
@@ -31,7 +31,7 @@ internal sealed class AutoSyncOptions
 /// there is no network, no token (signed in offline), or nothing Pending. Runs never overlap: the outbox refuses a
 /// second one while the first is going.
 /// </summary>
-internal sealed class AutoSyncService(
+public sealed class AutoSyncService(
     INetworkStatus network,
     ITokenStore tokens,
     ScanChangeMonitor monitor,

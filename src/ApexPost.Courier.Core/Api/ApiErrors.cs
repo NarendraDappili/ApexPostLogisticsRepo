@@ -7,7 +7,7 @@ namespace ApexPost.Courier.Api;
 /// was one), or a success whose body could not be read. <see cref="Exception.Message"/> is written for the courier;
 /// <see cref="StatusCode"/> and <see cref="Problem"/> keep the technical details.
 /// </summary>
-internal sealed class ApexApiException : Exception
+public sealed class ApexApiException : Exception
 {
     public ApexApiException(HttpStatusCode statusCode, ApiProblem? problem, Exception? innerException = null)
         : this(statusCode, problem, FriendlyMessage(statusCode, problem), innerException)
@@ -67,7 +67,7 @@ internal sealed class ApexApiException : Exception
 }
 
 /// <summary>Why the server could not be reached at all.</summary>
-internal enum UnavailableReason
+public enum UnavailableReason
 {
     /// <summary>No connection: no network, DNS failure, connection refused or reset.</summary>
     NoConnection,
@@ -83,7 +83,7 @@ internal enum UnavailableReason
 /// The server gave no answer. Nothing is lost: the scans stay Pending on the device. <see cref="Exception.Message"/>
 /// is written for the courier.
 /// </summary>
-internal sealed class ApiUnavailableException(UnavailableReason reason, Exception innerException)
+public sealed class ApiUnavailableException(UnavailableReason reason, Exception innerException)
     : Exception(MessageFor(reason), innerException)
 {
     public UnavailableReason Reason { get; } = reason;

@@ -288,10 +288,10 @@ Steps: **S2** is the courier library extraction; **S3** the project restructure;
 
 | Class | Cases | Level | Risk | Decision | Reason |
 |---|---|---|---|---|---|
-| `ContractCompatibilityTests` | 4 | guard | R8 | Modified (S2, S4): moved to UnitTests | The client's records match `contracts/v2.json`; it moves with the client to `ApexPost.Courier.Core`. The scan time becomes a fixed instant. |
-| `SyncHistoryTests` | 3 | unit | R4 | Kept (moved to UnitTests, S2) | Sync history moves with the sync code to `ApexPost.Courier.Core` |
+| `ContractCompatibilityTests` | 4 | guard | R8 | Modified (S3, S4): moved to UnitTests | The client's records match `contracts/v2.json`. The records moved to `ApexPost.Courier.Core` in S2, so the test follows them to the unit project. The scan time becomes a fixed instant. |
+| `SyncHistoryTests` | 3 | unit | R4 | Kept (moved to UnitTests, S3) | Sync history moved with the sync code to `ApexPost.Courier.Core` in S2 |
 | `ScreenOutputTests` | 3 | unit | — | Kept | Console-only output; stays with the console app |
-| `ApexApiClientTests` | 13 | component | R6 | Kept | Typed client from the factory, with the token and address. The focused unit-level client suite is **added** beside it and does not replace it: this class proves the DI wiring. |
+| `ApexApiClientTests` | 13 | component | R6 | Modified (S2) | Typed client from the factory, with the token and address. The "never `new HttpClient()`" source guard now scans `ApexPost.Courier.Core` as well, because the client moved there. Without that change, the guard would have kept passing while no longer looking at the client. The focused unit-level client suite is **added** beside it and does not replace it: this class proves the DI wiring. |
 | `ApiShipmentUploaderTests` | 10 | component | R3, R4 | Modified (S4) | Scan times become fixed instants (far future for the refused case) |
 | `AutoSyncTests` | 5 | component | R4 | Modified (S4) | Fixed scan times; the wait helper uses a `Stopwatch` instead of the system clock |
 | `CourierAppTests` | 19 | component | R4, R7 | Modified (S4) | Whole scripted sessions; the "future time" input becomes a fixed far-future time |
@@ -301,9 +301,9 @@ Steps: **S2** is the courier library extraction; **S3** the project restructure;
 | `TokenHandlingTests` | 18 | component | R6, R5 | Modified (S4) | Token expiry uses fixed instants (the handler takes `TimeProvider`); the wait helper uses a `Stopwatch` |
 
 **Summary:** 102 classes. No class is removed or replaced. The existing tests protect real risks, and Week 5's additions sit beside them because they prove different things:
-- **Kept unchanged:** 43 classes.
+- **Kept unchanged:** 42 classes.
 - **Kept (moved):** 42 classes.
-- **Modified:** 17 classes, for determinism or because their code moves.
+- **Modified:** 18 classes, for determinism or because their code moved.
 
 Helper classes (fakes, factories, test databases) move with the tests that use them and are not listed.
 
@@ -418,7 +418,7 @@ The SQL Server used by the tests is found automatically:
 
 ## 10. The future MAUI courier app
 
-The courier client and sync code (`ApexApiClient`, `AuthHeaderHandler`, the resilience pipeline, `ApiShipmentUploader`, `AutoSyncService`, `CourierSession`, `SyncHistory`, and the `ITokenStore`/`INetworkStatus` seams) move from the console executable into a class library, **`ApexPost.Courier.Core`**. The console app keeps only its screens and console adapters.
+The courier client and sync code (`ApexApiClient`, `AuthHeaderHandler`, the resilience pipeline, `ApiShipmentUploader`, `AutoSyncService`, `CourierSession`, `SyncHistory`, and the `ITokenStore`/`INetworkStatus` seams) moved from the console executable into a class library, **`ApexPost.Courier.Core`**, in step S2 ([ADR 0032](docs/adr/0032-courier-core-library-for-every-app-head.md)). The console app keeps only its screens and console adapters, and registers the shared logic with one call to `AddCourierCore()`.
 
 - The Week 5 client, sync and BDD tests target code the MAUI app will reuse, so they carry over unchanged.
 - The MAUI app will add a `SecureStorage` token store and a `Connectivity` network status behind the same seams. An abstract contract test class for each seam runs against today's implementation now, and against the MAUI one later.
