@@ -4,15 +4,31 @@
 
 ```powershell
 dotnet build ApexPost.slnx -c Release -warnaserror
-dotnet test ApexPost.slnx -c Release --no-build
+dotnet test ApexPost.slnx -c Release --no-build                              # everything
+
+dotnet test tests/ApexPost.UnitTests -c Release --no-build                   # unit level: seconds, nothing installed
+dotnet test tests/ApexPost.Infrastructure.IntegrationTests -c Release --no-build   # one integration project at a time
 ```
+
+In Visual Studio, Test Explorer runs the same tests with no set-up. The solution groups them into **1 Unit** and **2 Integration** folders, the levels of the test pyramid ([TESTING-STRATEGY.md](../TESTING-STRATEGY.md)). The SQL Server tests find a server by themselves (see [The test database](#the-test-database)).
+
+Since Week 5 (15 November 2026) the 1151 tests are organised by level:
+- **Unit:** 457 tests in `ApexPost.UnitTests`.
+- **Integration:** 694 tests:
+  - Api 278;
+  - Courier app 124;
+  - Courier offline 90;
+  - Infrastructure 90;
+  - Web 112.
+
+The split is described in [Test projects](#test-projects).
 
 The latest run (13 November 2026) had **1151 tests passing, 0 failing, 0 skipped**, with a zero-warning build:
 - 430 for Weeks 2 and 3;
 - 129 for the Week 4 courier offline store (Part A);
 - 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model;
 - 97 for Part C, all in the API project: the OpenAPI documents, Swagger UI, versioning, the committed contracts and the generated client;
-- 221 for Part D: 90 in the API project (authentication, roles, the courierId rule, partner API keys, HTTPS and HSTS) and 131 for the courier console app (ApexPost.Courier.Tests).
+- 221 for Part D: 90 in the API project (authentication, roles, the courierId rule, partner API keys, HTTPS and HSTS) and 131 for the courier console app (now split between `ApexPost.UnitTests` and `ApexPost.Courier.IntegrationTests`).
 
 The Week 3 error-handling tests also pass with `DOTNET_TieredCompilation=0` (55 tests).
 
@@ -40,12 +56,14 @@ The Week 4 courier offline projects, measured on 5 November 2026 with the same c
 
 ## CI on GitHub Actions
 
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull request to `master`, and on pull requests into the Week 4 part branches (`week4-part*` and `week4/part*`), so each step is checked on Linux before its part reaches `master`:
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs on every push and pull request to `master`. It also runs on pull requests into the week branches (`week4-part*`, `week4/part*`, `week5-*`), so each step is checked on Linux before its week reaches `master`. It:
 1. builds with `-warnaserror`;
 2. fails if the EF Core model has changed without a migration (`dotnet ef migrations has-pending-model-changes`);
-3. starts a throwaway SQL Server 2022 container with a random password;
-4. runs every test, including the SQL Server tests;
-5. reruns the error-handling tests with `DOTNET_TieredCompilation=0`, so they also run on fully optimized, inlined code (ADR 0018).
+3. runs the **unit tests**, before any database exists, which shows they need none;
+4. starts a throwaway SQL Server 2022 container with a random password;
+5. runs each **integration** project. All of them run, and the step fails if any failed, so a red run says which level broke;
+6. keeps the results of every run as TRX files (the `test-results` artifact);
+7. reruns the error-handling tests with `DOTNET_TieredCompilation=0`, so they also run on fully optimized, inlined code (ADR 0018).
 
 Up to 10 November 2026 the workflow ran 52 times on GitHub, and 51 runs passed. The other one, [42671711996](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/42671711996) (the push of `2a3ce1a`, the Part D merge, to `master`), failed inside GitHub before any job started: it has no jobs and no log. The next push to `master`, `e0fd6ba`, passed ([42683856112](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/runs/42683856112)). The [list of runs](https://github.com/NarendraDappili/ApexPostLogisticsRepo/actions/workflows/ci.yml) is always current; the table below is a snapshot.
 
@@ -69,15 +87,20 @@ The other five runs are the pushes to `master` that merged #22–#26.
 
 ## Test projects
 
-| Project | Tests | Needs a database |
-|---|---|---|
-| `ApexPost.Domain.Tests` | 153 (81 Week 3, 72 tracking) | No |
-| `ApexPost.Application.Tests` | 152 (109 Week 3, 43 tracking) | No |
-| `ApexPost.Infrastructure.Tests` | 145 (128 Week 3, 17 tracking) | SQL Server (except the model, migration, simulation, design-time factory and password-hasher tests) |
-| `ApexPost.Web.IntegrationTests` | 112 | SQL Server (except the CSV, display and demo-seed guard tests) |
-| `ApexPost.Courier.Offline.Tests` | 129 | No: each test opens its own Couchbase Lite database in a temporary folder |
-| `ApexPost.Api.Tests` | 329 (142 Part B, 97 Part C, 90 Part D) | SQL Server for the endpoint, versioning, "Try it out" and generated-client tests (one disposable database per run). The composition, routing, error-handling, custom-rule, OpenAPI, Swagger UI, contract and most security tests use a connection string that is never opened. |
-| `ApexPost.Courier.Tests` | 131 | No: each test has its own Couchbase Lite folder, an in-memory fake of the API and a fake network, so no test reaches a real server |
+Since Week 5 the projects follow the test pyramid ([TESTING-STRATEGY.md §4](../TESTING-STRATEGY.md#4-test-projects)):
+- **One unit project.** It holds every test that needs no real dependency.
+- **One integration project per real dependency.** Each project boots exactly one kind of dependency. The Web and API apps also both declare a global `Program` class, so their tests cannot share an assembly.
+
+| Level | Project | Tests | Real dependency |
+|---|---|---|---|
+| Unit | `ApexPost.UnitTests` | 457: Domain 153, Application 152, Infrastructure 55 (model, migration text, simulation, design-time factory, password hasher), API 51 (custom rules, route constraint, controller architecture, correlation, the generated client's token handler), courier offline 39 (scan model, IDs, domain independence, the harness's fake uploader), courier core 7 (sync history, contract compatibility) | none: no database, no files written, no sockets |
+| Integration | `ApexPost.Infrastructure.IntegrationTests` | 90 | SQL Server |
+| Integration | `ApexPost.Api.IntegrationTests` | 278 | The API host (`WebApplicationFactory`) with real JWT validation. SQL Server is used for the endpoint, versioning, "Try it out" and generated-client tests; the other host tests use a connection string that is never opened. |
+| Integration | `ApexPost.Web.IntegrationTests` | 112 | The Web host and SQL Server. The CSV, display and demo-seed guard tests are unit level, but stay here because the unit project does not reference the Web app. |
+| Integration | `ApexPost.Courier.Offline.IntegrationTests` | 90 | Couchbase Lite: each test opens its own database in a temporary folder |
+| Integration | `ApexPost.Courier.IntegrationTests` | 124 | The courier app's real composition, with Couchbase Lite in a temporary folder, an in-memory fake of the API and a fake network. No test reaches a real server. |
+
+The move changed no test. The list of test cases before and after it is identical when compared by class, method and arguments.
 
 The final-review round added 136 tests:
 - 117 in new test files;
@@ -97,7 +120,7 @@ Week 4 Part D changed the existing API tests where the API itself changed, again
 - **Documents and contracts:** the OpenAPI tables gained the 401 on every operation and the 403 on the five role-protected ones. The v1/v2 parity tests compare the shipment and scan controllers and allow the one v2-only partner route.
 - **Theory data:** keys and tokens are built inside the test, from named cases, because Visual Studio's runner enumerates theory data in a different process than the one that runs the tests.
 
-Each test project references only the production project it tests (`ApexPost.Courier.Tests` references only `ApexPost.Courier`). The exception is `ApexPost.Api.Tests`, which also references `ApexPost.Client` and its console consumer, to run them against the real API. They use xUnit; the Web tests also use `Microsoft.AspNetCore.Mvc.Testing`.
+Each integration project references only the production project it tests (`ApexPost.Courier.IntegrationTests` references only `ApexPost.Courier`). The exception is `ApexPost.Api.IntegrationTests`, which also references `ApexPost.Client` and its console consumer, to run them against the real API. `ApexPost.UnitTests` references the class libraries and the API, but never the Web app. All projects use xUnit; the Web and API tests also use `Microsoft.AspNetCore.Mvc.Testing`.
 
 ## The test database
 
@@ -107,11 +130,19 @@ The SQL Server tests never touch the development database:
 - **Shared within a run, isolated per test.** The Infrastructure tests share one database per run through an xUnit collection fixture. Each test seeds its own rows, with codes carrying a unique suffix, so tests never see each other's data.
 - **One database per Web factory.** Each `WebApplicationFactory` gets its own database.
 - **A guard.** It refuses any database whose name lacks the `ApexPostDb_Test_` prefix, so a misconfigured connection string cannot point the tests at real data.
-- **Choosing the server.** It comes from `APEXPOST_TEST_SQLSERVER`, a connection string without a database name. The default is the local default instance with Windows authentication. CI starts a throwaway SQL Server container with a random password and sets this variable.
+- **Choosing the server, with no set-up.** One shared helper, [`tests/Shared/TestSqlServer.cs`](../tests/Shared/TestSqlServer.cs), is linked into the three SQL Server projects. It picks, in this order:
+  1. `APEXPOST_TEST_SQLSERVER`, a connection string without a database name, if it is set. CI sets it to a throwaway SQL Server container with a random password.
+  2. Otherwise, the local default instance, if it answers.
+  3. Otherwise, LocalDB, `(localdb)\MSSQLLocalDB`, which Visual Studio installs.
+  4. Otherwise, the run fails with a message naming what was tried and the variable to set. It never skips, because a skipped test reads as a passed one.
+
+  The fallback to LocalDB and the failure message were checked with the default instance made unreachable, and the Infrastructure tests pass on LocalDB (90 of 90).
 
 No test uses a real credential, external service or arbitrary delay; the one exception is described under the courier offline tests. All data is fictional.
 
 ## What is covered
+
+This section describes the coverage week by week, with the counts as each week left them. Since Week 5 the classes that need no real dependency are in `ApexPost.UnitTests`, and the rest are in the integration project for their dependency ([Test projects](#test-projects)). Class names did not change.
 
 ### Unit tests: no database
 
@@ -283,7 +314,7 @@ These cover Week 4 Part A. Every test runs on a real Couchbase Lite database in 
   - a duplicate-key race becomes the same 409 as the up-front check;
   - the upload is idempotent: oldest first, duplicates skipped, another shipment's scan ID rejected without naming it, a concurrent winner turned into a retryable 409.
 
-**API (142, `ApexPost.Api.Tests`).** `WebApplicationFactory` hosts the real `Program.cs`. The endpoint tests share one disposable database per run, migrated at start-up, with the same name guard as the Web tests.
+**API (142, `ApexPost.Api.IntegrationTests`).** `WebApplicationFactory` hosts the real `Program.cs`. The endpoint tests share one disposable database per run, migrated at start-up, with the same name guard as the Web tests.
 
 | Area | Tests show |
 |---|---|
@@ -296,7 +327,7 @@ These cover Week 4 Part A. Every test runs on a real Couchbase Lite database in 
 
 ### OpenAPI, versioning, contracts and client tests (Week 4, Part C)
 
-**API (95 more, `ApexPost.Api.Tests`).** Everything in the OpenAPI documents is checked for **both versions**. Each check was confirmed by a mutation: the code or the document was changed for a moment, the test failed, and the change was undone.
+**API (95 more, `ApexPost.Api.IntegrationTests`).** Everything in the OpenAPI documents is checked for **both versions**. Each check was confirmed by a mutation: the code or the document was changed for a moment, the test failed, and the change was undone.
 
 | Area | Tests show |
 |---|---|
@@ -312,7 +343,7 @@ These cover Week 4 Part A. Every test runs on a real Couchbase Lite database in 
 
 ### Security and the courier app (Week 4, Part D)
 
-**API security (90 more, `ApexPost.Api.Tests/Security` and `Client`).** Each area was mutation-checked: the protecting line was removed for a moment, tests failed, and it was put back.
+**API security (90 more, `ApexPost.Api.IntegrationTests/Security` and `Client`; the token-handler tests are now in `ApexPost.UnitTests`).** Each area was mutation-checked: the protecting line was removed for a moment, tests failed, and it was put back.
 
 | Area | Tests show |
 |---|---|
@@ -321,7 +352,7 @@ These cover Week 4 Part A. Every test runs on a real Couchbase Lite database in 
 | Partner API keys (`PartnerApiKeyTests`, `PartnerShipmentTests`) | No key, a wrong key, a near-miss of a real key, two keys, a key in the query string and a bearer token instead are all 401s with `WWW-Authenticate: ApiKey header="X-Api-Key"`, and a partner key opens no other route. Malformed key settings stop the start without naming the key. Two keys per partner work during a rotation. Refusals are logged without any key. A valid key reads status, city and the latest scan, without the recipient. The v2 document declares the key scheme on that route only. |
 | HTTPS (`TransportSecurityTests`, `BearerTokenHandlerTests`) | HTTP is redirected (308 outside Development, 307 in it) before any token is used; HSTS for a year outside Development and not in it. No source file turns certificate validation off. The generated client refuses to send a token over plain HTTP except to this machine. |
 
-**The courier app (131, `ApexPost.Courier.Tests`).** The app's real composition (`CourierAppHost`) runs every test, against a Couchbase Lite database in a temporary folder. `FakeApi` is a small in-memory stand-in for the API, following its rules: tokens, the courierId check, validation, unknown shipments, duplicates. `FakeNetwork` is a network the test switches on and off. Timing values are shortened to milliseconds.
+**The courier app (131, `ApexPost.Courier.IntegrationTests`).** The app's real composition (`CourierAppHost`) runs every test, against a Couchbase Lite database in a temporary folder. `FakeApi` is a small in-memory stand-in for the API, following its rules: tokens, the courierId check, validation, unknown shipments, duplicates. `FakeNetwork` is a network the test switches on and off. Timing values are shortened to milliseconds.
 
 | Area | Tests show |
 |---|---|

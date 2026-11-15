@@ -6,7 +6,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="ApexPost.Courier.Offline.Tests" />
+    <InternalsVisibleTo Include="ApexPost.Courier.Offline.IntegrationTests" />
+    <InternalsVisibleTo Include="ApexPost.UnitTests" />
   </ItemGroup>
 
   <PropertyGroup>
