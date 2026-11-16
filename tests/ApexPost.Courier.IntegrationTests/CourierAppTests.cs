@@ -20,7 +20,7 @@ public sealed class CourierAppTests : IDisposable
     public void Dispose() => _app.Dispose();
 
     [Fact]
-    public async Task A_session_signs_in_records_scans_syncs_them_and_shows_the_status()
+    public async Task FullSession_SignInScanSyncStatus_SyncsTheGoodScanAndFailsTheFutureOne()
     {
         var inTheFuture = FixedTimes.FarFuture.ToString(ConsoleScreen.TimeFormat, CultureInfo.InvariantCulture);
         IReadOnlyList<ShipmentScan> scans = [];
@@ -80,7 +80,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public async Task The_listener_log_line_and_the_live_count_follow_the_save()
+    public async Task NewScan_Saved_LogsTheChangeAndUpdatesTheLiveCountBeforeTheNextMenu()
     {
         var output = await _app.RunAsync(["CR-001", "", "1", "APX-30000001", "1", "Riverside Depot", "", "", "7"]);
 
@@ -92,7 +92,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public async Task Login_explains_a_bad_courier_id_and_asks_again()
+    public async Task Login_InvalidCourierId_ExplainsAndAsksAgain()
     {
         var output = await _app.RunAsync(["", "CR 001", "cr-007", "", "7"]);
 
@@ -101,7 +101,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public async Task Signing_out_returns_to_login_and_keeps_the_scans_on_the_device()
+    public async Task SignOut_ScansRecorded_ReturnsToLoginAndKeepsTheScansPending()
     {
         IReadOnlyList<ShipmentScan> scans = [];
 
@@ -125,7 +125,7 @@ public sealed class CourierAppTests : IDisposable
     [InlineData("APX-30000001", "9", "Depot", "Not saved: choose a scan type from 1 to 4.")]
     [InlineData("APX-30000001", "1", "", "Not saved: The value cannot be an empty string or composed entirely of whitespace.")]
     [InlineData("APX-30000001", "1", "Depot", "Not saved: the time must look like yyyy-MM-dd HH:mm.")]
-    public async Task Bad_scan_input_is_explained_and_nothing_is_saved(string tracking, string type, string location, string message)
+    public async Task NewScan_InvalidInput_ExplainsWhyAndSavesNothing(string tracking, string type, string location, string message)
     {
         IReadOnlyList<ShipmentScan> scans = [];
         string[] answers = type == "9"
@@ -139,7 +139,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public async Task Scans_stay_pending_on_the_device_across_restarts()
+    public async Task Restart_ScanSavedEarlier_StaysPendingOnTheDevice()
     {
         await _app.RunAsync(["CR-001", "", "1", "APX-30000001", "1", "Riverside Depot", "", "", "7"]);
 
@@ -150,7 +150,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public async Task Login_gets_a_token_for_the_courier_and_uploads_are_on()
+    public async Task Login_ServerAvailable_StoresTheCourierTokenAndTurnsUploadsOn()
     {
         string? token = null;
 
@@ -163,7 +163,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public async Task Without_the_server_the_courier_signs_in_offline_and_scans_are_still_saved()
+    public async Task Login_ServerDown_SignsInOfflineAndStillSavesScans()
     {
         _app.Api.Down = true;
         IReadOnlyList<ShipmentScan> scans = [];
@@ -179,7 +179,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public async Task Signing_out_forgets_the_token_and_the_next_courier_gets_their_own()
+    public async Task SignOut_NextCourierSignsIn_GetsTheirOwnToken()
     {
         string? token = null;
 
@@ -189,7 +189,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public async Task Without_a_network_sync_now_sends_nothing_and_the_scans_wait()
+    public async Task SyncNow_NoNetwork_SendsNothingAndKeepsTheScansPending()
     {
         IReadOnlyList<ShipmentScan> scans = [];
         _app.Network.IsAvailable = false;
@@ -202,7 +202,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public void The_app_watches_the_real_network_by_default()
+    public void CreateHost_DefaultConfiguration_UsesTheSystemNetworkStatus()
     {
         using var host = CourierAppHost.Create([$"--Courier:DataDirectory={_app.DataDirectory}"], TextReader.Null, TextWriter.Null);
 
@@ -213,7 +213,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public async Task A_byte_order_mark_at_the_start_of_piped_input_is_ignored()
+    public async Task Login_PipedInputStartsWithByteOrderMark_IgnoresTheMark()
     {
         var output = await _app.RunAsync(["﻿CR-001", "", "7"]);
 
@@ -222,7 +222,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public async Task End_of_input_closes_the_app()
+    public async Task RunAsync_InputEnds_SaysGoodbyeAndExitsWithZero()
     {
         var output = await _app.RunAsync([]);
 
@@ -231,7 +231,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public async Task The_logging_configuration_decides_which_log_lines_are_shown()
+    public async Task RunAsync_LogLevelWarning_HidesTheInformationLines()
     {
         var output = new StringWriter();
         using (var host = _app.CreateHost(new StringReader("CR-001\n\n1\nAPX-30000001\n1\nDepot\n\n\n7"), output, ["--Logging:LogLevel:Default=Warning"]))
@@ -244,7 +244,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public void The_database_folder_comes_from_configuration_or_defaults_to_local_app_data()
+    public void ResolveDataDirectory_ConfiguredOrBlank_UsesTheSettingOrLocalAppData()
     {
         using var host = _app.CreateHost(TextReader.Null, TextWriter.Null);
 
@@ -256,7 +256,7 @@ public sealed class CourierAppTests : IDisposable
     }
 
     [Fact]
-    public void A_second_app_on_the_same_folder_is_refused()
+    public void CreateApp_SecondAppOnTheSameFolder_ThrowsDatabaseInUse()
     {
         using var first = _app.CreateHost(TextReader.Null, TextWriter.Null);
         _ = first.Services.GetRequiredService<CourierApp>();

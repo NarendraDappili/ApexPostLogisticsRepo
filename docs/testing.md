@@ -226,8 +226,8 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
 
 | Week 2 test (removed) | Mechanism it tested | Replaced by |
 |---|---|---|
-| `Failed_transaction_save_compensates_previously_removed_inventory` | Compensating stock writes after a failed JSON save | `Failed_commit_persists_nothing_and_raises_no_sale_events` (Application); `A_sale_that_fails_part_way_through_the_commit_rolls_back_stock_and_transaction_rows_together` (SQL Server) |
-| `Cancelled_transaction_save_still_compensates_previously_removed_inventory` | Compensation ignoring request cancellation | `Cancelled_commit_persists_nothing_and_raises_no_sale_events` (Application) |
+| `Failed_transaction_save_compensates_previously_removed_inventory` | Compensating stock writes after a failed JSON save | `CheckoutAsync_CommitFails_ThrowsAndRaisesNoSaleEvents` (Application); `A_sale_that_fails_part_way_through_the_commit_rolls_back_stock_and_transaction_rows_together` (SQL Server) |
+| `Cancelled_transaction_save_still_compensates_previously_removed_inventory` | Compensation ignoring request cancellation | `CheckoutAsync_CommitCancelled_ThrowsAndRaisesNoSaleEvents` (Application) |
 | `Reports_group_actual_branch_data_without_identity_details` | The in-memory `BranchReportService` | `The_week_2_report_scenario_gives_the_same_figures_from_sql_server` (SQL Server). It seeds the same scenario and keeps the same ten assertions and expected figures. It also checks that the report type holds counts only, never identity data. |
 | `Reports_propagate_cancellation` | Same service | `Daily_sales_include_the_tax_charged_and_every_report_honours_cancellation`, covering all four reports |
 

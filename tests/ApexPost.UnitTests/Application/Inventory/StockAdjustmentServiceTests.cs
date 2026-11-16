@@ -10,7 +10,7 @@ namespace ApexPost.UnitTests.Application.Inventory;
 public sealed class StockAdjustmentServiceTests
 {
     [Fact]
-    public async Task An_adjustment_of_existing_stock_runs_the_procedure_in_one_transaction_and_raises_a_low_stock_alert()
+    public async Task AdjustAsync_ExistingStockReduced_RunsTheProcedureInOneTransactionAndRaisesStockLow()
     {
         var fixture = new Fixture(stock: 12);
 
@@ -42,7 +42,7 @@ public sealed class StockAdjustmentServiceTests
     }
 
     [Fact]
-    public async Task A_first_delivery_saves_a_new_stock_row_before_the_procedure_inside_the_same_transaction()
+    public async Task AdjustAsync_FirstDelivery_AddsTheStockRowBeforeTheProcedureInOneTransaction()
     {
         var fixture = new Fixture(stock: null);
 
@@ -54,7 +54,7 @@ public sealed class StockAdjustmentServiceTests
     }
 
     [Fact]
-    public async Task Removing_stock_the_branch_does_not_hold_is_refused_without_touching_the_database()
+    public async Task AdjustAsync_RemovingStockTheBranchDoesNotHold_ThrowsWithoutTouchingTheDatabase()
     {
         var fixture = new Fixture(stock: null);
 
@@ -68,7 +68,7 @@ public sealed class StockAdjustmentServiceTests
     [Theory]
     [InlineData("CLERK-A")]
     [InlineData("MGR-B")]
-    public async Task Only_a_branch_manager_of_the_same_branch_may_adjust_stock(string staffId)
+    public async Task AdjustAsync_NotAManagerOfThatBranch_ThrowsBeforeAnyTransaction(string staffId)
     {
         var fixture = new Fixture(stock: 5);
 
@@ -78,7 +78,7 @@ public sealed class StockAdjustmentServiceTests
     }
 
     [Fact]
-    public async Task A_zero_change_or_a_missing_reason_is_rejected_by_the_domain_rules_first()
+    public async Task AdjustAsync_ZeroChangeOrBlankReason_ThrowsFromTheDomainRules()
     {
         var fixture = new Fixture(stock: 5);
 

@@ -22,7 +22,7 @@ Compared between the Week 2 merge (`b30c46a`) and now. Domain tests: all unchang
 | Behaviour replaced | 2 | `Failed_transaction_save_compensates_previously_removed_inventory` and `Cancelled_transaction_save_still_compensates_previously_removed_inventory` checked that a failed save **put the stock back by hand**. Compensation no longer exists: stock, sale, lines and payment are one commit that either happens or does not. | Replaced, see below |
 | Moved to SQL Server | 2 | `BranchReportServiceTests` tested the Application report service, which was deleted when the reports moved into SQL. | Ported with the **same data and the same expected figures**, see below |
 
-**The two compensation tests** became `Failed_commit_persists_nothing_and_raises_no_sale_events` and `Cancelled_commit_persists_nothing_and_raises_no_sale_events`. They keep the business rule ("a failed or cancelled sale leaves no trace"):
+**The two compensation tests** became `Failed_commit_persists_nothing_and_raises_no_sale_events` and `Cancelled_commit_persists_nothing_and_raises_no_sale_events`. In Week 5 they were renamed to `CheckoutAsync_CommitFails_ThrowsAndRaisesNoSaleEvents` and `CheckoutAsync_CommitCancelled_ThrowsAndRaisesNoSaleEvents`, so that their class uses one naming style (TESTING-STRATEGY.md §4.3). They keep the business rule ("a failed or cancelled sale leaves no trace"):
 - the commit was attempted once and did not succeed;
 - no sale event was raised.
 

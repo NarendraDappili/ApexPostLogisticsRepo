@@ -135,6 +135,8 @@ The unit tests, by contrast, have no runtime dependency, so they are **consolida
 
 The tests from Weeks 2 to 4 use behaviour sentences, such as `Sending_the_same_scans_again_stores_nothing_and_reports_duplicates`. These already state the scenario and the result, and their class names the unit. They keep their names: renaming 1151 tests would rewrite history and Test Explorer baselines and add no confidence. A test gets the new form only when a Week 5 change rewrites it.
 
+**One convention per class.** A class never mixes the two styles. Adding Week 5 tests left four classes mixed: `CourierAppTests`, `CounterTransactionWorkflowServiceTests`, `MoneyOrderWorkflowServiceTests` and `StockAdjustmentServiceTests`. Their 47 older tests were renamed to `Method_Scenario_ExpectedResult` and their bodies were not touched. For example, `Failed_commit_persists_nothing_and_raises_no_sale_events` became `CheckoutAsync_CommitFails_ThrowsAndRaisesNoSaleEvents`. A reader of one class then sees one way of naming. Any other class still uses a single style throughout.
+
 **Arrange, Act, Assert.** A unit test has exactly one Act. New tests mark the three parts with `// Arrange`, `// Act` and `// Assert` comments; older tests separate them with blank lines. Only an integration journey, such as a whole courier session, may contain a sequence of actions.
 
 **Parameterised tests.** `[Theory]` with `[InlineData]` rows, one row per named case:
