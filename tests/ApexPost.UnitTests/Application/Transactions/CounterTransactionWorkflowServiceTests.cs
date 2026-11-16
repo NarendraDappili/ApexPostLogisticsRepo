@@ -14,7 +14,7 @@ namespace ApexPost.UnitTests.Application.Transactions;
 public sealed class CounterTransactionWorkflowServiceTests
 {
     [Fact]
-    public async Task Checkout_creates_a_mixed_paid_basket_priced_on_the_server_and_uses_configured_tax()
+    public async Task CheckoutAsync_RetailAndShipmentLines_PricesOnTheServerWithConfiguredTax()
     {
         var fixture = new Fixture(stock: 5);
         fixture.Shipments.Items.Add(Shipment("SHP-1", "TX-1"));
@@ -30,7 +30,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Checkout_accepts_several_retail_lines_in_one_basket()
+    public async Task CheckoutAsync_SeveralRetailLines_AcceptsAllAndTakesTheirStock()
     {
         var fixture = new Fixture(stock: 10);
         var request = fixture.Request() with { RetailLines = [new("P-1", 2), new("P-1", 3)] };
@@ -43,7 +43,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Checkout_rejects_shipments_from_another_transaction_or_branch_and_bills_a_shipment_once()
+    public async Task CheckoutAsync_ShipmentOfAnotherTransactionOrRepeated_RefusesItOrBillsItOnce()
     {
         var fixture = new Fixture();
         fixture.Shipments.Items.Add(Shipment("SHP-OTHER", "TX-OTHER"));
@@ -57,7 +57,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Checkout_rejects_insufficient_stock_without_changing_inventory()
+    public async Task CheckoutAsync_InsufficientStock_ThrowsAndLeavesInventoryUnchanged()
     {
         var fixture = new Fixture(stock: 1);
         await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 2)));
@@ -65,7 +65,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Checkout_rejects_inactive_or_wrong_branch_clerks_and_closed_branches()
+    public async Task CheckoutAsync_InactiveOrOtherBranchClerkOrClosedBranch_Throws()
     {
         var fixture = new Fixture();
         fixture.Clerk.Deactivate();
@@ -79,7 +79,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Checkout_requires_verified_same_context_money_order_when_above_threshold()
+    public async Task CheckoutAsync_MoneyOrderAboveThreshold_RequiresVerificationInTheSameContext()
     {
         var fixture = new Fixture();
         fixture.MoneyOrders.Order = CreateMoneyOrder("MO-1", "TX-1", 101m, IdentityVerificationOutcome.Failed);
@@ -91,7 +91,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Void_and_refund_require_assigned_active_branch_manager_and_reason_and_restore_stock()
+    public async Task RefundAsync_ManagerAndReasonChecked_RefundsOnceAndRestoresStock()
     {
         var fixture = new Fixture(stock: 5);
         var paid = await fixture.Service.CheckoutAsync(fixture.Request());
@@ -107,7 +107,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Void_cancels_a_paid_sale_and_returns_its_stock()
+    public async Task VoidAsync_PaidSale_VoidsReturnsStockAndRefusesASecondReversal()
     {
         var fixture = new Fixture(stock: 5);
         var paid = await fixture.Service.CheckoutAsync(fixture.Request(retailQuantity: 3));
@@ -123,7 +123,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Void_transitions_an_open_transaction_without_returning_stock_it_never_took()
+    public async Task VoidAsync_OpenTransaction_VoidsWithoutReturningStock()
     {
         var fixture = new Fixture();
         var open = new CounterTransaction(new("OPEN-1"), new("BR-A"), new("C-1"), new("CLERK-A"), [new(new ProductId("P-1"), "Envelope", 1, new(10m))], new(10m), new(1m), PaymentMethod.Cash, TestTime.Now);
@@ -137,7 +137,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Checkout_propagates_cancellation_without_changing_stock()
+    public async Task CheckoutAsync_Cancelled_ThrowsAndLeavesStockUnchanged()
     {
         var fixture = new Fixture(stock: 5);
         using var cancellation = new CancellationTokenSource();
@@ -148,7 +148,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Concurrent_checkouts_cannot_oversell_branch_stock_in_one_process()
+    public async Task CheckoutAsync_TenConcurrentSalesOfFiveInStock_SellsExactlyFive()
     {
         var fixture = new Fixture(stock: 5);
         var results = await Task.WhenAll(Enumerable.Range(1, 10).Select(async index =>
@@ -162,7 +162,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task A_sale_that_crosses_the_low_stock_threshold_raises_a_low_stock_alert_and_a_completed_event()
+    public async Task CheckoutAsync_SaleCrossesLowStockThreshold_RaisesStockLowAndTransactionCompleted()
     {
         var notifications = new RecordingNotificationSender();
         var observer = new RecordingObserver();
@@ -215,7 +215,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Void_and_refund_emit_simulated_notifications_and_delivery_failure_is_propagated()
+    public async Task RefundAndVoid_NotifierWorksOrFails_SendsTheNotificationOrPropagatesTheFailure()
     {
         var notifications = new RecordingNotificationSender();
         var fixture = new Fixture(stock: 50) { Notifications = notifications };
@@ -235,7 +235,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     // one commit, so these tests prove the commit is attempted once and that nothing is raised when it fails.
     // Proof that the database rows really roll back together belongs to the SQL Server integration tests.
     [Fact]
-    public async Task Failed_commit_persists_nothing_and_raises_no_sale_events()
+    public async Task CheckoutAsync_CommitFails_ThrowsAndRaisesNoSaleEvents()
     {
         var observer = new RecordingObserver();
         var fixture = new Fixture(stock: 3) { UnitOfWork = new SpyUnitOfWork { FailWith = new IOException("write failed") }, ExtraObserver = observer };
@@ -247,7 +247,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Cancelled_commit_persists_nothing_and_raises_no_sale_events()
+    public async Task CheckoutAsync_CommitCancelled_ThrowsAndRaisesNoSaleEvents()
     {
         using var cancellation = new CancellationTokenSource();
         var observer = new RecordingObserver();
@@ -260,7 +260,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Checkout_and_reversal_each_commit_exactly_once()
+    public async Task CheckoutThenVoid_BothSucceed_CommitOnceEach()
     {
         var fixture = new Fixture(stock: 5);
         fixture.Shipments.Items.Add(Shipment("SHP-1", "TX-1"));
@@ -273,7 +273,7 @@ public sealed class CounterTransactionWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Rejected_checkout_or_reversal_never_commits()
+    public async Task CheckoutOrRefund_Refused_NeverCommits()
     {
         var fixture = new Fixture(stock: 1);
 

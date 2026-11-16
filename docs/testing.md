@@ -13,19 +13,19 @@ dotnet test tests/ApexPost.Specs -c Release --no-build                       # t
 
 In Visual Studio, Test Explorer runs the same tests with no set-up. The solution groups them into **1 Unit**, **2 Integration** and **3 Specs** folders, the levels of the test pyramid ([TESTING-STRATEGY.md](../TESTING-STRATEGY.md)). The SQL Server tests find a server by themselves (see [The test database](#the-test-database)).
 
-Since Week 5 (15 November 2026) the 1301 tests are organised by level:
-- **Unit:** 594 tests in `ApexPost.UnitTests` (45.7%).
+Since Week 5 (15 November 2026) the 1323 tests are organised by level:
+- **Unit:** 605 tests in `ApexPost.UnitTests` (45.7%).
 - **Integration:** 695 tests:
   - Api 278;
   - Courier app 125;
   - Courier offline 90;
   - Infrastructure 90;
   - Web 112.
-- **Acceptance:** 12 Gherkin scenarios in `ApexPost.Specs` (Reqnroll): 7 for registering a shipment and 5 for courier scans reaching head office ([TESTING-STRATEGY.md §4.4](../TESTING-STRATEGY.md#44-acceptance-scenarios-bdd-with-reqnroll)).
+- **Acceptance:** 23 Gherkin scenario cases in `ApexPost.Specs` (Reqnroll), in three features: registering a shipment (7), courier scans reaching head office (5) and changing a shipment's status (11, drafted with Copilot and reviewed; [COPILOT-LOG.md](../COPILOT-LOG.md)) ([TESTING-STRATEGY.md §4.4](../TESTING-STRATEGY.md#44-acceptance-scenarios-bdd-with-reqnroll)).
 
 The split is described in [Test projects](#test-projects).
 
-The latest run (15 November 2026, step S10a; the record is in [docs/week5/TEST-RUN.md](week5/TEST-RUN.md)) had **1301 tests passing, 0 failing, 0 skipped**, with a zero-warning build and 96.6% line coverage. The 150 Week 5 tests so far: 2 close gaps the coverage report found ([Line coverage](#line-coverage)); 12 acceptance scenarios in Gherkin; 12 build the courier double-scan guard test-first ([TDD-LOG.md](../TDD-LOG.md)); 3 pin the injected clock (see [Determinism](#determinism)); 36 isolate units with Moq and a fake HTTP handler, or guard against real network use ([TESTING-STRATEGY.md §7](../TESTING-STRATEGY.md#7-isolation-mocks-fakes-and-real-dependencies)); 85 are boundary tables (the full status and scan-decision tables, the 30 kg counter limit, the exact scan-time limit; [TESTING-STRATEGY.md §4.3](../TESTING-STRATEGY.md#43-conventions-in-every-test-project)). The 1151 before Week 5 were:
+The latest run (15 November 2026, the final Week 5 run; the record is in [docs/week5/TEST-RUN.md](week5/TEST-RUN.md)) had **1323 tests passing, 0 failing, 0 skipped**, with a zero-warning build and 96.6% line coverage. The 172 Week 5 tests: 22 drafted by GitHub Copilot and kept after review ([COPILOT-LOG.md](../COPILOT-LOG.md)); 2 close gaps the coverage report found ([Line coverage](#line-coverage)); 12 acceptance scenarios in Gherkin; 12 build the courier double-scan guard test-first ([TDD-LOG.md](../TDD-LOG.md)); 3 pin the injected clock (see [Determinism](#determinism)); 36 isolate units with Moq and a fake HTTP handler, or guard against real network use ([TESTING-STRATEGY.md §7](../TESTING-STRATEGY.md#7-isolation-mocks-fakes-and-real-dependencies)); 85 are boundary tables (the full status and scan-decision tables, the 30 kg counter limit, the exact scan-time limit; [TESTING-STRATEGY.md §4.3](../TESTING-STRATEGY.md#43-conventions-in-every-test-project)). The 1151 before Week 5 were:
 - 430 for Weeks 2 and 3;
 - 129 for the Week 4 courier offline store (Part A);
 - 274 for the Week 4 tracking API (Part B): 142 in the new API project, plus 72 Domain, 43 Application and 17 Infrastructure tests for the tracking model;
@@ -48,11 +48,11 @@ dotnet reportgenerator "-reports:TestResults/coverage/*/*.cobertura.xml" "-targe
 
 The report covers production code only. It leaves out the test projects, EF migrations, generated code (source generators, Razor views) and `Program.cs`, the same rules as earlier weeks. `TestResults/coverage/report/index.html` is the browsable report (not committed). [docs/week5/coverage-summary.md](week5/coverage-summary.md) is the committed summary of the run in [docs/week5/TEST-RUN.md](week5/TEST-RUN.md).
 
-**15 November 2026 (Week 5): 96.6% of lines, 87% of branches.**
+**15 November 2026 (Week 5): 96.6% of lines, 87.3% of branches.**
 
 | Assembly | Lines | | Assembly | Lines |
 |---|---|---|---|---|
-| ApexPost.Api | 99.6% | | ApexPost.Courier.Core | 97.7% |
+| ApexPost.Api | 99.6% | | ApexPost.Courier.Core | 98.0% |
 | ApexPost.Application | 99.0% | | ApexPost.Courier.Offline | 96.0% |
 | ApexPost.Infrastructure | 99.3% | | ApexPost.Courier.Offline.Harness | 95.4% |
 | ApexPost.Domain | 94.0% | | ApexPost.Courier (console head) | 90.2% |
@@ -116,13 +116,13 @@ Since Week 5 the projects follow the test pyramid ([TESTING-STRATEGY.md §4](../
 
 | Level | Project | Tests | Real dependency |
 |---|---|---|---|
-| Unit | `ApexPost.UnitTests` | 594: Domain 231, Application 168, Infrastructure 55 (model, migration text, simulation, design-time factory, password hasher), API 59 (custom rules, the scan-time limit, the exception handler's validation mapping, route constraint, controller architecture, correlation, the generated client's token handler), courier offline 55 (scan model, IDs, domain independence, the harness's fake uploader, the outbox with Moq, the double-scan guard built test-first), courier core 14 (sync history, contract compatibility, the API client on a fake HTTP handler), guards 12 (no real network in any test) | none: no database, no files written, no sockets |
+| Unit | `ApexPost.UnitTests` | 605: Domain 231, Application 168, Infrastructure 55 (model, migration text, simulation, design-time factory, password hasher), API 59 (custom rules, the scan-time limit, the exception handler's validation mapping, route constraint, controller architecture, correlation, the generated client's token handler), courier offline 55 (scan model, IDs, domain independence, the harness's fake uploader, the outbox with Moq, the double-scan guard built test-first), courier core 25 (sync history, contract compatibility, the API client on a fake HTTP handler, the uploader's answer rules drafted with Copilot), guards 12 (no real network in any test) | none: no database, no files written, no sockets |
 | Integration | `ApexPost.Infrastructure.IntegrationTests` | 90 | SQL Server |
 | Integration | `ApexPost.Api.IntegrationTests` | 278 | The API host (`WebApplicationFactory`) with real JWT validation. SQL Server is used for the endpoint, versioning, "Try it out" and generated-client tests; the other host tests use a connection string that is never opened. |
 | Integration | `ApexPost.Web.IntegrationTests` | 112 | The Web host and SQL Server. The CSV, display and demo-seed guard tests are unit level, but stay here because the unit project does not reference the Web app. |
 | Integration | `ApexPost.Courier.Offline.IntegrationTests` | 90 | Couchbase Lite: each test opens its own database in a temporary folder |
 | Integration | `ApexPost.Courier.IntegrationTests` | 125 | The courier app's real composition, with Couchbase Lite in a temporary folder, an in-memory fake of the API and a fake network. No test reaches a real server. |
-| Acceptance | `ApexPost.Specs` | 12 scenarios | Head office (the API in memory over its own SQL Server database) and, for scan sync, a courier device composed by `AddCourierCore()` over Couchbase Lite in a temporary folder |
+| Acceptance | `ApexPost.Specs` | 23 scenario cases in 3 features | Head office (the API in memory over its own SQL Server database) and, for scan sync, a courier device composed by `AddCourierCore()` over Couchbase Lite in a temporary folder |
 
 The move changed no test. The list of test cases before and after it is identical when compared by class, method and arguments.
 
@@ -226,8 +226,8 @@ The brief asks for the Week 2 business-rule tests to pass unchanged against the 
 
 | Week 2 test (removed) | Mechanism it tested | Replaced by |
 |---|---|---|
-| `Failed_transaction_save_compensates_previously_removed_inventory` | Compensating stock writes after a failed JSON save | `Failed_commit_persists_nothing_and_raises_no_sale_events` (Application); `A_sale_that_fails_part_way_through_the_commit_rolls_back_stock_and_transaction_rows_together` (SQL Server) |
-| `Cancelled_transaction_save_still_compensates_previously_removed_inventory` | Compensation ignoring request cancellation | `Cancelled_commit_persists_nothing_and_raises_no_sale_events` (Application) |
+| `Failed_transaction_save_compensates_previously_removed_inventory` | Compensating stock writes after a failed JSON save | `CheckoutAsync_CommitFails_ThrowsAndRaisesNoSaleEvents` (Application); `A_sale_that_fails_part_way_through_the_commit_rolls_back_stock_and_transaction_rows_together` (SQL Server) |
+| `Cancelled_transaction_save_still_compensates_previously_removed_inventory` | Compensation ignoring request cancellation | `CheckoutAsync_CommitCancelled_ThrowsAndRaisesNoSaleEvents` (Application) |
 | `Reports_group_actual_branch_data_without_identity_details` | The in-memory `BranchReportService` | `The_week_2_report_scenario_gives_the_same_figures_from_sql_server` (SQL Server). It seeds the same scenario and keeps the same ten assertions and expected figures. It also checks that the report type holds counts only, never identity data. |
 | `Reports_propagate_cancellation` | Same service | `Daily_sales_include_the_tax_charged_and_every_report_honours_cancellation`, covering all four reports |
 

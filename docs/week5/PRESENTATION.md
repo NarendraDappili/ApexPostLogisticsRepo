@@ -30,8 +30,8 @@ The order is driven by dependencies, not by the order of the brief's tasks:
 | S6 Mocking & isolation | Task 3 | Moq on the tracking service, outbox and Week 3 shipping service; the client on a fake `HttpMessageHandler`; SQL Server instead of a mocked `DbContext`; `WebApplicationFactory` with real JWT | [TESTING-STRATEGY.md §7](../../TESTING-STRATEGY.md#7-isolation-mocks-fakes-and-real-dependencies), §9 | ✓ done |
 | S7 TDD: double-scan guard | Task 4 | A second identical scan within 2 minutes is not saved again, built RED → GREEN → REFACTOR | [TDD-LOG.md](../../TDD-LOG.md), Git history | ✓ done |
 | S8 BDD with Reqnroll | Task 5 | `ShipmentCreation.feature` (API level) and `ScanSync.feature` (courier device to API) | [TESTING-STRATEGY.md §4.4](../../TESTING-STRATEGY.md#44-acceptance-scenarios-bdd-with-reqnroll), `tests/ApexPost.Specs` | ✓ done |
-| S9 Copilot test drafting | Task 6 | Copilot drafts for `OutboxService` and one feature; review decisions; two break-it proofs | `COPILOT-LOG.md` | planned |
-| S10 Results, reflection & viva | Task 7 | The full run per level, coverage as evidence, the reflection, this presentation | [TEST-RUN.md](TEST-RUN.md), [coverage-summary.md](coverage-summary.md), TESTING-STRATEGY.md §12 | part A done; part B after S9 |
+| S9 Copilot test drafting | Task 6 | Copilot drafts for `ApiShipmentUploader` (the plan said `OutboxService`, which S6 had already covered) and for a status-change feature; a decision for every generated test; three break-it proofs | [COPILOT-LOG.md](../../COPILOT-LOG.md) | ✓ done |
+| S10 Results, reflection & viva | Task 7 | The full run per level, coverage as evidence, the reflection, this presentation | [TEST-RUN.md](TEST-RUN.md), [coverage-summary.md](coverage-summary.md), TESTING-STRATEGY.md §12 | ✓ done |
 
 ---
 
@@ -81,19 +81,35 @@ The order is driven by dependencies, not by the order of the brief's tasks:
 - **TDD:** the double-scan guard. A double-tapped *Delivered* scan used to come back as Failed, because the second scan reached a finished shipment.
   - **Show:** `git log --oneline` with the six commits, two full cycles: RED, GREEN, REFACTOR for the rule (`ScanRecorderTests`, 4 rows failing with "Expected: True, Actual: False"), then RED, GREEN, REFACTOR for the app (a scripted session failing with "The collection contained 2 items"). [TDD-LOG.md](../../TDD-LOG.md) has each run.
   - The change made for testability: the rule moved out of the console screen into `ScanRecorder`, with an injected `TimeProvider`.
-- **BDD:** two features in business language.
+- **BDD:** three features in business language (the third drafted with Copilot and reviewed).
   - `ShipmentCreation` runs at API level, because only there do validation, the unique index and the refusal wording all apply.
   - `ScanSync` runs from the courier device to the API, because the promise spans both sides.
   - **Show:** [ScanSync.feature](../../tests/ApexPost.Specs/Features/ScanSync.feature). The Background signs the courier in; the outline lists the three reasons head office refuses a scan. Then `Hooks.cs`: a fresh head office database per feature, and a fresh device folder per `@courier` scenario. Then a step class constructor taking `ScenarioState` and `DeviceContext` (context injection, no statics). Proof: letting auto-sync run offline fails the first scenario (`Expected: Pending, Actual: Synced`).
 
 ### 4:00–4:40 The Copilot test that was rejected
 
-- **Show:** the `COPILOT-LOG.md` entry (*filled in after S9*): the prompt, the draft, why it was rejected (for example, an assertion that recomputed the expected value with the same logic as the code), and what replaced it.
-- **The proof that kept tests matter:** the production code was broken on purpose, the test failed, and the code was restored. Both runs are in the log.
+- **The setting:** GitHub Copilot Free in Visual Studio, Ask mode, model GPT 5.6 Luna. Two prompts: unit tests for the courier's `ApiShipmentUploader`, and a Gherkin feature for changing a shipment's status. The prompts gave the rules in plain words, but not the expected answers.
+- **Show the rejected test:** [COPILOT-LOG.md §2](../../COPILOT-LOG.md), `UploadAsync_NonTerminalServerStatus_ReturnsNoOutcomeAndDoesNotThrow`.
+  - It checked only that nothing was thrown.
+  - Its "no outcome" assertion built a *second* uploader and uploaded an *empty list*, so it could never fail and said nothing about the call under test.
+  - It was rewritten to check the real call: one request sent, no outcome, so the scan stays Pending.
+- **Other things the review caught:**
+  - the draft did not compile (multi-line raw strings);
+  - JSON with a stray `}`;
+  - two guessed expected values: a server message, and a 400 where the API answers 409 (ADR 0026);
+  - copied step bindings that broke all 7 ShipmentCreation scenarios.
+
+  Each draft was run as produced, then with only its mechanical faults fixed, then after the review.
+- **The proof that kept tests matter:** three times, production code was broken on purpose and a kept Copilot test failed, then the code was restored:
+  - the courier filter turned off;
+  - a 400 rejecting the wrong scan;
+  - a shipment allowed to skip from Created to InTransit.
+
+  The runs are in the log, and the broken code was never committed.
 
 ### 4:40–5:00 Results and reflection
 
-- **Show:** [TEST-RUN.md](TEST-RUN.md). 1301 passed, 0 failed, 0 skipped: 594 unit, 695 integration, 12 acceptance scenarios. Coverage is 96.6% of lines and 87% of branches, read as evidence: it found two untested paths in risk areas (the API's validation safety net, and a money order for an unknown branch), which now have tests. Everything else uncovered is explained (*final counts refreshed after S9*).
+- **Show:** [TEST-RUN.md](TEST-RUN.md). 1323 passed, 0 failed, 0 skipped: 605 unit (45.7%), 695 integration (52.5%) and 23 acceptance scenario cases (1.7%). Week 5 started from 1151. Coverage is 96.6% of lines and 87.3% of branches, read as evidence: it found two untested paths in risk areas (the API's validation safety net, and a money order for an unknown branch), which now have tests. Everything else uncovered is explained.
 - **One sentence on most confidence per minute:** "The table-driven unit tests: minutes to write, milliseconds to run, and the whole status rule pinned row by row. But one ScanSync scenario proves the promise no unit test can: a scan captured offline reaches head office exactly once."
 
 ---
@@ -113,6 +129,8 @@ Each step is a branch merged into `week5-testing` with a merge commit, so the hi
 | S7 | 4 | TDD: the courier double-scan guard, in two RED → GREEN → REFACTOR cycles (six commits, `b632b3f` to `4e38d6b`). Cycle 1: the rule in `ScanRecorder`, extracted from the console screen, with Moq and `FakeTimeProvider` (11 cases). RED failed exactly the 4 "same scan within two minutes" rows; GREEN added one loop over the existing history query; REFACTOR named the rule `ShipmentScan.IsRepeatOf` and the window `ScanRecorderOptions`, with no test changes. Cycle 2: a scripted courier session drove the rule into the real app; GREEN wired the New Scan screen and registered the recorder in `AddCourierCore`; REFACTOR moved "blank means now" into the recorder. A `<=` mutation after the refactor failed exactly the 120 s row. TDD-LOG.md records each run and the testability changes. | `week5-s07-tdd-double-scan` | 1287 |
 | S8 | 5 | BDD with Reqnroll (`Reqnroll.xUnit` 3.3.4, xUnit v2). `ApexPost.Specs` has 12 scenarios in business language. `ShipmentCreation.feature` runs at API level: registered and looked up, duplicate refused, the weight outline, a courier refused. `ScanSync.feature` runs from a courier device composed by `AddCourierCore()` to head office in memory: offline scans sent when the network returns, a twice-sent scan stored once, and the outline of refused scans with their reasons. Each feature has a Background and a Scenario Outline. State goes through context injection (`ScenarioState`, `DeviceContext`, `HeadOfficeContext`); hooks give each feature a throwaway database and each courier scenario a fresh device folder; drivers keep HTTP out of the steps. Two rule breaks each failed the right scenario. A third attempt (lowering the minimum weight) stopped the host instead, because the constant also shapes a database CHECK, and it was not counted. CI runs the scenarios after the integration tests. | `week5-s08-bdd-reqnroll` | 1299 |
 | S10a | 7 | Results, first part (done before the Copilot step, which does not depend on it). A full run with coverage: 1301 passed, recorded in `docs/week5/TEST-RUN.md`. ReportGenerator 5.5.12 (pinned in `dotnet-tools.json`) gives 96.6% of lines and 87% of branches of the production code. Every class under 90% was read: two real gaps in risk areas got tests (the API's service-validation mapping, R9; a money order for an unknown branch, R10), and the rest is explained in `docs/testing.md`. Reflection drafted in TESTING-STRATEGY.md §12. | `week5-s10a-results` | 1301 |
+| S9 | 6 | Copilot (GitHub Copilot Free, Ask mode, GPT 5.6 Luna) drafted two pieces. **The uploader's unit tests:** they did not compile; with the syntax fixed, 3 of 9 cases failed on the draft's own mistakes (a stray `}` in JSON, a guessed message), and one test could never fail. Result: 4 kept, 2 changed, 1 rejected and rewritten, 2 cases added by hand, 11 passing. **A status-change feature:** its copied sign-in steps broke all 7 ShipmentCreation scenarios, and it expected 400 where the API answers 409. Result: 11 cases after review. Three deliberate breaks under kept Copilot tests each failed them. Everything is in COPILOT-LOG.md. | `week5-s09-copilot` | 1323 |
+| S10b | 7 | Results, final part. The final run, 1323 passed, recorded in TEST-RUN.md with how the total grew from 1151; coverage 96.6% of lines and 87.3% of branches. The reflection was completed with the Copilot findings; the counts in README, docs/testing.md and TESTING-STRATEGY.md were brought up to date; the viva script's Copilot part was filled in. | `week5-final-s10b` | 1323 |
 
 ---
 
@@ -125,3 +143,4 @@ Each step is a branch merged into `week5-testing` with a merge commit, so the hi
 | Why keep hand-written fakes next to Moq? | A stateful fake (the in-memory API, the tracking store) reads better than a chain of `Setup` calls. Moq is for interactions: "called once", "never called". |
 | Do any tests still read the clock? | No. Production code takes `TimeProvider`, and the tests use `FakeTimeProvider` or a fixed instant. Where a host must keep the real clock (the courier retry pipeline, the Web cookies, JWT lifetime checks), the tests use instants far from any real "now": tokens valid 2000–2100, scans in 2100. The Web report is anchored on the sale's stored day, so midnight cannot break it. |
 | What about the MAUI app? | Its client and sync code is in `ApexPost.Courier.Core` and already tested. MAUI only adds pages (out of scope) and two adapters behind seams that have contract tests. |
+| Why trust tests an AI wrote? | We don't trust them as written. Each Copilot draft was run as produced, then with only its mechanical faults fixed, then reviewed against an 8-point checklist. Copilot got the *structure* right, but guessed wherever the answer was a design decision it was not shown (the 409, the courier-facing messages). Three kept tests were proven by breaking the code they protect. |
