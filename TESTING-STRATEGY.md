@@ -79,7 +79,7 @@ The brief's examples map to R1 (status transitions), R2 (duplicate tracking numb
 | Integration | ~674 cases (59%) | ~45–50% |
 | BDD | 0 | ~2–3% (about 15–20 scenario cases) |
 
-Measured on the final Week 5 run: **605 unit tests out of 1323 (45.7%)**, 695 integration tests (52.5%) and **23 acceptance scenario cases in three features (1.7%)**. The top of the pyramid is thinner than the ~2–3% estimate, on purpose: each scenario is a business promise (R1–R5 end to end), and their boundaries and permutations are already proven lower down. The unit share reached the target through tests that belong at unit level: boundary tables, Moq interaction tests, the HTTP client suite and the no-network guard. No integration test was cut. BDD follows in S8.
+Measured on the final Week 5 run: **605 unit tests out of 1323 (45.7%)**, 695 integration tests (52.5%) and **23 acceptance scenario cases in three features (1.7%)**. The top of the pyramid is thinner than the ~2–3% estimate, on purpose: each scenario is a business promise (R1–R5 end to end), and their boundaries and permutations are already proven lower down. The unit share reached the target through tests that belong at unit level: boundary tables, Moq interaction tests, the HTTP client suite and the no-network guard. No integration test was cut.
 
 **Why ApexPost's pyramid has a wide middle.** The costliest risks live at *boundaries*:
 - R2: a unique index;
