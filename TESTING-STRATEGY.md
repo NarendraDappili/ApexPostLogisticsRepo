@@ -1,12 +1,12 @@
 # ApexPost testing strategy (Week 5)
 
-This document explains how ApexPost is tested: **what** we test, **at which level**, **with which tools**, and **why**. It was written and committed **before** any Week 5 test, as the brief requires. The existing-test review (section 6) records a decision for every test class that existed when Week 5 began. The reflection (section 12) is written at the end of the week.
+This document explains how ApexPost is tested: **what** we test, **at which level**, **with which tools**, and **why**. It was written and committed **before** any Week 5 test, as the brief requires. The existing-test review (section 6) records a decision for every test class that existed when Week 5 began. The reflection (section 12) was written at the end of the week.
 
 | | |
 |---|---|
 | Starting point | 1151 tests, all passing, zero-warning Release build (13 November 2026, commit `dd8a4c2`) |
 | Branch | `week5-testing` (steps merged into it with merge commits; then into `master`) |
-| Related | [TDD-LOG.md](TDD-LOG.md) and [COPILOT-LOG.md](COPILOT-LOG.md) (added later in Week 5), [docs/testing.md](docs/testing.md) (how to run, CI), [docs/week5/PRESENTATION.md](docs/week5/PRESENTATION.md) (the five-minute viva) |
+| Related | [TDD-LOG.md](TDD-LOG.md) (the test-first rule), [COPILOT-LOG.md](COPILOT-LOG.md) (the AI-drafted tests and their review), [docs/week5/TEST-RUN.md](docs/week5/TEST-RUN.md) (the final run), [docs/testing.md](docs/testing.md) (how to run, CI), [docs/week5/PRESENTATION.md](docs/week5/PRESENTATION.md) (the five-minute viva) |
 
 ---
 
@@ -79,7 +79,7 @@ The brief's examples map to R1 (status transitions), R2 (duplicate tracking numb
 | Integration | ~674 cases (59%) | ~45–50% |
 | BDD | 0 | ~2–3% (about 15–20 scenario cases) |
 
-Measured after step S10a: **594 unit tests out of 1301 (45.7%)**, 695 integration tests (53.4%) and **12 acceptance scenarios (0.9%)**. The top of the pyramid is thinner than the ~2–3% estimate, on purpose: each scenario is a business promise (R1–R5 end to end), and their boundaries and permutations are already proven lower down. The unit share reached the target through tests that belong at unit level: boundary tables, Moq interaction tests, the HTTP client suite and the no-network guard. No integration test was cut. BDD follows in S8.
+Measured on the final Week 5 run: **605 unit tests out of 1323 (45.7%)**, 695 integration tests (52.5%) and **23 acceptance scenario cases in three features (1.7%)**. The top of the pyramid is thinner than the ~2–3% estimate, on purpose: each scenario is a business promise (R1–R5 end to end), and their boundaries and permutations are already proven lower down. The unit share reached the target through tests that belong at unit level: boundary tables, Moq interaction tests, the HTTP client suite and the no-network guard. No integration test was cut. BDD follows in S8.
 
 **Why ApexPost's pyramid has a wide middle.** The costliest risks live at *boundaries*:
 - R2: a unique index;
@@ -135,6 +135,8 @@ The unit tests, by contrast, have no runtime dependency, so they are **consolida
 
 The tests from Weeks 2 to 4 use behaviour sentences, such as `Sending_the_same_scans_again_stores_nothing_and_reports_duplicates`. These already state the scenario and the result, and their class names the unit. They keep their names: renaming 1151 tests would rewrite history and Test Explorer baselines and add no confidence. A test gets the new form only when a Week 5 change rewrites it.
 
+**One convention per class.** A class never mixes the two styles. Adding Week 5 tests left four classes mixed: `CourierAppTests`, `CounterTransactionWorkflowServiceTests`, `MoneyOrderWorkflowServiceTests` and `StockAdjustmentServiceTests`. Their 47 older tests were renamed to `Method_Scenario_ExpectedResult` and their bodies were not touched. For example, `Failed_commit_persists_nothing_and_raises_no_sale_events` became `CheckoutAsync_CommitFails_ThrowsAndRaisesNoSaleEvents`. A reader of one class then sees one way of naming. Any other class still uses a single style throughout.
+
 **Arrange, Act, Assert.** A unit test has exactly one Act. New tests mark the three parts with `// Arrange`, `// Act` and `// Assert` comments; older tests separate them with blank lines. Only an integration journey, such as a whole courier session, may contain a sequence of actions.
 
 **Parameterised tests.** `[Theory]` with `[InlineData]` rows, one row per named case:
@@ -177,6 +179,7 @@ The two tables of rows guard themselves. A test fails if a status or scan type i
 |---|---|---|---|
 | `ShipmentCreation.feature` | 7: a shipment registered and looked up; a duplicate tracking number refused; the weight outline (0.09, 0.1, 70, 70.01 kg); a courier may not register | **API**: the real tracking API in memory (`WebApplicationFactory`) over its own SQL Server database, with real JWT validation | The promise is what head office's clients see. Only at this level do request validation, the database's unique key and the role rules all take part. A service-level run would skip the duplicate-key path (R2) and the 403 (R5). |
 | `ScanSync.feature` | 5: scans recorded without a network are sent when it returns; a scan that reaches head office twice is stored once; the outline of scans head office refuses (dated in the future, skipping a stage, an unknown parcel) | **From the courier's device to the API**: the device is composed with `AddCourierCore()` exactly as an app head composes it, over Couchbase Lite in a temporary folder. Its HTTP client is pointed at head office's in-memory test server. | "A scan captured offline reaches head office exactly once" spans both sides. Faking the server would prove only the fake's rules, and faking the device would skip the outbox and automatic sync (R3, R4). No socket is opened. |
+| `ShipmentStatusChange.feature` (drafted with GitHub Copilot, then reviewed: [COPILOT-LOG.md](COPILOT-LOG.md) §3) | 11: each allowed move; a skipped or backward move refused, naming the status allowed next; a final status that cannot change; an administrator without the Courier role refused | **API**, like ShipmentCreation | The status rules and the role rule both take part only at the API. It reuses the same head office, driver and sign-in steps; the review removed the copies of two steps that Copilot had added, which broke the other feature. |
 
 **Gherkin.**
 - **Business language only:** no HTTP verbs, status codes, JSON or class names in steps. "Then the registration is refused because the tracking number is already in use", not "Then the response is 409".
@@ -554,8 +557,6 @@ The courier client and sync code (`ApexApiClient`, `AuthHeaderHandler`, the resi
 
 ## 12. Reflection
 
-*Draft from step S10a; the Copilot findings are added after step S9.*
-
 **What the strategy caught.** Reviewing every test class against the risk map, and testing each risk at the level that can prove it, found real problems, not just missing numbers:
 - **A defect in the product.** A courier who double-taps a Delivered scan saw a *Failed* scan for a parcel they had just delivered. Scan-ID idempotency could not catch it, because the two scans had different IDs. The double-scan guard was built test-first to fix it (TDD-LOG.md).
 - **Rules with no test at all:**
@@ -568,11 +569,19 @@ The courier client and sync code (`ApexApiClient`, `AuthHeaderHandler`, the resi
   - Moving the courier code into a library made the "never `new HttpClient()`" guard silently stop scanning it.
 - **Our own mistakes.** The draft strategy gave the JWT clock skew as five minutes; the code says one.
 - **Defence in depth, shown rather than assumed.** A deliberate break of the minimum weight stopped the API from starting, which showed the weight limit is enforced in the request, the domain and a database CHECK.
+- **AI-drafted tests that looked right but were not.** The Copilot review (COPILOT-LOG.md) found:
+  - a draft that did not compile;
+  - a test that could never fail;
+  - two guessed expected values (a server message, and a 400 where the API answers 409);
+  - step bindings copied from another feature, which failed all seven of its scenarios.
+
+  The checklist and the "run it as drafted, then with only the mechanical faults fixed" routine caught every one of them before anything was committed.
 
 **What we would change.**
 - **Make time injectable from the first week.** Retrofitting `TimeProvider` and fixed instants touched 31 test classes and four production ones.
 - **Replace the hand-made "break the code and watch it fail" checks with a mutation-testing tool** (Stryker.NET) on the unit project, run nightly in CI. The manual checks made the case for it: three of them found something.
 - **Write the Gherkin scenarios before the code they describe.** `ScanSync.feature` states the courier's promise more clearly than the Week 4 notes did, and it would have shaped the uploader's design.
+- **Give an AI drafter the decisions, not just the code.** Copilot's wrong guesses were all about choices recorded in ADRs and the error-message rules, which it was not shown. Attaching the relevant ADR, or adding the rule to `.github/copilot-instructions.md`, would have prevented them.
 
 **Most confidence per minute.** The **table-driven unit tests**:
 - The 36-pair status table and the 24-row scan table took minutes to write and run in milliseconds.

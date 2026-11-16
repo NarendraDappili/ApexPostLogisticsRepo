@@ -15,7 +15,7 @@ public sealed class MoneyOrderWorkflowServiceTests
     [InlineData(99, false)]
     [InlineData(100, false)]
     [InlineData(101, true)]
-    public async Task Verification_is_required_only_above_the_configured_threshold(decimal amount, bool expectedRequirement)
+    public async Task CreateAsync_AmountAroundTheThreshold_RequiresVerificationOnlyAboveIt(decimal amount, bool expectedRequirement)
     {
         var orders = new InMemoryMoneyOrderRepository();
         var service = CreateService(orders, 100m);
@@ -29,7 +29,7 @@ public sealed class MoneyOrderWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Fee_comes_from_the_configured_policy_and_is_rounded_to_cents()
+    public async Task CreateAsync_FlatPlusPercentagePolicy_RoundsTheFeeToCents()
     {
         var orders = new InMemoryMoneyOrderRepository();
         var policy = new MoneyOrderPolicy(new Money(1000m), MoneyOrderPolicy.FlatPlusPercentageFee(new Money(2.50m), 0.01m));
@@ -42,7 +42,7 @@ public sealed class MoneyOrderWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Verifier_decides_the_outcome_and_only_a_masked_document_reference_is_kept()
+    public async Task VerifyIdentityAsync_VerifierAccepts_StoresVerifiedWithOnlyAMaskedDocumentReference()
     {
         var orders = new InMemoryMoneyOrderRepository();
         var service = CreateService(orders, 100m, verifier: new StubIdentityVerifier(IdentityVerificationOutcome.Verified));
@@ -58,7 +58,7 @@ public sealed class MoneyOrderWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Failed_verification_is_recorded_and_can_be_retried_but_a_verified_order_cannot_be_reverified()
+    public async Task VerifyIdentityAsync_FailedThenRetried_VerifiesAndRefusesAnotherAttempt()
     {
         var verifier = new StubIdentityVerifier(IdentityVerificationOutcome.Failed);
         var service = CreateService(new InMemoryMoneyOrderRepository(), 100m, verifier: verifier);
@@ -71,7 +71,7 @@ public sealed class MoneyOrderWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Verification_is_rejected_for_another_branch_a_missing_order_or_a_blank_document()
+    public async Task VerifyIdentityAsync_OtherBranchMissingOrderOrBlankDocument_Throws()
     {
         var service = CreateService(new InMemoryMoneyOrderRepository(), 100m);
         await service.CreateAsync(Request(101m));
@@ -85,13 +85,13 @@ public sealed class MoneyOrderWorkflowServiceTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public async Task Non_positive_amounts_are_rejected(decimal amount)
+    public async Task CreateAsync_NonPositiveAmount_ThrowsOutOfRange(decimal amount)
     {
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => CreateService(new InMemoryMoneyOrderRepository(), 100m).CreateAsync(Request(amount)));
     }
 
     [Fact]
-    public async Task Blank_request_fields_are_reported_together_by_the_attribute_validator()
+    public async Task CreateAsync_BlankSenderAndRecipient_ReportsBothErrorsTogether()
     {
         var exception = await Assert.ThrowsAsync<RequestValidationException>(() => CreateService(new InMemoryMoneyOrderRepository(), 100m).CreateAsync(Request(10m) with { Sender = " ", Recipient = "" }));
 
@@ -100,7 +100,7 @@ public sealed class MoneyOrderWorkflowServiceTests
     }
 
     [Fact]
-    public async Task Cancellation_and_persistence_failures_are_propagated()
+    public async Task CreateAsync_CancelledOrSaveFails_PropagatesTheException()
     {
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
@@ -111,7 +111,7 @@ public sealed class MoneyOrderWorkflowServiceTests
     }
 
     [Fact]
-    public async Task High_value_money_order_raises_an_issued_event_that_sends_a_simulated_notification()
+    public async Task CreateAsync_HighValueOrder_SendsOneSimulatedNotification()
     {
         var notifications = new RecordingNotificationSender();
         var service = CreateService(new InMemoryMoneyOrderRepository(), 100m, notifications);
