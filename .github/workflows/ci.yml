@@ -2,12 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ master ]
   # Step PRs merge into a week branch first (week4-partA, week4/partB, week5-testing, ...), so they are checked on
   # Linux before the week reaches master. A '*' never matches '/', so the naming styles need one pattern each.
-  # 'main' is listed next to 'master' so that CI keeps running if the default branch is renamed to main.
   pull_request:
-    branches: [ master, main, 'week4-part*', 'week4/part*', 'week5-*' ]
+    branches: [ master, 'week4-part*', 'week4/part*', 'week5-*' ]
 
 permissions:
   contents: read
